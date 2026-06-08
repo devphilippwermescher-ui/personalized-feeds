@@ -1,0 +1,87 @@
+{
+  "manifest_version": 3,
+  "name": "myFeedPilot",
+  "version": "0.1.0",
+  "description": "Manage personalized LinkedIn feeds, profile lists, and sharing",
+  "permissions": [
+    "storage",
+    "tabs",
+    "scripting",
+    "offscreen"
+  ],
+  "host_permissions": [
+    "https://www.linkedin.com/*"
+  ],
+  "externally_connectable": {
+    "matches": [
+      "https://linkedin-feed-sorter.web.app/*",
+      "http://localhost:5173/*"
+    ]
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.linkedin.com/feed*",
+        "https://www.linkedin.com/feed/*"
+      ],
+      "js": [
+        "sharefeed-capture.js"
+      ],
+      "run_at": "document_start"
+    },
+    {
+      "matches": [
+        "https://www.linkedin.com/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://www.linkedin.com/*"
+      ],
+      "js": [
+        "profile-content.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://www.linkedin.com/*"
+      ],
+      "js": [
+        "feeds-sidebar.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "icons/*"
+      ],
+      "matches": [
+        "https://www.linkedin.com/*"
+      ]
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "myFeedPilot",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}

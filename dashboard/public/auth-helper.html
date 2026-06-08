@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>myFeedPilot Auth Helper</title>
+    <style>
+      body {
+        margin: 0;
+        font-family: system-ui, sans-serif;
+        background: #f8fafc;
+        color: #0f172a;
+      }
+
+      .wrap {
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        text-align: center;
+      }
+
+      .card {
+        max-width: 440px;
+        background: white;
+        border: 1px solid #e2e8f0;
+        border-radius: 16px;
+        padding: 24px;
+        box-shadow: 0 18px 50px rgba(15, 23, 42, 0.08);
+      }
+
+      .status {
+        margin: 0;
+        line-height: 1.6;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="card">
+        <p class="status" id="status">Waiting for the extension to start sign-in.</p>
+      </div>
+    </div>
+
+    <script type="module">
+      import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js';
+      import {
+        getAuth,
+        GoogleAuthProvider,
+        signInWithPopup,
+      } from 'https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js';
+
+      const statusEl = document.getElementById('status');
+      const params = new URLSearchParams(window.location.search);
+      const extensionId = params.get('extensionId');
+      const extensionOrigin = extensionId ? `chrome-extension://${extensionId}` : '*';
+
+      const firebaseConfig = {
+        apiKey: 'AIzaSyBSHzW50UxkGtUuU06CFHz8eA5jtJsvuDI',
+        authDomain: 'linkedin-feed-sorter.firebaseapp.com',
+        projectId: 'linkedin-feed-sorter',
+        storageBucket: 'linkedin-feed-sorter.firebasestorage.app',
+        messagingSenderId: '1087764863577',
+        appId: '1:1087764863577:web:375df1aac1cc2c2071af48',
+        measurementId: 'G-2WXT0K8077',
+      };
+
+      const app = initializeApp(firebaseConfig);
+      const auth = getAuth(app);
+      const provider = new GoogleAuthProvider();
+      let authStarted = false;
+
+      function postResult(payload) {
+        window.parent.postMessage(payload, extensionOrigin);
+      }
+
+      async function startAuth() {
+        if (authStarted) {
+          return;
+        }
+
+        authStarted = true;
+        statusEl.textContent = 'Opening Google sign-in…';
+
+        try {
+          const result = await signInWithPopup(auth, provider);
+          const credential = GoogleAuthProvider.credentialFromResult(result);
+
+          if (!credential?.idToken || !credential.accessToken) {
+            throw new Error('Google sign-in did not return the expected tokens.');
+          }
+
+          statusEl.textContent = 'Sign-in complete. You can close this popup.';
+          postResult({
+            type: 'LFA_AUTH_RESULT',
+            success: true,
+            idToken: credential.idToken,
+            accessToken: credential.accessToken,
+          });
+        } catch (error) {
+          authStarted = false;
+          const message = error instanceof Error ? error.message : String(error);
+          statusEl.textContent = `Sign-in failed: ${message}`;
+          postResult({
+            type: 'LFA_AUTH_RESULT',
+            success: false,
+            error: message,
+          });
+        }
+      }
+
+      window.addEventListener('message', (event) => {
+        if (extensionOrigin !== '*' && event.origin !== extensionOrigin) {
+          return;
+        }
+
+        if (event.data?.type === 'LFA_AUTH_START') {
+          void startAuth();
+        }
+      });
+    </script>
+  </body>
+  </html>

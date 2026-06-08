@@ -1,0 +1,72 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return signedIn() && request.auth.uid == userId;
+    }
+
+    function shareDoc(userId, feedId) {
+      return get(/databases/$(database)/documents/users/$(userId)/feeds/$(feedId)/shares/$(request.auth.uid));
+    }
+
+    function hasFeedReadAccess(userId, feedId) {
+      return isOwner(userId) || (signedIn() && exists(/databases/$(database)/documents/users/$(userId)/feeds/$(feedId)/shares/$(request.auth.uid)));
+    }
+
+    function hasFeedWriteAccess(userId, feedId) {
+      return isOwner(userId) || (
+        signedIn() &&
+        exists(/databases/$(database)/documents/users/$(userId)/feeds/$(feedId)/shares/$(request.auth.uid)) &&
+        shareDoc(userId, feedId).data.role == 'editor'
+      );
+    }
+
+    match /users/{userId} {
+      allow read: if signedIn();
+      allow write: if isOwner(userId);
+
+      match /feeds/{feedId} {
+        allow read: if hasFeedReadAccess(userId, feedId);
+        allow write: if isOwner(userId);
+
+        match /members/{memberId} {
+          allow read: if hasFeedReadAccess(userId, feedId);
+          allow write: if hasFeedWriteAccess(userId, feedId);
+        }
+
+        match /shares/{targetUid} {
+          allow read: if isOwner(userId) || (signedIn() && request.auth.uid == targetUid);
+          allow create: if isOwner(userId) || (signedIn() && request.auth.uid == targetUid);
+          allow update, delete: if isOwner(userId);
+        }
+      }
+
+      match /followedFeeds/{followedFeedId} {
+        allow read, write: if isOwner(userId);
+        // Feed owners can remove a follower's reference to their own feed
+        allow delete: if signedIn() && resource.data.ownerId == request.auth.uid;
+      }
+
+      match /settings/{settingId} {
+        allow read, write: if isOwner(userId);
+      }
+    }
+
+    match /emailIndex/{email} {
+      allow read: if signedIn();
+      allow write: if signedIn() && request.resource.data.uid == request.auth.uid;
+    }
+
+    match /feedShareLinks/{token} {
+      allow read: if signedIn();
+      allow create: if signedIn() && request.resource.data.ownerId == request.auth.uid;
+      allow update: if false;
+      allow delete: if signedIn() && resource.data.ownerId == request.auth.uid;
+    }
+  }
+}

@@ -1,0 +1,45 @@
+{
+  "name": "personalized-feeds-extension",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Personalized Feeds Chrome extension",
+  "scripts": {
+    "build": "webpack --mode production",
+    "dev": "webpack --mode development --watch",
+    "lint": "eslint src/",
+    "lint:fix": "eslint src/ --fix",
+    "test": "vitest run",
+    "type-check": "tsc --noEmit",
+    "package": "npm run build && node -e \"const v=require('./package.json').version; const {execSync}=require('child_process'); process.chdir('dist'); execSync('zip -r ../personalized-feeds-v'+v+'.zip .');\"",
+    "version:sync": "node -e \"const p=require('./package.json'); const m=require('./src/manifest.json'); m.version=p.version; require('fs').writeFileSync('./src/manifest.json', JSON.stringify(m,null,2));\""
+  },
+  "dependencies": {
+    "firebase": "^11.0.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-icons": "^5.5.0",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.0.268",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@typescript-eslint/eslint-plugin": "^8.0.0",
+    "@typescript-eslint/parser": "^8.0.0",
+    "@vitest/coverage-v8": "^2.1.9",
+    "copy-webpack-plugin": "^12.0.2",
+    "css-loader": "^7.1.2",
+    "eslint": "^9.0.0",
+    "eslint-config-prettier": "^10.1.8",
+    "happy-dom": "^20.8.9",
+    "html-webpack-plugin": "^5.6.0",
+    "jsdom": "^29.0.2",
+    "prettier": "^3.8.1",
+    "style-loader": "^4.0.0",
+    "ts-loader": "^9.5.1",
+    "typescript": "^5.6.2",
+    "vitest": "^2.1.9",
+    "webpack": "^5.96.1",
+    "webpack-cli": "^5.1.4"
+  }
+}

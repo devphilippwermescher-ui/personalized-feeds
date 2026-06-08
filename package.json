@@ -1,0 +1,34 @@
+{
+  "name": "personalized-feeds",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Personalized Feeds - Chrome extension + Dashboard",
+  "scripts": {
+    "dev:extension": "cd extension && npm run dev",
+    "dev:dashboard": "cd dashboard && npm run dev",
+    "build:extension": "cd extension && npm run build",
+    "build:dashboard": "cd dashboard && npm run build",
+    "build": "npm run build:extension && npm run build:dashboard",
+    "deploy:dashboard": "npm run build:dashboard && firebase deploy --only hosting --project linkedin-feed-sorter",
+    "install:all": "cd extension && npm install && cd ../dashboard && npm install",
+    "type-check": "cd extension && npm run type-check && cd ../dashboard && npm run type-check",
+    "lint": "cd extension && npm run lint",
+    "format": "prettier --write \"**/*.{ts,tsx,css,json,js}\" --ignore-path .prettierignore",
+    "format:check": "prettier --check \"**/*.{ts,tsx,css,json,js}\" --ignore-path .prettierignore",
+    "package": "cd extension && npm run package"
+  },
+  "keywords": [
+    "linkedin",
+    "chrome-extension",
+    "analytics",
+    "feeds"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "firebase": "^11.10.0"
+  },
+  "devDependencies": {
+    "prettier": "^3.8.1"
+  }
+}
