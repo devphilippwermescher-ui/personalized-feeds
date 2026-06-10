@@ -20,16 +20,18 @@ export function renderFeedRow({
   expandedContentHtml = '',
 }: RenderFeedRowOptions): string {
   const isShared = Boolean(feed.isShared);
+  const isSystem = Boolean(feed.isSystem);
   const itemClasses = [
     'lfa-feed-item',
     isShared ? 'lfa-feed-item--shared' : '',
+    isSystem ? 'lfa-feed-item--system' : '',
     expanded ? 'lfa-feed-item--expanded' : '',
   ].filter(Boolean).join(' ');
 
   return `
     <div class="lfa-feed-group" data-feed-group-id="${escapeHtml(feed.id)}">
-      <div class="${itemClasses}" data-feed-id="${escapeHtml(feed.id)}" draggable="${isShared ? 'false' : 'true'}">
-        <svg class="lfa-feed-grip${isShared ? ' lfa-feed-grip--hidden' : ''}" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <div class="${itemClasses}" data-feed-id="${escapeHtml(feed.id)}" draggable="${isShared || isSystem ? 'false' : 'true'}">
+        <svg class="lfa-feed-grip${isShared || isSystem ? ' lfa-feed-grip--hidden' : ''}" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
           <circle cx="9" cy="6" r="1.3"></circle>
           <circle cx="9" cy="12" r="1.3"></circle>
           <circle cx="9" cy="18" r="1.3"></circle>
@@ -42,6 +44,8 @@ export function renderFeedRow({
           ${
             isShared
               ? `<span class="lfa-feed-owner-badge">by ${escapeHtml(feed.ownerDisplayName || 'Unknown')}</span>`
+              : isSystem
+                ? `<span class="lfa-feed-owner-badge">auto-saved from LinkedIn</span>`
               : ''
           }
         </div>

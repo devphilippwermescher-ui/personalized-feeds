@@ -41,7 +41,18 @@ interface FeedActionDeps {
   setModalState: (state: { el: HTMLElement | null; root: Root | null }) => void;
 }
 
-function renderFeedActionIcon(action: 'edit' | 'add' | 'share' | 'delete' | 'duplicate' | 'unfollow'): string {
+function renderFeedActionIcon(action: 'edit' | 'add' | 'share' | 'delete' | 'duplicate' | 'unfollow' | 'refresh-profile-viewers'): string {
+  if (action === 'refresh-profile-viewers') {
+    return `
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M21 12a9 9 0 0 1-15.39 6.36"></path>
+        <path d="M3 12a9 9 0 0 1 15.39-6.36"></path>
+        <path d="M18 3v5h-5"></path>
+        <path d="M6 21v-5h5"></path>
+      </svg>
+    `;
+  }
+
   if (action === 'edit') {
     return `
       <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
@@ -105,6 +116,26 @@ function renderFeedActionIcon(action: 'edit' | 'add' | 'share' | 'delete' | 'dup
 }
 
 export function renderFeedActions(feed: FeedInfo): string {
+  if (feed.isSystem) {
+    if (feed.systemType !== 'profileViewers') {
+      return '';
+    }
+
+    return `
+      <div class="lfa-feed-actions">
+        ${renderLfsIconButton({
+          iconHtml: renderFeedActionIcon('refresh-profile-viewers'),
+          title: 'Refresh profile visitors',
+          variant: 'default',
+          dataAttributes: {
+            'feed-action': 'refresh-profile-viewers',
+            'feed-id': feed.id,
+          },
+        })}
+      </div>
+    `;
+  }
+
   const actions: Array<{
     key: 'edit' | 'add' | 'share' | 'delete' | 'duplicate' | 'unfollow';
     title: string;
@@ -211,21 +242,34 @@ export async function moveFeed(
     return;
   }
 
+  if (currentFeeds[fromIndex]?.isSystem || currentFeeds[toIndex]?.isSystem) {
+    return;
+  }
+
   const previousFeeds = [...currentFeeds];
   const reorderedFeeds = [...currentFeeds];
   const [movedFeed] = reorderedFeeds.splice(fromIndex, 1);
   reorderedFeeds.splice(toIndex, 0, movedFeed);
+  let manualSortOrder = 0;
   setFeeds(
-    reorderedFeeds.map((feed, index) => ({
-      ...feed,
-      sortOrder: index,
-    }))
+    reorderedFeeds.map((feed) => {
+      if (feed.isSystem) {
+        return feed;
+      }
+
+      const nextFeed = {
+        ...feed,
+        sortOrder: manualSortOrder,
+      };
+      manualSortOrder += 1;
+      return nextFeed;
+    })
   );
   renderSidebarContent();
 
   const response = await sendMsg({
     type: 'FEEDS_REORDER',
-    feedIds: reorderedFeeds.map((feed) => feed.id),
+    feedIds: reorderedFeeds.filter((feed) => !feed.isSystem).map((feed) => feed.id),
   });
 
   if (!response?.success) {

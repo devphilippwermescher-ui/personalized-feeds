@@ -31,6 +31,8 @@ import type {
   FeedShareRole,
   FollowedFeed,
   LinkedInProfileData,
+  ProfileViewer,
+  ProfileViewerInput,
   SharedFeedSummary,
   UserFeatureSettings,
   UserProfile,
@@ -50,6 +52,10 @@ function sharesCollection(userId: string, feedId: string) {
 
 function followedFeedsCollection(userId: string) {
   return collection(getFirebaseDb(), 'users', userId, 'followedFeeds');
+}
+
+function profileViewersCollection(userId: string) {
+  return collection(getFirebaseDb(), 'users', userId, 'profileViewers');
 }
 
 function emailIndexCollection() {
@@ -74,6 +80,10 @@ function docToMember(d: QueryDocumentSnapshot<DocumentData, DocumentData>): Feed
 
 function docToShareAccess(d: QueryDocumentSnapshot<DocumentData, DocumentData>): FeedShareAccess {
   return d.data() as FeedShareAccess;
+}
+
+function docToProfileViewer(d: QueryDocumentSnapshot<DocumentData, DocumentData>): ProfileViewer {
+  return { id: d.id, ...d.data() } as ProfileViewer;
 }
 
 function normalizeEmail(email: string): string {
@@ -154,6 +164,61 @@ export async function getUserFeatureSettings(userId: string): Promise<UserFeatur
     postButtons: data.postButtons ?? DEFAULT_USER_FEATURE_SETTINGS.postButtons,
     speechToComment: data.speechToComment ?? DEFAULT_USER_FEATURE_SETTINGS.speechToComment,
   };
+}
+
+// Profile viewers
+
+export async function upsertProfileViewers(
+  userId: string,
+  viewers: ProfileViewerInput[]
+): Promise<{ savedCount: number; newCount: number }> {
+  let savedCount = 0;
+  let newCount = 0;
+  const now = Date.now();
+
+  for (const viewer of viewers) {
+    const linkedinUsername = normalizeLinkedInUsername(viewer.linkedinUsername || getUsernameFromLinkedInUrl(viewer.linkedinUrl));
+    if (!linkedinUsername || !viewer.linkedinUrl || !viewer.displayName.trim()) {
+      continue;
+    }
+
+    const viewerRef = doc(profileViewersCollection(userId), linkedinUsername);
+    const existing = await getDoc(viewerRef);
+    const firstSeenAt = existing.exists()
+      ? ((existing.data() as Partial<ProfileViewer>).firstSeenAt || now)
+      : now;
+
+    await setDoc(
+      viewerRef,
+      {
+        linkedinUrl: viewer.linkedinUrl,
+        linkedinUsername,
+        displayName: viewer.displayName.trim(),
+        headline: viewer.headline || '',
+        profileImageUrl: viewer.profileImageUrl || '',
+        connectionDegree: viewer.connectionDegree || '',
+        viewedAgoText: viewer.viewedAgoText || '',
+        mutualConnectionsText: viewer.mutualConnectionsText || '',
+        firstSeenAt,
+        lastSeenAt: now,
+        source: 'linkedin_profile_views',
+      } satisfies Omit<ProfileViewer, 'id'>,
+      { merge: true }
+    );
+
+    savedCount += 1;
+    if (!existing.exists()) {
+      newCount += 1;
+    }
+  }
+
+  return { savedCount, newCount };
+}
+
+export async function getProfileViewers(userId: string): Promise<ProfileViewer[]> {
+  const q = query(profileViewersCollection(userId), orderBy('lastSeenAt', 'desc'));
+  const snapshot = await getDocs(q);
+  return snapshot.docs.map(docToProfileViewer);
 }
 
 export async function updateUserFeatureSettings(

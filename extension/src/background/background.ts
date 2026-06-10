@@ -16,13 +16,15 @@ import {
   getFeedShares,
   getFollowedFeeds,
   getUserFeatureSettings,
+  getProfileViewers,
+  upsertProfileViewers,
   shareFeedWithUser,
   unfollowFeed,
   removeFeedShare,
   updateFeedShareRole,
   updateUserFeatureSettings,
 } from 'shared/firestore-service';
-import type { LinkedInProfileData, UserFeatureSettings } from 'shared/types';
+import type { LinkedInProfileData, ProfileViewerInput, UserFeatureSettings } from 'shared/types';
 import type { User } from 'firebase/auth';
 
 type OffscreenAuthResult =
@@ -55,12 +57,338 @@ const DASHBOARD_ORIGINS = new Set([
   'http://localhost:5173',
 ]);
 const FEATURE_SETTINGS_STORAGE_KEY = 'pf_feature_settings';
+const PROFILE_VIEWERS_ALARM_NAME = 'profile-viewers-sync';
+const PROFILE_VIEWERS_SYNC_PERIOD_MINUTES = 24 * 60;
+const PROFILE_VIEWERS_URL = 'https://www.linkedin.com/me/profile-views?skipRedirect=true';
 
 const DEFAULT_FEATURE_SETTINGS: UserFeatureSettings = {
   messagingButtons: true,
   postButtons: true,
   speechToComment: true,
 };
+
+function decodeHtmlEntities(value: string): string {
+  return value
+    .replace(/&#(\d+);/g, (_match, code) => String.fromCharCode(Number(code)))
+    .replace(/&#x([a-f0-9]+);/gi, (_match, code) => String.fromCharCode(parseInt(code, 16)))
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&apos;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>');
+}
+
+function normalizeText(value: string): string {
+  return decodeHtmlEntities(value)
+    .replace(/\u200b/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function stripHtml(value: string): string {
+  return normalizeText(value.replace(/<script[\s\S]*?<\/script>/gi, ' ').replace(/<style[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]+>/g, ' '));
+}
+
+function getHtmlAttribute(html: string, attributeName: string): string {
+  const escapedAttribute = attributeName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = html.match(new RegExp(`\\b${escapedAttribute}\\s*=\\s*("([^"]*)"|'([^']*)'|([^\\s>]+))`, 'i'));
+  return normalizeText(match?.[2] || match?.[3] || match?.[4] || '');
+}
+
+function normalizeLinkedInProfileUrl(rawHref: string): { linkedinUrl: string; linkedinUsername: string } | null {
+  try {
+    const url = new URL(decodeHtmlEntities(rawHref), 'https://www.linkedin.com');
+    if (!/(^|\.)linkedin\.com$/i.test(url.hostname)) {
+      return null;
+    }
+
+    const match = url.pathname.match(/^\/in\/([^/?#]+)/i);
+    if (!match?.[1]) {
+      return null;
+    }
+
+    const linkedinUsername = decodeURIComponent(match[1]).trim().toLowerCase();
+    if (!linkedinUsername) {
+      return null;
+    }
+
+    return {
+      linkedinUsername,
+      linkedinUrl: `https://www.linkedin.com/in/${encodeURIComponent(linkedinUsername)}/`,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function extractProfileViewerFromAnchor(rawHref: string, anchorHtml: string): ProfileViewerInput | null {
+  const normalizedProfile = normalizeLinkedInProfileUrl(rawHref);
+  if (!normalizedProfile) {
+    return null;
+  }
+
+  const imageMatch = anchorHtml.match(/<img\b[^>]*>/i);
+  const svgLabelMatch = anchorHtml.match(/<svg\b[^>]*\baria-label\s*=\s*("([^"]*)"|'([^']*)')/i);
+  const displayName = normalizeText(
+    (imageMatch ? getHtmlAttribute(imageMatch[0], 'alt') : '') ||
+      svgLabelMatch?.[2] ||
+      svgLabelMatch?.[3] ||
+      ''
+  );
+
+  if (!displayName) {
+    return null;
+  }
+
+  const text = stripHtml(anchorHtml);
+  const viewedAgoText = normalizeText(text.match(/Viewed\s+[^.]*?\bago\b/i)?.[0] || '');
+  const mutualConnectionsText = normalizeText(text.match(/\d+\s+mutual\s+connections?/i)?.[0] || '');
+  const connectionDegree = normalizeText(text.match(/[•\u2022]\s*(1st|2nd|3rd|\d+th)/i)?.[1] || '');
+  const profileImageUrl = imageMatch ? getHtmlAttribute(imageMatch[0], 'src') : '';
+
+  let headline = text;
+  [displayName, viewedAgoText, mutualConnectionsText, 'Connect', 'Message', 'Follow'].forEach((part) => {
+    if (part) {
+      headline = headline.replace(part, ' ');
+    }
+  });
+  headline = normalizeText(headline.replace(/[•\u2022]\s*(1st|2nd|3rd|\d+th)/gi, ' '));
+
+  return {
+    ...normalizedProfile,
+    displayName,
+    headline,
+    profileImageUrl,
+    connectionDegree,
+    viewedAgoText,
+    mutualConnectionsText,
+  };
+}
+
+function parseVisibleProfileViewers(html: string): ProfileViewerInput[] {
+  const viewers: ProfileViewerInput[] = [];
+  const seenUsernames = new Set<string>();
+  const anchorPattern = /<a\b[^>]*\bhref\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))[^>]*>([\s\S]*?)<\/a>/gi;
+
+  let match: RegExpExecArray | null;
+  while ((match = anchorPattern.exec(html)) && viewers.length < 3) {
+    const href = match[2] || match[3] || match[4] || '';
+    const viewer = extractProfileViewerFromAnchor(href, match[5] || '');
+    if (!viewer || seenUsernames.has(viewer.linkedinUsername)) {
+      continue;
+    }
+
+    seenUsernames.add(viewer.linkedinUsername);
+    viewers.push(viewer);
+  }
+
+  return viewers;
+}
+
+function waitForTabComplete(tabId: number, timeoutMs = 25_000): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const timeoutId = setTimeout(() => {
+      chrome.tabs.onUpdated.removeListener(onUpdated);
+      reject(new Error('Timed out waiting for LinkedIn profile viewers tab to load'));
+    }, timeoutMs);
+
+    const onUpdated = (updatedTabId: number, changeInfo: chrome.tabs.TabChangeInfo) => {
+      if (updatedTabId !== tabId || changeInfo.status !== 'complete') {
+        return;
+      }
+
+      clearTimeout(timeoutId);
+      chrome.tabs.onUpdated.removeListener(onUpdated);
+      resolve();
+    };
+
+    chrome.tabs.onUpdated.addListener(onUpdated);
+
+    chrome.tabs.get(tabId, (tab) => {
+      if (chrome.runtime.lastError) {
+        clearTimeout(timeoutId);
+        chrome.tabs.onUpdated.removeListener(onUpdated);
+        reject(new Error(chrome.runtime.lastError.message));
+        return;
+      }
+
+      if (tab.status === 'complete') {
+        clearTimeout(timeoutId);
+        chrome.tabs.onUpdated.removeListener(onUpdated);
+        resolve();
+      }
+    });
+  });
+}
+
+async function scrapeProfileViewersFromPageDom(): Promise<ProfileViewerInput[]> {
+  function normalizeText(value: string): string {
+    return (value || '').replace(/\u200b/g, '').replace(/\s+/g, ' ').trim();
+  }
+
+  function normalizeProfileUrl(rawHref: string): { linkedinUrl: string; linkedinUsername: string } | null {
+    try {
+      const url = new URL(rawHref, 'https://www.linkedin.com');
+      const match = url.pathname.match(/^\/in\/([^/?#]+)/i);
+      if (!match?.[1]) {
+        return null;
+      }
+
+      const linkedinUsername = decodeURIComponent(match[1]).trim().toLowerCase();
+      if (!linkedinUsername) {
+        return null;
+      }
+
+      return {
+        linkedinUsername,
+        linkedinUrl: `https://www.linkedin.com/in/${encodeURIComponent(linkedinUsername)}/`,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  function collect(): ProfileViewerInput[] {
+    const viewers: ProfileViewerInput[] = [];
+    const seenUsernames = new Set<string>();
+    const anchors = Array.from(document.querySelectorAll<HTMLAnchorElement>('a[href*="/in/"]'));
+
+    for (const anchor of anchors) {
+      if (viewers.length >= 3) {
+        break;
+      }
+
+      const profile = normalizeProfileUrl(anchor.href);
+      if (!profile || seenUsernames.has(profile.linkedinUsername)) {
+        continue;
+      }
+
+      const rowText = normalizeText(anchor.innerText || anchor.textContent || '');
+      const viewedAgoText = normalizeText(rowText.match(/Viewed\s+.+?\sago/i)?.[0] || '');
+      if (!viewedAgoText) {
+        continue;
+      }
+
+      const image = anchor.querySelector<HTMLImageElement>('img[alt]');
+      const svgWithLabel = anchor.querySelector<SVGElement>('svg[aria-label]');
+      const displayName = normalizeText(image?.alt || svgWithLabel?.getAttribute('aria-label') || '');
+      if (!displayName) {
+        continue;
+      }
+
+      const mutualConnectionsText = normalizeText(rowText.match(/\d+\s+mutual\s+connections?/i)?.[0] || '');
+      const connectionDegree = normalizeText(rowText.match(/[•\u2022]\s*(1st|2nd|3rd|\d+th)/i)?.[1] || '');
+      let headline = rowText;
+      [displayName, viewedAgoText, mutualConnectionsText, 'Connect', 'Message', 'Follow'].forEach((part) => {
+        if (part) {
+          headline = headline.replace(part, ' ');
+        }
+      });
+      headline = normalizeText(headline.replace(/[•\u2022]\s*(1st|2nd|3rd|\d+th)/gi, ' '));
+
+      seenUsernames.add(profile.linkedinUsername);
+      viewers.push({
+        ...profile,
+        displayName,
+        headline,
+        profileImageUrl: image?.src || '',
+        connectionDegree,
+        viewedAgoText,
+        mutualConnectionsText,
+      });
+    }
+
+    return viewers;
+  }
+
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < 12_000) {
+    const viewers = collect();
+    if (viewers.length > 0) {
+      return viewers;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+
+  return collect();
+}
+
+async function scrapeProfileViewersFromInactiveTab(): Promise<ProfileViewerInput[]> {
+  const tab = await chrome.tabs.create({
+    url: PROFILE_VIEWERS_URL,
+    active: false,
+  });
+
+  if (!tab.id) {
+    return [];
+  }
+
+  try {
+    await waitForTabComplete(tab.id);
+    const [executionResult] = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: scrapeProfileViewersFromPageDom,
+    });
+
+    return Array.isArray(executionResult?.result) ? (executionResult.result as ProfileViewerInput[]) : [];
+  } finally {
+    chrome.tabs.remove(tab.id).catch(() => {
+      /* ignore cleanup failures */
+    });
+  }
+}
+
+async function syncProfileViewers(): Promise<{ savedCount: number; newCount: number; visibleCount: number }> {
+  const user = await getAuthenticatedFeedsUser();
+  if (!user) {
+    return { savedCount: 0, newCount: 0, visibleCount: 0 };
+  }
+
+  const response = await fetch(PROFILE_VIEWERS_URL, {
+    credentials: 'include',
+    redirect: 'follow',
+  });
+
+  if (!response.ok) {
+    throw new Error(`LinkedIn profile viewers request failed with ${response.status}`);
+  }
+
+  const html = await response.text();
+  const visibleViewers = parseVisibleProfileViewers(html);
+  const viewersToSave = visibleViewers.length > 0 ? visibleViewers : await scrapeProfileViewersFromInactiveTab();
+  const result = await upsertProfileViewers(user.uid, viewersToSave);
+  return {
+    ...result,
+    visibleCount: viewersToSave.length,
+  };
+}
+
+function scheduleProfileViewersSync(): void {
+  if (!chrome.alarms?.create) {
+    return;
+  }
+
+  chrome.alarms.create(PROFILE_VIEWERS_ALARM_NAME, {
+    periodInMinutes: PROFILE_VIEWERS_SYNC_PERIOD_MINUTES,
+    delayInMinutes: PROFILE_VIEWERS_SYNC_PERIOD_MINUTES,
+  });
+}
+
+function ensureProfileViewersSyncSchedule(): void {
+  if (!chrome.alarms?.get) {
+    return;
+  }
+
+  chrome.alarms.get(PROFILE_VIEWERS_ALARM_NAME).then((alarm) => {
+    if (alarm?.periodInMinutes === PROFILE_VIEWERS_SYNC_PERIOD_MINUTES) {
+      return;
+    }
+
+    scheduleProfileViewersSync();
+  });
+}
 
 function normalizeFeatureSettings(settings?: Partial<UserFeatureSettings> | null): UserFeatureSettings {
   return {
@@ -286,6 +614,26 @@ function getFeedsAuthErrorResponse<T extends Record<string, unknown>>(extra?: T)
   };
 }
 
+chrome.runtime.onInstalled.addListener(() => {
+  scheduleProfileViewersSync();
+});
+
+chrome.runtime.onStartup.addListener(() => {
+  scheduleProfileViewersSync();
+});
+
+chrome.alarms?.onAlarm.addListener((alarm) => {
+  if (alarm.name !== PROFILE_VIEWERS_ALARM_NAME) {
+    return;
+  }
+
+  syncProfileViewers().catch((error) => {
+    console.warn('[profile-viewers] Background sync failed:', error);
+  });
+});
+
+ensureProfileViewersSyncSchedule();
+
 chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => {
   const senderOrigin = sender.url ? new URL(sender.url).origin : null;
   if (!senderOrigin || !DASHBOARD_ORIGINS.has(senderOrigin)) {
@@ -426,6 +774,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             photoURL: user.photoURL || '',
           }),
         });
+        scheduleProfileViewersSync();
         sendResponse({ success: true, userId: user.uid });
       })
       .catch((error) => {
@@ -540,6 +889,45 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           success: false,
           error: normalizeFeedsError(error, 'Failed to load feeds'),
           feeds: null,
+        });
+      });
+    return true;
+  }
+
+  if (message.type === 'PROFILE_VIEWERS_GET') {
+    getAuthenticatedFeedsUser()
+      .then((user) => {
+        if (!user) {
+          sendResponse(getFeedsAuthErrorResponse({ viewers: [] }));
+          return;
+        }
+
+        return getProfileViewers(user.uid).then((viewers) => {
+          sendResponse({ success: true, viewers });
+        });
+      })
+      .catch((error) => {
+        sendResponse({
+          success: false,
+          error: normalizeFeedsError(error, 'Failed to load profile visitors'),
+          viewers: [],
+        });
+      });
+    return true;
+  }
+
+  if (message.type === 'PROFILE_VIEWERS_SYNC_NOW') {
+    syncProfileViewers()
+      .then((result) => {
+        sendResponse({ success: true, ...result });
+      })
+      .catch((error) => {
+        sendResponse({
+          success: false,
+          error: normalizeFeedsError(error, 'Failed to sync profile visitors'),
+          savedCount: 0,
+          newCount: 0,
+          visibleCount: 0,
         });
       });
     return true;

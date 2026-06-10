@@ -70,11 +70,12 @@ import {
 } from './logic/sidebar-session';
 import { DEFAULT_FEATURE_SETTINGS, loadFeatureSettings, onFeatureSettingsChange } from '../feature-settings';
 import { showToast } from '../shared/toast';
-import type { UserFeatureSettings } from 'shared/types';
+import type { ProfileViewer, UserFeatureSettings } from 'shared/types';
 import { getCanonicalLinkedInUsername } from '../../../../shared/linkedin-identity';
 import type { Root } from 'react-dom/client';
 
 const DASHBOARD_URL = 'https://linkedin-feed-sorter.web.app';
+const PROFILE_VIEWERS_FEED_ID = '__profile_viewers__';
 
 /** Must match `sharefeed-capture.ts` (document_start). */
 const PENDING_SHARE_SESSION_KEY = 'lfa_pending_sharefeed';
@@ -143,6 +144,7 @@ let sidebarOpen = false;
 let currentUser: UserInfo | null = null;
 let feedsList: FeedInfo[] = [];
 let sharedFeedsList: FeedInfo[] = [];
+let profileViewerMembers: FeedMemberInfo[] = [];
 let sidebarEl: HTMLElement | null = null;
 let triggerBtn: HTMLElement | null = null;
 let isLoading = false;
@@ -199,6 +201,98 @@ function normalizeSharedFeed(feed: FeedInfo & { role?: 'reader' | 'editor' }): F
   };
 }
 
+function profileViewerToMember(viewer: ProfileViewer): FeedMemberInfo {
+  return {
+    id: viewer.id,
+    linkedinUrl: viewer.linkedinUrl,
+    linkedinUsername: viewer.linkedinUsername,
+    displayName: viewer.displayName,
+    headline: viewer.headline || '',
+    profileImageUrl: viewer.profileImageUrl || '',
+    connectionDegree: viewer.connectionDegree || '',
+    viewedAgoText: viewer.viewedAgoText || '',
+    mutualConnectionsText: viewer.mutualConnectionsText || '',
+    firstSeenAt: viewer.firstSeenAt,
+    lastSeenAt: viewer.lastSeenAt,
+    addedAt: viewer.lastSeenAt,
+  };
+}
+
+function createProfileViewersFeed(): FeedInfo {
+  return {
+    id: PROFILE_VIEWERS_FEED_ID,
+    name: 'Profile Visitors',
+    description: 'Auto-saved LinkedIn profile viewers',
+    color: '#0A66C2',
+    memberCount: profileViewerMembers.length,
+    sortOrder: -1,
+    ownerId: currentUser?.userId,
+    isSystem: true,
+    systemType: 'profileViewers',
+  };
+}
+
+function withProfileViewersFeed(feeds: FeedInfo[]): FeedInfo[] {
+  if (!currentUser) {
+    return feeds.filter((feed) => feed.id !== PROFILE_VIEWERS_FEED_ID);
+  }
+
+  return [
+    createProfileViewersFeed(),
+    ...feeds.filter((feed) => feed.id !== PROFILE_VIEWERS_FEED_ID),
+  ];
+}
+
+function updateProfileViewersState(viewers: ProfileViewer[]): void {
+  profileViewerMembers = viewers.map(profileViewerToMember);
+  feedMembersById = {
+    ...feedMembersById,
+    [PROFILE_VIEWERS_FEED_ID]: profileViewerMembers,
+  };
+  feedsList = withProfileViewersFeed(feedsList);
+}
+
+async function refreshProfileViewers(): Promise<void> {
+  const response = await sendMsg({ type: 'PROFILE_VIEWERS_GET' });
+  if (!Array.isArray(response?.viewers)) {
+    return;
+  }
+
+  updateProfileViewersState(response.viewers as ProfileViewer[]);
+}
+
+async function refreshProfileViewersManually(): Promise<void> {
+  loadingMembersFeedId = PROFILE_VIEWERS_FEED_ID;
+  expandedFeedId = PROFILE_VIEWERS_FEED_ID;
+  renderSidebarContent();
+
+  const syncResponse = await sendMsg({ type: 'PROFILE_VIEWERS_SYNC_NOW' });
+  if (!syncResponse?.success) {
+    loadingMembersFeedId = null;
+    renderSidebarContent();
+    showToast((syncResponse?.error as string) || 'Failed to refresh profile visitors', 'error');
+    return;
+  }
+
+  await refreshProfileViewers();
+  loadingMembersFeedId = null;
+
+  if (sidebarOpen) {
+    renderSidebarContent();
+  }
+
+  const visibleCount = Number(syncResponse.visibleCount || 0);
+  const newCount = Number(syncResponse.newCount || 0);
+  showToast(
+    newCount > 0
+      ? `${newCount} new profile visitor${newCount === 1 ? '' : 's'} saved`
+      : visibleCount > 0
+        ? 'Profile visitors are up to date'
+        : 'No visible profile visitors found',
+    visibleCount > 0 ? 'success' : 'error'
+  );
+}
+
 async function refreshSharedFeeds(): Promise<void> {
   const sharedResp = await sendMsg({ type: 'FEEDS_GET_SHARED_ALL' });
 
@@ -220,6 +314,11 @@ async function openFeedPosts(feedId: string): Promise<void> {
     const feed = [...feedsList, ...sharedFeedsList].find((item) => item.id === feedId);
     if (!feed) {
       showToast('Feed not found', 'error');
+      return;
+    }
+
+    if (feed.systemType === 'profileViewers') {
+      await toggleFeedExpansion(feed.id);
       return;
     }
 
@@ -453,6 +552,10 @@ async function handleSignOut(): Promise<void> {
     setFeeds: (feeds) => {
       feedsList = feeds as FeedInfo[];
       sharedFeedsList = [];
+      profileViewerMembers = [];
+      const nextFeedMembersById = { ...feedMembersById };
+      delete nextFeedMembersById[PROFILE_VIEWERS_FEED_ID];
+      feedMembersById = nextFeedMembersById;
       activeFeedTab = 'owned';
     },
     renderSidebarContent,
@@ -462,9 +565,10 @@ async function handleSignOut(): Promise<void> {
 // ── Feeds ──
 
 async function loadFeeds(): Promise<void> {
-  const [ownedResp, sharedResp, settings] = await Promise.all([
+  const [ownedResp, sharedResp, profileViewersResp, settings] = await Promise.all([
     sendMsg({ type: 'FEEDS_GET_ALL' }),
     sendMsg({ type: 'FEEDS_GET_SHARED_ALL' }),
+    sendMsg({ type: 'PROFILE_VIEWERS_GET' }),
     loadFeatureSettings(),
   ]);
 
@@ -476,6 +580,12 @@ async function loadFeeds(): Promise<void> {
       ownerId: currentUser?.userId,
       isShared: false,
     }));
+  }
+
+  if (Array.isArray(profileViewersResp?.viewers)) {
+    updateProfileViewersState(profileViewersResp.viewers as ProfileViewer[]);
+  } else {
+    feedsList = withProfileViewersFeed(feedsList);
   }
 
   if (Array.isArray(sharedResp?.sharedFeeds)) {
@@ -822,6 +932,7 @@ function renderSidebarInner(container: HTMLElement): void {
       showDuplicateSharedFeedModal: (feed) => showDuplicateSharedFeedModal(feed, getFeedActionDeps()),
       unfollowSharedFeed: (feed) => unfollowSharedFeed(feed, getFeedActionDeps()),
       deleteFeed: (feed) => deleteFeedAction(feed, getFeedActionDeps()),
+      refreshProfileViewers: refreshProfileViewersManually,
       handleMemberDelete: (feedId, memberId) => handleMemberDelete(feedId, memberId, getMemberActionDeps()),
       openDashboard: () => window.open(DASHBOARD_URL, '_blank'),
       getFeeds: () => (activeFeedTab === 'owned' ? feedsList : sharedFeedsList),

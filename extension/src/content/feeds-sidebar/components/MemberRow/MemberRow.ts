@@ -7,6 +7,18 @@ function escapeHtml(text: string): string {
   return div.innerHTML;
 }
 
+function renderMemberMeta(member: FeedMemberInfo): string {
+  const metaParts = [member.headline, member.viewedAgoText, member.mutualConnectionsText]
+    .map((item) => (item || '').trim())
+    .filter(Boolean);
+
+  if (metaParts.length === 0) {
+    return '';
+  }
+
+  return `<div class="lfa-member-meta">${escapeHtml(metaParts.join(' - '))}</div>`;
+}
+
 interface RenderMemberRowOptions {
   feedId: string;
   member: FeedMemberInfo;
@@ -22,6 +34,8 @@ export function renderMemberRow({
   statusActionHtml,
   canEdit = true,
 }: RenderMemberRowOptions): string {
+  const hasActions = Boolean(messageButtonHtml || statusActionHtml || canEdit);
+
   return `
     <div class="lfa-member-row" data-member-id="${escapeHtml(member.id)}" data-feed-id="${escapeHtml(feedId)}">
       <div class="lfa-member-main">
@@ -34,9 +48,10 @@ export function renderMemberRow({
           <button class="lfa-member-name" data-member-action="open-profile" data-member-id="${escapeHtml(member.id)}" data-feed-id="${escapeHtml(feedId)}" type="button">
             <span class="lfa-member-name-text">${escapeHtml(member.displayName)}</span>${member.isPremium ? ' <span class="lfa-member-premium-icon" title="LinkedIn Premium" aria-label="LinkedIn Premium">✦</span>' : ''}
           </button>
+          ${renderMemberMeta(member)}
         </div>
       </div>
-      <div class="lfa-member-actions">
+      <div class="lfa-member-actions${hasActions ? '' : ' lfa-member-actions--empty'}">
         ${messageButtonHtml}
         ${canEdit ? `
         <button class="lfa-member-icon-btn" data-member-action="edit" data-member-id="${escapeHtml(member.id)}" data-feed-id="${escapeHtml(feedId)}" title="Edit profile">

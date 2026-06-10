@@ -19,6 +19,8 @@ export interface FeedInfo {
   ownerEmail?: string;
   ownerPhotoURL?: string;
   followedAt?: number;
+  isSystem?: boolean;
+  systemType?: 'profileViewers';
 }
 
 export interface FeedMemberInfo {
@@ -39,6 +41,10 @@ export interface FeedMemberInfo {
   company?: string;
   location?: string;
   connectionDegree?: string;
+  viewedAgoText?: string;
+  mutualConnectionsText?: string;
+  firstSeenAt?: number;
+  lastSeenAt?: number;
   status?: 'connected' | 'pending' | 'connect' | 'following' | 'withdrawn' | 'unavailable' | 'loading';
   transientAction?: 'connect' | 'follow';
   addedAt: number;

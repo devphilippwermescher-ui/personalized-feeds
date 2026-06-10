@@ -25,6 +25,7 @@ interface SidebarDomBindingsDeps {
   showDuplicateSharedFeedModal: (feed: FeedInfo) => void;
   unfollowSharedFeed: (feed: FeedInfo) => Promise<void>;
   deleteFeed: (feed: FeedInfo) => Promise<void>;
+  refreshProfileViewers: () => Promise<void>;
   handleMemberDelete: (feedId: string, memberId: string) => Promise<void>;
   openDashboard: () => void;
   getFeeds: () => FeedInfo[];
@@ -283,6 +284,11 @@ function bindFeedActionButtons(container: HTMLElement, deps: SidebarDomBindingsD
       const action = button.getAttribute('data-feed-action');
       const feed = deps.getFeeds().find((item) => item.id === feedId);
       if (!feed || !action) {
+        return;
+      }
+
+      if (action === 'refresh-profile-viewers') {
+        void deps.refreshProfileViewers();
         return;
       }
 

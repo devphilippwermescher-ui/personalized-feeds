@@ -25,6 +25,23 @@ export interface Feed {
   shareToken?: string;
 }
 
+export interface ProfileViewer {
+  id: string;
+  linkedinUrl: string;
+  linkedinUsername: string;
+  displayName: string;
+  headline?: string;
+  profileImageUrl?: string;
+  connectionDegree?: string;
+  viewedAgoText?: string;
+  mutualConnectionsText?: string;
+  firstSeenAt: number;
+  lastSeenAt: number;
+  source: 'linkedin_profile_views';
+}
+
+export type ProfileViewerInput = Omit<ProfileViewer, 'id' | 'firstSeenAt' | 'lastSeenAt' | 'source'>;
+
 export type FeedShareRole = 'reader' | 'editor';
 
 export interface FeedShareAccess {

@@ -845,6 +845,9 @@ export const FEEDS_SIDEBAR_CSS = `
   .lfa-feed-item--shared {
     background: linear-gradient(180deg, #ffffff 0%, #faf8ff 100%);
   }
+  .lfa-feed-item--system {
+    background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+  }
   .lfa-feed-item:hover,
   .lfa-feed-item--expanded,
   .lfa-feed-item--settling {
@@ -855,6 +858,9 @@ export const FEEDS_SIDEBAR_CSS = `
   }
   .lfa-feed-item--shared.lfa-feed-item--expanded {
     background: #f5f3ff;
+  }
+  .lfa-feed-item--system.lfa-feed-item--expanded {
+    background: #eef6ff;
   }
   .lfa-feed-grip {
     width: 16px;
@@ -1075,7 +1081,9 @@ export const FEEDS_SIDEBAR_CSS = `
   .lfa-member-info {
     min-width: 0;
     display: flex;
-    align-items: center;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
   }
   .lfa-member-name {
     border: none;
@@ -1102,6 +1110,15 @@ export const FEEDS_SIDEBAR_CSS = `
   .lfa-member-name:hover {
     color: #1d4ed8;
   }
+  .lfa-member-meta {
+    max-width: 230px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 10px;
+    line-height: 1.25;
+    color: #64748b;
+  }
   .lfa-member-premium-icon {
     font-size: 9px;
     color: #c8960c;
@@ -1117,6 +1134,9 @@ export const FEEDS_SIDEBAR_CSS = `
     flex-shrink: 0;
     justify-content: flex-end;
     min-width: 278px;
+  }
+  .lfa-member-actions--empty {
+    display: none;
   }
   .lfa-member-icon-btn {
     width: 24px;

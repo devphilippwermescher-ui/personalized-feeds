@@ -52,6 +52,10 @@ service cloud.firestore {
         allow delete: if signedIn() && resource.data.ownerId == request.auth.uid;
       }
 
+      match /profileViewers/{viewerId} {
+        allow read, write: if isOwner(userId);
+      }
+
       match /settings/{settingId} {
         allow read, write: if isOwner(userId);
       }

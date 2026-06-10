@@ -50,11 +50,47 @@ function startBackgroundStatusRefresh(feedId: string, members: FeedMemberInfo[],
   });
 }
 
+function profileViewerToMember(viewer: Partial<FeedMemberInfo>): FeedMemberInfo | null {
+  if (!viewer.id || !viewer.linkedinUrl || !viewer.linkedinUsername || !viewer.displayName) {
+    return null;
+  }
+
+  return {
+    id: viewer.id,
+    linkedinUrl: viewer.linkedinUrl,
+    linkedinUsername: viewer.linkedinUsername,
+    displayName: viewer.displayName,
+    headline: viewer.headline || '',
+    profileImageUrl: viewer.profileImageUrl || '',
+    connectionDegree: viewer.connectionDegree || '',
+    viewedAgoText: viewer.viewedAgoText || '',
+    mutualConnectionsText: viewer.mutualConnectionsText || '',
+    firstSeenAt: viewer.firstSeenAt,
+    lastSeenAt: viewer.lastSeenAt,
+    addedAt: viewer.lastSeenAt || Date.now(),
+  };
+}
+
 export async function loadFeedMembers(feedId: string, deps: FeedMembersDeps): Promise<void> {
   deps.setLoadingMembersFeedId(feedId);
   deps.renderSidebarContent();
 
   const feed = deps.getFeeds().find((item) => item.id === feedId);
+  if (feed?.systemType === 'profileViewers') {
+    const resp = await deps.sendMsg({ type: 'PROFILE_VIEWERS_GET' });
+    const members = ((resp?.viewers as Partial<FeedMemberInfo>[]) || [])
+      .map(profileViewerToMember)
+      .filter((member): member is FeedMemberInfo => Boolean(member));
+
+    deps.setFeedMembersById({
+      ...deps.getFeedMembersById(),
+      [feedId]: members,
+    });
+    deps.setLoadingMembersFeedId(null);
+    deps.renderSidebarContent();
+    return;
+  }
+
   const resp = await deps.sendMsg({ type: 'FEEDS_GET_MEMBERS', ownerId: feed?.ownerId, feedId });
   const members = ((resp?.members as FeedMemberInfo[]) || []).map((member) => ({
     ...member,
@@ -74,7 +110,7 @@ export async function loadFeedMembers(feedId: string, deps: FeedMembersDeps): Pr
 
   // Relationship statuses belong to the owner's context; don't resolve or persist them
   // when a recipient is browsing a shared feed.
-  if (!feed?.isShared) {
+  if (!feed?.isSystem && !feed?.isShared) {
     startBackgroundStatusRefresh(feedId, members, deps);
   }
 }
@@ -100,7 +136,7 @@ export async function toggleFeedExpansion(feedId: string, deps: FeedMembersDeps)
   const feed = deps.getFeeds().find((item) => item.id === feedId);
   const cachedMembers = deps.getFeedMembersById()[feedId] || [];
   let membersForRefresh = cachedMembers;
-  if (!feed?.isShared && cachedMembers.length > 0) {
+  if (!feed?.isSystem && !feed?.isShared && cachedMembers.length > 0) {
     membersForRefresh = cachedMembers.map((member) => ({
       ...member,
       status: 'loading' as const,
@@ -126,7 +162,7 @@ export async function toggleFeedExpansion(feedId: string, deps: FeedMembersDeps)
   }
 
   deps.renderSidebarContent();
-  if (!feed?.isShared) {
+  if (!feed?.isSystem && !feed?.isShared) {
     startBackgroundStatusRefresh(feedId, membersForRefresh, deps);
   }
 }
@@ -150,8 +186,8 @@ export function renderMembersList(
   }
 
   const members = deps.getFeedMembersById()[feed.id] || [];
-  const canEditMembers = !feed.isShared || feed.accessRole === 'editor';
-  const showMessagingButtons = deps.getMessagingButtonsEnabled();
+  const canEditMembers = !feed.isSystem && (!feed.isShared || feed.accessRole === 'editor');
+  const showMessagingButtons = !feed.isSystem && deps.getMessagingButtonsEnabled();
 
   if (members.length === 0) {
     return `
@@ -175,7 +211,7 @@ export function renderMembersList(
           const canMessage = status === 'loading' ? false : (member.canMessage ?? status === 'connected');
           // Relationship badges reflect the owner's connection context.
           // In shared feeds the recipient's relationship is unknown, so hide them entirely.
-          const showStatusAction = !feed.isShared && canEditMembers;
+          const showStatusAction = !feed.isSystem && !feed.isShared && canEditMembers;
           return renderMemberRow({
             feedId: feed.id,
             member,
