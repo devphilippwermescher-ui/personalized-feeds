@@ -41,7 +41,25 @@ interface FeedActionDeps {
   setModalState: (state: { el: HTMLElement | null; root: Root | null }) => void;
 }
 
-function renderFeedActionIcon(action: 'edit' | 'add' | 'share' | 'delete' | 'duplicate' | 'unfollow' | 'refresh-profile-viewers'): string {
+function renderFeedActionIcon(
+  action:
+    | 'edit'
+    | 'add'
+    | 'share'
+    | 'delete'
+    | 'duplicate'
+    | 'unfollow'
+    | 'refresh-profile-viewers'
+    | 'refresh-profile-viewers-api'
+): string {
+  if (action === 'refresh-profile-viewers-api') {
+    return `
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z"></path>
+      </svg>
+    `;
+  }
+
   if (action === 'refresh-profile-viewers') {
     return `
       <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
@@ -124,8 +142,17 @@ export function renderFeedActions(feed: FeedInfo): string {
     return `
       <div class="lfa-feed-actions">
         ${renderLfsIconButton({
+          iconHtml: renderFeedActionIcon('refresh-profile-viewers-api'),
+          title: 'Sync profile visitors via API',
+          variant: 'default',
+          dataAttributes: {
+            'feed-action': 'refresh-profile-viewers-api',
+            'feed-id': feed.id,
+          },
+        })}
+        ${renderLfsIconButton({
           iconHtml: renderFeedActionIcon('refresh-profile-viewers'),
-          title: 'Refresh profile visitors',
+          title: 'Sync profile visitors via LinkedIn page',
           variant: 'default',
           dataAttributes: {
             'feed-action': 'refresh-profile-viewers',

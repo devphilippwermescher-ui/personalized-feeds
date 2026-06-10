@@ -41,6 +41,10 @@ function replaceFeedMembers(
   };
 }
 
+function isProfileViewersFeed(feed?: FeedInfo): boolean {
+  return feed?.systemType === 'profileViewers';
+}
+
 function renderMemberAvatar(member: FeedMemberInfo): string {
   return member.profileImageUrl
     ? `<img class="lfa-member-avatar" src="${escapeHtml(member.profileImageUrl)}" alt="${escapeHtml(member.displayName)}" data-lfa-avatar-img="true" /><div class="lfa-member-avatar lfa-member-avatar--fallback" style="display:none;">${escapeHtml(getMemberInitials(member.displayName))}</div>`
@@ -471,6 +475,14 @@ export async function persistResolvedMemberState(
   }
 
   const feed = deps.getFeeds().find((item) => item.id === feedId);
+  if (isProfileViewersFeed(feed)) {
+    await deps.sendMsg({
+      type: 'PROFILE_VIEWERS_UPDATE',
+      viewerId: member.id,
+      updates,
+    });
+    return;
+  }
 
   await deps.sendMsg({
     type: 'FEEDS_UPDATE_MEMBER',
@@ -487,12 +499,19 @@ export async function handleMemberDelete(
   deps: Pick<MemberActionDeps, 'sendMsg' | 'showToast' | 'getFeedMembersById' | 'setFeedMembersById' | 'getActiveMemberEditor' | 'setActiveMemberEditor' | 'loadFeeds' | 'renderSidebarContent' | 'getFeeds'>
 ): Promise<void> {
   const feed = deps.getFeeds().find((item) => item.id === feedId);
-  const result = await deps.sendMsg({
-    type: 'FEEDS_REMOVE_MEMBER',
-    ownerId: feed?.ownerId,
-    feedId,
-    memberId,
-  });
+  const result = await deps.sendMsg(
+    isProfileViewersFeed(feed)
+      ? {
+          type: 'PROFILE_VIEWERS_REMOVE',
+          viewerId: memberId,
+        }
+      : {
+          type: 'FEEDS_REMOVE_MEMBER',
+          ownerId: feed?.ownerId,
+          feedId,
+          memberId,
+        }
+  );
 
   if (!result?.success) {
     deps.showToast((result?.error as string) || 'Failed to remove profile from feed', 'error');
@@ -527,6 +546,7 @@ export async function handleMemberSave(
   const location = (document.getElementById('lfa-member-edit-location') as HTMLInputElement | null)?.value?.trim() || '';
   const linkedinUrl = (document.getElementById('lfa-member-edit-url') as HTMLInputElement | null)?.value?.trim() || '';
   const selectedFeedId = (document.getElementById('lfa-member-edit-feed') as HTMLInputElement | null)?.value || editorState.feedId;
+  const currentFeed = deps.getFeeds().find((feed) => feed.id === editorState.feedId);
 
   const updates = {
     displayName: displayName || editorState.member.displayName,
@@ -578,12 +598,19 @@ export async function handleMemberSave(
       return;
     }
 
-    const removeResult = await deps.sendMsg({
-      type: 'FEEDS_REMOVE_MEMBER',
-      ownerId: deps.getFeeds().find((feed) => feed.id === editorState.feedId)?.ownerId,
-      feedId: editorState.feedId,
-      memberId: editorState.member.id,
-    });
+    const removeResult = await deps.sendMsg(
+      isProfileViewersFeed(currentFeed)
+        ? {
+            type: 'PROFILE_VIEWERS_REMOVE',
+            viewerId: editorState.member.id,
+          }
+        : {
+            type: 'FEEDS_REMOVE_MEMBER',
+            ownerId: currentFeed?.ownerId,
+            feedId: editorState.feedId,
+            memberId: editorState.member.id,
+          }
+    );
 
     if (!removeResult?.success) {
       deps.showToast((removeResult?.error as string) || 'Profile was copied but not removed from previous feed', 'error');
@@ -604,13 +631,21 @@ export async function handleMemberSave(
     return;
   }
 
-  const result = await deps.sendMsg({
-    type: 'FEEDS_UPDATE_MEMBER',
-    ownerId: deps.getFeeds().find((feed) => feed.id === editorState.feedId)?.ownerId,
-    feedId: editorState.feedId,
-    memberId: editorState.member.id,
-    updates,
-  });
+  const result = await deps.sendMsg(
+    isProfileViewersFeed(currentFeed)
+      ? {
+          type: 'PROFILE_VIEWERS_UPDATE',
+          viewerId: editorState.member.id,
+          updates,
+        }
+      : {
+          type: 'FEEDS_UPDATE_MEMBER',
+          ownerId: currentFeed?.ownerId,
+          feedId: editorState.feedId,
+          memberId: editorState.member.id,
+          updates,
+        }
+  );
 
   if (!result?.success) {
     deps.showToast((result?.error as string) || 'Failed to save profile changes', 'error');

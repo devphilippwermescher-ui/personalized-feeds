@@ -168,6 +168,19 @@ export async function getUserFeatureSettings(userId: string): Promise<UserFeatur
 
 // Profile viewers
 
+function keepExistingIfIncomingEmpty(incoming: string | undefined, existing: string | undefined): string {
+  const normalizedIncoming = (incoming || '').trim();
+  if (!normalizedIncoming) {
+    return existing || '';
+  }
+
+  if (/^(offsetstart|offsetend|\d+(?:\.\d+)?x)$/i.test(normalizedIncoming)) {
+    return existing || '';
+  }
+
+  return normalizedIncoming;
+}
+
 export async function upsertProfileViewers(
   userId: string,
   viewers: ProfileViewerInput[]
@@ -184,8 +197,9 @@ export async function upsertProfileViewers(
 
     const viewerRef = doc(profileViewersCollection(userId), linkedinUsername);
     const existing = await getDoc(viewerRef);
+    const existingViewer = existing.exists() ? (existing.data() as Partial<ProfileViewer>) : {};
     const firstSeenAt = existing.exists()
-      ? ((existing.data() as Partial<ProfileViewer>).firstSeenAt || now)
+      ? (existingViewer.firstSeenAt || now)
       : now;
 
     await setDoc(
@@ -194,11 +208,11 @@ export async function upsertProfileViewers(
         linkedinUrl: viewer.linkedinUrl,
         linkedinUsername,
         displayName: viewer.displayName.trim(),
-        headline: viewer.headline || '',
-        profileImageUrl: viewer.profileImageUrl || '',
-        connectionDegree: viewer.connectionDegree || '',
-        viewedAgoText: viewer.viewedAgoText || '',
-        mutualConnectionsText: viewer.mutualConnectionsText || '',
+        headline: keepExistingIfIncomingEmpty(viewer.headline, existingViewer.headline),
+        profileImageUrl: keepExistingIfIncomingEmpty(viewer.profileImageUrl, existingViewer.profileImageUrl),
+        connectionDegree: keepExistingIfIncomingEmpty(viewer.connectionDegree, existingViewer.connectionDegree),
+        viewedAgoText: keepExistingIfIncomingEmpty(viewer.viewedAgoText, existingViewer.viewedAgoText),
+        mutualConnectionsText: keepExistingIfIncomingEmpty(viewer.mutualConnectionsText, existingViewer.mutualConnectionsText),
         firstSeenAt,
         lastSeenAt: now,
         source: 'linkedin_profile_views',
@@ -219,6 +233,31 @@ export async function getProfileViewers(userId: string): Promise<ProfileViewer[]
   const q = query(profileViewersCollection(userId), orderBy('lastSeenAt', 'desc'));
   const snapshot = await getDocs(q);
   return snapshot.docs.map(docToProfileViewer);
+}
+
+export async function updateProfileViewer(
+  userId: string,
+  viewerId: string,
+  updates: Partial<ProfileViewerInput & Pick<ProfileViewer, 'profileUrn' | 'memberNumericId' | 'canMessage' | 'canFollow' | 'canConnect' | 'isFollowing' | 'isPremium' | 'status'>>
+): Promise<void> {
+  const linkedinUsername = normalizeLinkedInUsername(viewerId || updates.linkedinUsername || getUsernameFromLinkedInUrl(updates.linkedinUrl || ''));
+  if (!linkedinUsername) {
+    throw new Error('Invalid profile viewer id');
+  }
+
+  await updateDoc(doc(profileViewersCollection(userId), linkedinUsername), {
+    ...updates,
+    linkedinUsername,
+  });
+}
+
+export async function removeProfileViewer(userId: string, viewerId: string): Promise<void> {
+  const linkedinUsername = normalizeLinkedInUsername(viewerId);
+  if (!linkedinUsername) {
+    throw new Error('Invalid profile viewer id');
+  }
+
+  await deleteDoc(doc(profileViewersCollection(userId), linkedinUsername));
 }
 
 export async function updateUserFeatureSettings(

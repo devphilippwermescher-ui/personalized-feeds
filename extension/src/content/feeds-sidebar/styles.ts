@@ -1081,6 +1081,9 @@ export const FEEDS_SIDEBAR_CSS = `
   .lfa-member-info {
     min-width: 0;
     display: flex;
+    align-items: center;
+  }
+  .lfa-member-row--with-meta .lfa-member-info {
     flex-direction: column;
     align-items: flex-start;
     gap: 2px;

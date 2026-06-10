@@ -25,6 +25,7 @@ interface RenderMemberRowOptions {
   messageButtonHtml: string;
   statusActionHtml: string;
   canEdit?: boolean;
+  showMeta?: boolean;
 }
 
 export function renderMemberRow({
@@ -33,11 +34,12 @@ export function renderMemberRow({
   messageButtonHtml,
   statusActionHtml,
   canEdit = true,
+  showMeta = false,
 }: RenderMemberRowOptions): string {
   const hasActions = Boolean(messageButtonHtml || statusActionHtml || canEdit);
 
   return `
-    <div class="lfa-member-row" data-member-id="${escapeHtml(member.id)}" data-feed-id="${escapeHtml(feedId)}">
+    <div class="lfa-member-row${showMeta ? ' lfa-member-row--with-meta' : ''}" data-member-id="${escapeHtml(member.id)}" data-feed-id="${escapeHtml(feedId)}">
       <div class="lfa-member-main">
         ${
           member.profileImageUrl
@@ -48,7 +50,7 @@ export function renderMemberRow({
           <button class="lfa-member-name" data-member-action="open-profile" data-member-id="${escapeHtml(member.id)}" data-feed-id="${escapeHtml(feedId)}" type="button">
             <span class="lfa-member-name-text">${escapeHtml(member.displayName)}</span>${member.isPremium ? ' <span class="lfa-member-premium-icon" title="LinkedIn Premium" aria-label="LinkedIn Premium">✦</span>' : ''}
           </button>
-          ${renderMemberMeta(member)}
+          ${showMeta ? renderMemberMeta(member) : ''}
         </div>
       </div>
       <div class="lfa-member-actions${hasActions ? '' : ' lfa-member-actions--empty'}">

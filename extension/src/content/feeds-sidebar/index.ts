@@ -206,12 +206,20 @@ function profileViewerToMember(viewer: ProfileViewer): FeedMemberInfo {
     id: viewer.id,
     linkedinUrl: viewer.linkedinUrl,
     linkedinUsername: viewer.linkedinUsername,
+    profileUrn: viewer.profileUrn,
+    memberNumericId: viewer.memberNumericId,
+    canMessage: viewer.canMessage,
+    canFollow: viewer.canFollow,
+    canConnect: viewer.canConnect,
+    isFollowing: viewer.isFollowing,
+    isPremium: viewer.isPremium,
     displayName: viewer.displayName,
     headline: viewer.headline || '',
     profileImageUrl: viewer.profileImageUrl || '',
     connectionDegree: viewer.connectionDegree || '',
     viewedAgoText: viewer.viewedAgoText || '',
     mutualConnectionsText: viewer.mutualConnectionsText || '',
+    status: viewer.status,
     firstSeenAt: viewer.firstSeenAt,
     lastSeenAt: viewer.lastSeenAt,
     addedAt: viewer.lastSeenAt,
@@ -261,36 +269,40 @@ async function refreshProfileViewers(): Promise<void> {
   updateProfileViewersState(response.viewers as ProfileViewer[]);
 }
 
-async function refreshProfileViewersManually(): Promise<void> {
+async function syncProfileViewersManually(messageType: string, label: string): Promise<void> {
   loadingMembersFeedId = PROFILE_VIEWERS_FEED_ID;
   expandedFeedId = PROFILE_VIEWERS_FEED_ID;
   renderSidebarContent();
 
-  const syncResponse = await sendMsg({ type: 'PROFILE_VIEWERS_SYNC_NOW' });
+  const syncResponse = await sendMsg({ type: messageType });
   if (!syncResponse?.success) {
     loadingMembersFeedId = null;
     renderSidebarContent();
-    showToast((syncResponse?.error as string) || 'Failed to refresh profile visitors', 'error');
+    showToast((syncResponse?.error as string) || `Failed to refresh profile visitors via ${label}`, 'error');
     return;
   }
 
   await refreshProfileViewers();
-  loadingMembersFeedId = null;
-
-  if (sidebarOpen) {
-    renderSidebarContent();
-  }
+  await loadFeedMembers(PROFILE_VIEWERS_FEED_ID);
 
   const visibleCount = Number(syncResponse.visibleCount || 0);
   const newCount = Number(syncResponse.newCount || 0);
   showToast(
     newCount > 0
-      ? `${newCount} new profile visitor${newCount === 1 ? '' : 's'} saved`
+      ? `${newCount} new profile visitor${newCount === 1 ? '' : 's'} saved via ${label}`
       : visibleCount > 0
-        ? 'Profile visitors are up to date'
-        : 'No visible profile visitors found',
+        ? `Profile visitors are up to date via ${label}`
+        : `No visible profile visitors found via ${label}`,
     visibleCount > 0 ? 'success' : 'error'
   );
+}
+
+async function refreshProfileViewersViaApi(): Promise<void> {
+  await syncProfileViewersManually('PROFILE_VIEWERS_SYNC_API_NOW', 'API');
+}
+
+async function refreshProfileViewersViaPage(): Promise<void> {
+  await syncProfileViewersManually('PROFILE_VIEWERS_SYNC_PAGE_NOW', 'LinkedIn page');
 }
 
 async function refreshSharedFeeds(): Promise<void> {
@@ -415,27 +427,38 @@ function getFeedActionDeps() {
 }
 
 async function handleExternalMemberAdded(detail: { feedId: string; feedName: string; member: FeedMemberInfo }): Promise<void> {
-  const feed = [...feedsList, ...sharedFeedsList].find((item) => item.id === detail.feedId);
-  if (feed) {
-    feed.memberCount += 1;
-  }
+  const incrementMemberCount = (feed: FeedInfo): FeedInfo =>
+    feed.id === detail.feedId
+      ? {
+          ...feed,
+          memberCount: (feed.memberCount || 0) + 1,
+        }
+      : feed;
+  feedsList = feedsList.map(incrementMemberCount);
+  sharedFeedsList = sharedFeedsList.map(incrementMemberCount);
 
-  const existingMembers = feedMembersById[detail.feedId];
+  const existingMembers = feedMembersById[detail.feedId] || [];
   const memberWithLoadingState: FeedMemberInfo = {
     ...detail.member,
     linkedinUsername: getCanonicalLinkedInUsername(detail.member),
     status: 'loading' as const,
   };
+  const incomingUsername = getCanonicalLinkedInUsername(memberWithLoadingState);
+  const exists = existingMembers.some(
+    (member) => member.id === detail.member.id || getCanonicalLinkedInUsername(member) === incomingUsername
+  );
 
-  if (existingMembers) {
-    const exists = existingMembers.some(
-      (member) => member.id === detail.member.id || member.linkedinUsername === detail.member.linkedinUsername
-    );
+  if (!exists) {
+    feedMembersById = {
+      ...feedMembersById,
+      [detail.feedId]: [...existingMembers, memberWithLoadingState],
+    };
+  }
+  renderSidebarContent();
 
-    if (!exists) {
-      feedMembersById[detail.feedId] = [...existingMembers, memberWithLoadingState];
-      renderSidebarContent();
-    }
+  if (expandedFeedId === detail.feedId) {
+    await loadFeedMembers(detail.feedId);
+    return;
   }
 
   try {
@@ -932,7 +955,8 @@ function renderSidebarInner(container: HTMLElement): void {
       showDuplicateSharedFeedModal: (feed) => showDuplicateSharedFeedModal(feed, getFeedActionDeps()),
       unfollowSharedFeed: (feed) => unfollowSharedFeed(feed, getFeedActionDeps()),
       deleteFeed: (feed) => deleteFeedAction(feed, getFeedActionDeps()),
-      refreshProfileViewers: refreshProfileViewersManually,
+      refreshProfileViewersViaApi,
+      refreshProfileViewersViaPage,
       handleMemberDelete: (feedId, memberId) => handleMemberDelete(feedId, memberId, getMemberActionDeps()),
       openDashboard: () => window.open(DASHBOARD_URL, '_blank'),
       getFeeds: () => (activeFeedTab === 'owned' ? feedsList : sharedFeedsList),

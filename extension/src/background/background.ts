@@ -17,7 +17,9 @@ import {
   getFollowedFeeds,
   getUserFeatureSettings,
   getProfileViewers,
+  removeProfileViewer,
   upsertProfileViewers,
+  updateProfileViewer,
   shareFeedWithUser,
   unfollowFeed,
   removeFeedShare,
@@ -58,8 +60,42 @@ const DASHBOARD_ORIGINS = new Set([
 ]);
 const FEATURE_SETTINGS_STORAGE_KEY = 'pf_feature_settings';
 const PROFILE_VIEWERS_ALARM_NAME = 'profile-viewers-sync';
-const PROFILE_VIEWERS_SYNC_PERIOD_MINUTES = 24 * 60;
 const PROFILE_VIEWERS_URL = 'https://www.linkedin.com/me/profile-views?skipRedirect=true';
+const PROFILE_VIEWERS_RSC_URL = 'https://www.linkedin.com/flagship-web/rsc-action/actions/server-request?sduiid=WvmpEntityList';
+const PROFILE_VIEWERS_RSC_BODY = JSON.stringify({
+  requestId: 'WvmpEntityList',
+  serverRequest: {
+    requestId: 'WvmpEntityList',
+    requestedArguments: {
+      $type: 'proto.sdui.actions.requests.RequestedArguments',
+      payload: {
+        sortType: 'ProfileViewSortType_TIME_DESCENDING',
+        filterTypeList: [],
+      },
+      requestedStateKeys: [],
+      requestMetadata: {
+        $type: 'proto.sdui.common.RequestMetadata',
+      },
+    },
+    isApfcEnabled: false,
+    isStreaming: false,
+    rumPageKey: '',
+  },
+  states: [],
+  requestedArguments: {
+    $type: 'proto.sdui.actions.requests.RequestedArguments',
+    payload: {
+      sortType: 'ProfileViewSortType_TIME_DESCENDING',
+      filterTypeList: [],
+    },
+    requestedStateKeys: [],
+    requestMetadata: {
+      $type: 'proto.sdui.common.RequestMetadata',
+    },
+    states: [],
+    screenId: 'com.linkedin.sdui.flagshipnav.home.Home',
+  },
+});
 
 const DEFAULT_FEATURE_SETTINGS: UserFeatureSettings = {
   messagingButtons: true,
@@ -84,6 +120,16 @@ function normalizeText(value: string): string {
     .replace(/\u200b/g, '')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+function normalizeLinkedInPayloadText(value: string): string {
+  return decodeHtmlEntities(value)
+    .replace(/\\u002F/gi, '/')
+    .replace(/\\\//g, '/')
+    .replace(/\\u0026/gi, '&')
+    .replace(/\\u003D/gi, '=')
+    .replace(/\\u002D/gi, '-')
+    .replace(/\\u200b/gi, '');
 }
 
 function stripHtml(value: string): string {
@@ -184,6 +230,281 @@ function parseVisibleProfileViewers(html: string): ProfileViewerInput[] {
   }
 
   return viewers;
+}
+
+function extractQuotedStrings(value: string): string[] {
+  const strings: string[] = [];
+  const seen = new Set<string>();
+  const quotedPattern = /"((?:\\.|[^"\\])*)"/g;
+
+  let match: RegExpExecArray | null;
+  while ((match = quotedPattern.exec(value))) {
+    try {
+      const parsed = JSON.parse(match[0]) as unknown;
+      if (typeof parsed !== 'string') {
+        continue;
+      }
+
+      const normalized = normalizeText(normalizeLinkedInPayloadText(parsed));
+      if (!normalized || seen.has(normalized)) {
+        continue;
+      }
+
+      seen.add(normalized);
+      strings.push(normalized);
+    } catch {
+      /* Ignore non-JSON string fragments from streamed RSC payloads. */
+    }
+  }
+
+  return strings;
+}
+
+function scoreProfileSlugMatch(value: string, linkedinUsername: string): number {
+  const normalizedValue = value.toLowerCase();
+  return linkedinUsername
+    .split(/[-_]+/)
+    .filter((part) => part.length > 2 && !/^\d+$/.test(part))
+    .reduce((score, part) => score + (normalizedValue.includes(part) ? 1 : 0), 0);
+}
+
+function isTechnicalLinkedInString(value: string): boolean {
+  const lower = value.toLowerCase();
+  return (
+    value.length > 220 ||
+    /^(offsetstart|offsetend|start|end|length|text|attributes|entityurn|navigationurl)$/i.test(value) ||
+    /^\d+(?:\.\d+)?x$/i.test(value) ||
+    /^-?\d+(?:\.\d+)?$/.test(value) ||
+    /^https?:\/\//i.test(value) ||
+    lower.includes('linkedin.com') ||
+    lower.includes('urn:li:') ||
+    lower.includes('proto.') ||
+    lower.includes('profileview') ||
+    lower.includes('wvmp') ||
+    lower.includes('state:') ||
+    lower.includes('binding') ||
+    lower.includes('tracking') ||
+    lower.includes('connect-button-disabled') ||
+    lower.includes('profile-displayphoto') ||
+    lower.includes('profile-framedphoto')
+  );
+}
+
+function isProfileViewerUiText(value: string): boolean {
+  return /^(connect|message|follow|view profile|1st|2nd|3rd|\d+th)$/i.test(value);
+}
+
+function isLikelyProfileHeadline(value: string, displayName: string, linkedinUsername: string): boolean {
+  if (
+    value === displayName ||
+    value.length < 4 ||
+    isTechnicalLinkedInString(value) ||
+    isProfileViewerUiText(value) ||
+    /viewed\s+.+?\sago/i.test(value) ||
+    /\d+\s+mutual\s+connections?/i.test(value) ||
+    scoreProfileSlugMatch(value, linkedinUsername) >= 2
+  ) {
+    return false;
+  }
+
+  return /\p{L}/u.test(value) && (/\s|[|/\\,.-]/.test(value) || value.length > 10);
+}
+
+function pickDisplayNameFromStrings(strings: string[], linkedinUsername: string): string {
+  let bestName = '';
+  let bestScore = 0;
+
+  strings.forEach((value) => {
+    if (isTechnicalLinkedInString(value) || isProfileViewerUiText(value) || /viewed\s+.+?\sago/i.test(value)) {
+      return;
+    }
+
+    const score = scoreProfileSlugMatch(value, linkedinUsername);
+    if (score > bestScore || (score === bestScore && score > 0 && value.length < bestName.length)) {
+      bestName = value;
+      bestScore = score;
+    }
+  });
+
+  return bestScore > 0 ? bestName : '';
+}
+
+function pickHeadlineFromStrings(strings: string[], displayName: string, linkedinUsername: string): string {
+  const displayNameIndex = strings.findIndex((value) => value === displayName);
+  const candidates = displayNameIndex >= 0 ? strings.slice(displayNameIndex + 1) : strings;
+
+  return candidates.find((value) => isLikelyProfileHeadline(value, displayName, linkedinUsername)) || '';
+}
+
+function getProfileImageUrlFromContext(context: string, strings: string[]): string {
+  const mediaUrls = new Set<string>();
+
+  strings.forEach((value, index) => {
+    if (/^https:\/\/media\.licdn\.com\//i.test(value) && /profile-(displayphoto|framedphoto)/i.test(value)) {
+      mediaUrls.add(value);
+      return;
+    }
+
+    if (/^https:\/\/media\.licdn\.com\//i.test(value)) {
+      const nextSegment = strings
+        .slice(index + 1, index + 8)
+        .find((candidate) => /profile-(displayphoto|framedphoto)/i.test(candidate));
+      if (nextSegment) {
+        mediaUrls.add(`${value.replace(/\/?$/, '/')}${nextSegment.replace(/^\//, '')}`);
+      }
+    }
+  });
+
+  Array.from(context.matchAll(/https:\/\/media\.licdn\.com\/[^"'<\s\\]+/gi))
+    .map((match) => normalizeText(match[0] || ''))
+    .filter((value) => /profile-(displayphoto|framedphoto)/i.test(value))
+    .forEach((value) => mediaUrls.add(value));
+
+  return [...mediaUrls][0] || '';
+}
+
+function extractProfileImageCandidates(payload: string): Array<{ url: string; index: number }> {
+  const candidates = new Map<string, { url: string; index: number }>();
+  const fullUrlPattern = /https:\/\/media\.licdn\.com\/[^"'<\s\\]+/gi;
+
+  let match: RegExpExecArray | null;
+  while ((match = fullUrlPattern.exec(payload))) {
+    const url = normalizeText(match[0] || '');
+    if (!/profile-(displayphoto|framedphoto)/i.test(url)) {
+      continue;
+    }
+
+    const existing = candidates.get(url);
+    if (!existing || match.index < existing.index) {
+      candidates.set(url, { url, index: match.index });
+    }
+  }
+
+  return [...candidates.values()].sort((a, b) => a.index - b.index);
+}
+
+function pickNearestProfileImage(
+  candidates: Array<{ url: string; index: number }>,
+  profileIndex: number,
+  usedImageUrls: Set<string>
+): string {
+  const nearby = candidates
+    .filter((candidate) => !usedImageUrls.has(candidate.url))
+    .map((candidate) => ({
+      ...candidate,
+      distance: Math.abs(candidate.index - profileIndex),
+    }))
+    .filter((candidate) => candidate.distance <= 80_000)
+    .sort((a, b) => a.distance - b.distance);
+
+  return nearby[0]?.url || '';
+}
+
+function parseProfileViewersFromPayload(payload: string): ProfileViewerInput[] {
+  const anchorViewers = parseVisibleProfileViewers(payload);
+  if (anchorViewers.length > 0) {
+    return anchorViewers;
+  }
+
+  const normalizedPayload = normalizeLinkedInPayloadText(payload);
+  const viewers: ProfileViewerInput[] = [];
+  const seenUsernames = new Set<string>();
+  const usedImageUrls = new Set<string>();
+  const profileImageCandidates = extractProfileImageCandidates(normalizedPayload);
+  const profileUrlPattern = /https:\/\/www\.linkedin\.com\/in\/[^"'<\s\\]+/gi;
+
+  let match: RegExpExecArray | null;
+  while ((match = profileUrlPattern.exec(normalizedPayload)) && viewers.length < 3) {
+    const profile = normalizeLinkedInProfileUrl(match[0]);
+    if (!profile || seenUsernames.has(profile.linkedinUsername)) {
+      continue;
+    }
+
+    const contextStart = Math.max(0, match.index - 12_000);
+    const contextEnd = Math.min(normalizedPayload.length, match.index + 12_000);
+    const context = normalizedPayload.slice(contextStart, contextEnd);
+    const strings = extractQuotedStrings(context);
+    const displayName = pickDisplayNameFromStrings(strings, profile.linkedinUsername);
+    if (!displayName) {
+      continue;
+    }
+
+    const viewedAgoText = normalizeText(context.match(/Viewed\s+[^"'<\\]{1,80}?\sago/i)?.[0] || '');
+    const mutualConnectionsText = normalizeText(context.match(/\d+\s+mutual\s+connections?/i)?.[0] || '');
+    const connectionDegree = normalizeText(strings.find((value) => /^(1st|2nd|3rd|\d+th)$/i.test(value)) || '');
+    let profileImageUrl = getProfileImageUrlFromContext(context, strings);
+    if (!profileImageUrl) {
+      profileImageUrl = pickNearestProfileImage(profileImageCandidates, match.index, usedImageUrls);
+    }
+    if (profileImageUrl) {
+      usedImageUrls.add(profileImageUrl);
+    }
+
+    seenUsernames.add(profile.linkedinUsername);
+    viewers.push({
+      ...profile,
+      displayName,
+      headline: pickHeadlineFromStrings(strings, displayName, profile.linkedinUsername),
+      profileImageUrl,
+      connectionDegree,
+      viewedAgoText,
+      mutualConnectionsText,
+    });
+  }
+
+  return viewers;
+}
+
+function getChromeCookie(details: chrome.cookies.Details): Promise<chrome.cookies.Cookie | null> {
+  if (!chrome.cookies?.get) {
+    return Promise.resolve(null);
+  }
+
+  return new Promise((resolve) => {
+    chrome.cookies.get(details, (cookie) => {
+      if (chrome.runtime.lastError) {
+        resolve(null);
+        return;
+      }
+
+      resolve(cookie || null);
+    });
+  });
+}
+
+async function getLinkedInCsrfToken(): Promise<string> {
+  const jsessionId = await getChromeCookie({
+    url: 'https://www.linkedin.com',
+    name: 'JSESSIONID',
+  });
+
+  return (jsessionId?.value || '').replace(/^"|"$/g, '');
+}
+
+async function fetchProfileViewersFromRsc(): Promise<ProfileViewerInput[]> {
+  const csrfToken = await getLinkedInCsrfToken();
+  if (!csrfToken) {
+    throw new Error('LinkedIn CSRF token is unavailable. Make sure you are signed in to LinkedIn.');
+  }
+
+  const response = await fetch(PROFILE_VIEWERS_RSC_URL, {
+    method: 'POST',
+    credentials: 'include',
+    headers: {
+      accept: '*/*',
+      'content-type': 'application/json',
+      'csrf-token': csrfToken,
+      'x-li-anchor-page-key': 'd_flagship3_leia_wvmp',
+      'x-li-rsc-stream': 'true',
+    },
+    body: PROFILE_VIEWERS_RSC_BODY,
+  });
+
+  if (!response.ok) {
+    throw new Error(`LinkedIn profile viewers API request failed with ${response.status}`);
+  }
+
+  return parseProfileViewersFromPayload(await response.text());
 }
 
 function waitForTabComplete(tabId: number, timeoutMs = 25_000): Promise<void> {
@@ -340,53 +661,37 @@ async function scrapeProfileViewersFromInactiveTab(): Promise<ProfileViewerInput
   }
 }
 
-async function syncProfileViewers(): Promise<{ savedCount: number; newCount: number; visibleCount: number }> {
+async function syncProfileViewersViaApi(): Promise<{ savedCount: number; newCount: number; visibleCount: number }> {
   const user = await getAuthenticatedFeedsUser();
   if (!user) {
     return { savedCount: 0, newCount: 0, visibleCount: 0 };
   }
 
-  const response = await fetch(PROFILE_VIEWERS_URL, {
-    credentials: 'include',
-    redirect: 'follow',
-  });
-
-  if (!response.ok) {
-    throw new Error(`LinkedIn profile viewers request failed with ${response.status}`);
-  }
-
-  const html = await response.text();
-  const visibleViewers = parseVisibleProfileViewers(html);
-  const viewersToSave = visibleViewers.length > 0 ? visibleViewers : await scrapeProfileViewersFromInactiveTab();
-  const result = await upsertProfileViewers(user.uid, viewersToSave);
+  const visibleViewers = await fetchProfileViewersFromRsc();
+  const result = await upsertProfileViewers(user.uid, visibleViewers);
   return {
     ...result,
-    visibleCount: viewersToSave.length,
+    visibleCount: visibleViewers.length,
   };
 }
 
-function scheduleProfileViewersSync(): void {
-  if (!chrome.alarms?.create) {
-    return;
+async function syncProfileViewersViaPage(): Promise<{ savedCount: number; newCount: number; visibleCount: number }> {
+  const user = await getAuthenticatedFeedsUser();
+  if (!user) {
+    return { savedCount: 0, newCount: 0, visibleCount: 0 };
   }
 
-  chrome.alarms.create(PROFILE_VIEWERS_ALARM_NAME, {
-    periodInMinutes: PROFILE_VIEWERS_SYNC_PERIOD_MINUTES,
-    delayInMinutes: PROFILE_VIEWERS_SYNC_PERIOD_MINUTES,
-  });
+  const visibleViewers = await scrapeProfileViewersFromInactiveTab();
+  const result = await upsertProfileViewers(user.uid, visibleViewers);
+  return {
+    ...result,
+    visibleCount: visibleViewers.length,
+  };
 }
 
-function ensureProfileViewersSyncSchedule(): void {
-  if (!chrome.alarms?.get) {
-    return;
-  }
-
-  chrome.alarms.get(PROFILE_VIEWERS_ALARM_NAME).then((alarm) => {
-    if (alarm?.periodInMinutes === PROFILE_VIEWERS_SYNC_PERIOD_MINUTES) {
-      return;
-    }
-
-    scheduleProfileViewersSync();
+function clearProfileViewersSyncSchedule(): void {
+  chrome.alarms?.clear(PROFILE_VIEWERS_ALARM_NAME).catch(() => {
+    /* ignore cleanup failures */
   });
 }
 
@@ -463,12 +768,7 @@ async function startOffscreenAuth(): Promise<OffscreenAuthResult> {
   });
 }
 
-function formatUserInfo(user: {
-  uid: string;
-  displayName: string;
-  email: string;
-  photoURL: string;
-}) {
+function formatUserInfo(user: { uid: string; displayName: string; email: string; photoURL: string }) {
   return {
     isAuthenticated: true,
     userId: user.uid,
@@ -567,7 +867,8 @@ async function getAuthenticatedFeedsUser(): Promise<User | null> {
 }
 
 function normalizeFeedsError(error: unknown, fallback = 'Something went wrong'): string {
-  const code = typeof error === 'object' && error && 'code' in error ? String((error as { code?: unknown }).code || '') : '';
+  const code =
+    typeof error === 'object' && error && 'code' in error ? String((error as { code?: unknown }).code || '') : '';
   const message =
     typeof error === 'object' && error && 'message' in error
       ? String((error as { message?: unknown }).message || '')
@@ -587,10 +888,7 @@ function normalizeFeedsError(error: unknown, fallback = 'Something went wrong'):
     return 'Session expired, please sign in again.';
   }
 
-  if (
-    normalized.includes('permission-denied') ||
-    normalized.includes('missing or insufficient permissions')
-  ) {
+  if (normalized.includes('permission-denied') || normalized.includes('missing or insufficient permissions')) {
     return 'Firestore permission denied. Make sure Firestore rules are deployed (firebase deploy --only firestore:rules).';
   }
 
@@ -606,7 +904,9 @@ function normalizeFeedsError(error: unknown, fallback = 'Something went wrong'):
   return message || fallback;
 }
 
-function getFeedsAuthErrorResponse<T extends Record<string, unknown>>(extra?: T): { success: false; error: string } & T {
+function getFeedsAuthErrorResponse<T extends Record<string, unknown>>(
+  extra?: T
+): { success: false; error: string } & T {
   return {
     success: false,
     error: 'Session expired, please sign in again.',
@@ -615,11 +915,11 @@ function getFeedsAuthErrorResponse<T extends Record<string, unknown>>(extra?: T)
 }
 
 chrome.runtime.onInstalled.addListener(() => {
-  scheduleProfileViewersSync();
+  clearProfileViewersSyncSchedule();
 });
 
 chrome.runtime.onStartup.addListener(() => {
-  scheduleProfileViewersSync();
+  clearProfileViewersSyncSchedule();
 });
 
 chrome.alarms?.onAlarm.addListener((alarm) => {
@@ -627,12 +927,10 @@ chrome.alarms?.onAlarm.addListener((alarm) => {
     return;
   }
 
-  syncProfileViewers().catch((error) => {
-    console.warn('[profile-viewers] Background sync failed:', error);
-  });
+  clearProfileViewersSyncSchedule();
 });
 
-ensureProfileViewersSyncSchedule();
+clearProfileViewersSyncSchedule();
 
 chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => {
   const senderOrigin = sender.url ? new URL(sender.url).origin : null;
@@ -774,7 +1072,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             photoURL: user.photoURL || '',
           }),
         });
-        scheduleProfileViewersSync();
+        clearProfileViewersSyncSchedule();
         sendResponse({ success: true, userId: user.uid });
       })
       .catch((error) => {
@@ -867,21 +1165,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
 
         console.log('[feeds] FEEDS_GET_ALL: fetching feeds for uid:', user.uid);
-        return getFeeds(user.uid)
-          .then((feeds) => {
-            console.log('[feeds] FEEDS_GET_ALL: got', feeds.length, 'feeds');
-            sendResponse({
-              success: true,
-              feeds: feeds.map((f) => ({
-                id: f.id,
-                name: f.name,
-                description: f.description,
-                color: f.color,
-                memberCount: f.memberCount,
-                sortOrder: f.sortOrder,
-              })),
-            });
+        return getFeeds(user.uid).then((feeds) => {
+          console.log('[feeds] FEEDS_GET_ALL: got', feeds.length, 'feeds');
+          sendResponse({
+            success: true,
+            feeds: feeds.map((f) => ({
+              id: f.id,
+              name: f.name,
+              description: f.description,
+              color: f.color,
+              memberCount: f.memberCount,
+              sortOrder: f.sortOrder,
+            })),
           });
+        });
       })
       .catch((error) => {
         console.error('[feeds] FEEDS_GET_ALL error:', error);
@@ -916,19 +1213,78 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
-  if (message.type === 'PROFILE_VIEWERS_SYNC_NOW') {
-    syncProfileViewers()
+  if (message.type === 'PROFILE_VIEWERS_SYNC_API_NOW' || message.type === 'PROFILE_VIEWERS_SYNC_NOW') {
+    syncProfileViewersViaApi()
       .then((result) => {
-        sendResponse({ success: true, ...result });
+        sendResponse({ success: true, source: 'api', ...result });
       })
       .catch((error) => {
         sendResponse({
           success: false,
-          error: normalizeFeedsError(error, 'Failed to sync profile visitors'),
+          error: normalizeFeedsError(error, 'Failed to sync profile visitors via API'),
           savedCount: 0,
           newCount: 0,
           visibleCount: 0,
+          source: 'api',
         });
+      });
+    return true;
+  }
+
+  if (message.type === 'PROFILE_VIEWERS_SYNC_PAGE_NOW') {
+    syncProfileViewersViaPage()
+      .then((result) => {
+        sendResponse({ success: true, source: 'page', ...result });
+      })
+      .catch((error) => {
+        sendResponse({
+          success: false,
+          error: normalizeFeedsError(error, 'Failed to sync profile visitors via LinkedIn page'),
+          savedCount: 0,
+          newCount: 0,
+          visibleCount: 0,
+          source: 'page',
+        });
+      });
+    return true;
+  }
+
+  if (message.type === 'PROFILE_VIEWERS_UPDATE') {
+    getAuthenticatedFeedsUser()
+      .then((user) => {
+        if (!user) {
+          sendResponse(getFeedsAuthErrorResponse());
+          return;
+        }
+
+        return updateProfileViewer(
+          user.uid,
+          message.viewerId as string,
+          (message.updates || {}) as Parameters<typeof updateProfileViewer>[2]
+        ).then(() => {
+          sendResponse({ success: true });
+        });
+      })
+      .catch((error) => {
+        sendResponse({ success: false, error: normalizeFeedsError(error, 'Failed to update profile visitor') });
+      });
+    return true;
+  }
+
+  if (message.type === 'PROFILE_VIEWERS_REMOVE') {
+    getAuthenticatedFeedsUser()
+      .then((user) => {
+        if (!user) {
+          sendResponse(getFeedsAuthErrorResponse());
+          return;
+        }
+
+        return removeProfileViewer(user.uid, message.viewerId as string).then(() => {
+          sendResponse({ success: true });
+        });
+      })
+      .catch((error) => {
+        sendResponse({ success: false, error: normalizeFeedsError(error, 'Failed to remove profile visitor') });
       });
     return true;
   }
@@ -941,19 +1297,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           return;
         }
 
-        return createFeed(user.uid, message.name, message.description, message.color)
-          .then((feed) => {
-            sendResponse({
-              success: true,
-              feed: {
-                id: feed.id,
-                name: feed.name,
-                color: feed.color,
-                memberCount: 0,
-                sortOrder: feed.sortOrder,
-              },
-            });
+        return createFeed(user.uid, message.name, message.description, message.color).then((feed) => {
+          sendResponse({
+            success: true,
+            feed: {
+              id: feed.id,
+              name: feed.name,
+              color: feed.color,
+              memberCount: 0,
+              sortOrder: feed.sortOrder,
+            },
           });
+        });
       })
       .catch((error) => {
         sendResponse({ success: false, error: normalizeFeedsError(error, 'Failed to create feed') });
@@ -970,10 +1325,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
 
         const profileData: LinkedInProfileData = message.profileData;
-        return addMemberToFeed((message.ownerId as string) || user.uid, message.feedId, profileData)
-          .then(({ member, alreadyExists }) => {
+        return addMemberToFeed((message.ownerId as string) || user.uid, message.feedId, profileData).then(
+          ({ member, alreadyExists }) => {
             sendResponse({ success: true, member, alreadyExists });
-          });
+          }
+        );
       })
       .catch((error) => {
         sendResponse({ success: false, error: normalizeFeedsError(error, 'Failed to add member') });
@@ -989,10 +1345,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           return;
         }
 
-        return removeMemberFromFeed((message.ownerId as string) || user.uid, message.feedId, message.memberId)
-          .then(() => {
+        return removeMemberFromFeed((message.ownerId as string) || user.uid, message.feedId, message.memberId).then(
+          () => {
             sendResponse({ success: true });
-          });
+          }
+        );
       })
       .catch((error) => {
         sendResponse({ success: false, error: normalizeFeedsError(error, 'Failed to remove member') });
@@ -1008,10 +1365,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           return;
         }
 
-        return updateMemberInFeed((message.ownerId as string) || user.uid, message.feedId, message.memberId, message.updates)
-          .then(() => {
-            sendResponse({ success: true });
-          });
+        return updateMemberInFeed(
+          (message.ownerId as string) || user.uid,
+          message.feedId,
+          message.memberId,
+          message.updates
+        ).then(() => {
+          sendResponse({ success: true });
+        });
       })
       .catch((error) => {
         sendResponse({ success: false, error: normalizeFeedsError(error, 'Failed to update member') });
@@ -1027,10 +1388,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           return;
         }
 
-        return getFeedMembers((message.ownerId as string) || user.uid, message.feedId)
-          .then((members) => {
-            sendResponse({ success: true, members });
-          });
+        return getFeedMembers((message.ownerId as string) || user.uid, message.feedId).then((members) => {
+          sendResponse({ success: true, members });
+        });
       })
       .catch((error) => {
         sendResponse({
@@ -1055,10 +1415,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           message.linkedinUrl as string | undefined,
           message.memberNumericId as string | undefined,
           message.profileUrn as string | undefined
-        )
-          .then((memberships) => {
-            sendResponse({ memberships });
-          });
+        ).then((memberships) => {
+          sendResponse({ memberships });
+        });
       })
       .catch(() => {
         sendResponse({ memberships: [] });
@@ -1074,10 +1433,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           return;
         }
 
-        return deleteFeed(user.uid, message.feedId)
-          .then(() => {
-            sendResponse({ success: true });
-          });
+        return deleteFeed(user.uid, message.feedId).then(() => {
+          sendResponse({ success: true });
+        });
       })
       .catch((error) => {
         sendResponse({ success: false, error: normalizeFeedsError(error, 'Failed to delete feed') });
@@ -1093,10 +1451,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           return;
         }
 
-        return updateFeed(user.uid, message.feedId, message.updates)
-          .then(() => {
-            sendResponse({ success: true });
-          });
+        return updateFeed(user.uid, message.feedId, message.updates).then(() => {
+          sendResponse({ success: true });
+        });
       })
       .catch((error) => {
         sendResponse({ success: false, error: normalizeFeedsError(error, 'Failed to update feed') });
@@ -1112,10 +1469,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           return;
         }
 
-        return reorderFeeds(user.uid, (message.feedIds as string[]) || [])
-          .then(() => {
-            sendResponse({ success: true });
-          });
+        return reorderFeeds(user.uid, (message.feedIds as string[]) || []).then(() => {
+          sendResponse({ success: true });
+        });
       })
       .catch((error) => {
         sendResponse({ success: false, error: normalizeFeedsError(error, 'Failed to reorder feeds') });
@@ -1130,13 +1486,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           sendResponse(getFeedsAuthErrorResponse({ sharedFeeds: [] }));
           return;
         }
-        return getFollowedFeeds(user.uid)
-          .then((sharedFeeds) => {
-            sendResponse({ success: true, sharedFeeds });
-          });
+        return getFollowedFeeds(user.uid).then((sharedFeeds) => {
+          sendResponse({ success: true, sharedFeeds });
+        });
       })
       .catch((error) => {
-        sendResponse({ success: false, error: normalizeFeedsError(error, 'Failed to load shared feeds'), sharedFeeds: [] });
+        sendResponse({
+          success: false,
+          error: normalizeFeedsError(error, 'Failed to load shared feeds'),
+          sharedFeeds: [],
+        });
       });
     return true;
   }
@@ -1148,10 +1507,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           sendResponse(getFeedsAuthErrorResponse({ shares: [] }));
           return;
         }
-        return getFeedShares(user.uid, message.feedId)
-          .then((shares) => {
-            sendResponse({ success: true, shares });
-          });
+        return getFeedShares(user.uid, message.feedId).then((shares) => {
+          sendResponse({ success: true, shares });
+        });
       })
       .catch((error) => {
         sendResponse({ success: false, error: normalizeFeedsError(error, 'Failed to load shares'), shares: [] });
@@ -1166,10 +1524,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           sendResponse(getFeedsAuthErrorResponse());
           return;
         }
-        return shareFeedWithUser(user.uid, message.feedId, message.email, message.role)
-          .then((share) => {
-            sendResponse({ success: true, share });
-          });
+        return shareFeedWithUser(user.uid, message.feedId, message.email, message.role).then((share) => {
+          sendResponse({ success: true, share });
+        });
       })
       .catch((error) => {
         sendResponse({ success: false, error: normalizeFeedsError(error, 'Failed to share feed') });
@@ -1184,10 +1541,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           sendResponse(getFeedsAuthErrorResponse());
           return;
         }
-        return updateFeedShareRole(user.uid, message.feedId, message.targetUid, message.role)
-          .then(() => {
-            sendResponse({ success: true });
-          });
+        return updateFeedShareRole(user.uid, message.feedId, message.targetUid, message.role).then(() => {
+          sendResponse({ success: true });
+        });
       })
       .catch((error) => {
         sendResponse({ success: false, error: normalizeFeedsError(error, 'Failed to update share role') });
@@ -1202,10 +1558,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           sendResponse(getFeedsAuthErrorResponse());
           return;
         }
-        return removeFeedShare(user.uid, message.feedId, message.targetUid)
-          .then(() => {
-            sendResponse({ success: true });
-          });
+        return removeFeedShare(user.uid, message.feedId, message.targetUid).then(() => {
+          sendResponse({ success: true });
+        });
       })
       .catch((error) => {
         sendResponse({ success: false, error: normalizeFeedsError(error, 'Failed to remove shared user') });
@@ -1220,15 +1575,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           sendResponse(getFeedsAuthErrorResponse());
           return;
         }
-        return ensureFeedShareLink(user.uid, message.feedId)
-          .then((token) => {
-            sendResponse({
-              success: true,
-              token,
-              // Hash survives LinkedIn redirects; ?sharefeed= is often stripped from the URL bar
-              url: `https://www.linkedin.com/feed/#sharefeed=${encodeURIComponent(token)}`,
-            });
+        return ensureFeedShareLink(user.uid, message.feedId).then((token) => {
+          sendResponse({
+            success: true,
+            token,
+            // Hash survives LinkedIn redirects; ?sharefeed= is often stripped from the URL bar
+            url: `https://www.linkedin.com/feed/#sharefeed=${encodeURIComponent(token)}`,
           });
+        });
       })
       .catch((error) => {
         sendResponse({ success: false, error: normalizeFeedsError(error, 'Failed to generate share link') });
@@ -1243,10 +1597,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           sendResponse(getFeedsAuthErrorResponse());
           return;
         }
-        return followFeedByShareToken(user.uid, message.token)
-          .then((sharedFeed) => {
-            sendResponse({ success: true, sharedFeed });
-          });
+        return followFeedByShareToken(user.uid, message.token).then((sharedFeed) => {
+          sendResponse({ success: true, sharedFeed });
+        });
       })
       .catch((error) => {
         sendResponse({ success: false, error: normalizeFeedsError(error, 'Failed to follow shared feed') });
@@ -1261,10 +1614,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           sendResponse(getFeedsAuthErrorResponse());
           return;
         }
-        return unfollowFeed(user.uid, message.ownerId, message.feedId)
-          .then(() => {
-            sendResponse({ success: true });
-          });
+        return unfollowFeed(user.uid, message.ownerId, message.feedId).then(() => {
+          sendResponse({ success: true });
+        });
       })
       .catch((error) => {
         sendResponse({ success: false, error: normalizeFeedsError(error, 'Failed to unfollow shared feed') });
@@ -1279,20 +1631,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           sendResponse(getFeedsAuthErrorResponse());
           return;
         }
-        return duplicateSharedFeed(user.uid, message.ownerId, message.feedId)
-          .then((feed) => {
-            sendResponse({
-              success: true,
-              feed: {
-                id: feed.id,
-                name: feed.name,
-                description: feed.description,
-                color: feed.color,
-                memberCount: feed.memberCount,
-                sortOrder: feed.sortOrder,
-              },
-            });
+        return duplicateSharedFeed(user.uid, message.ownerId, message.feedId).then((feed) => {
+          sendResponse({
+            success: true,
+            feed: {
+              id: feed.id,
+              name: feed.name,
+              description: feed.description,
+              color: feed.color,
+              memberCount: feed.memberCount,
+              sortOrder: feed.sortOrder,
+            },
           });
+        });
       })
       .catch((error) => {
         sendResponse({ success: false, error: normalizeFeedsError(error, 'Failed to duplicate shared feed') });
@@ -1302,4 +1653,3 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   return false;
 });
-

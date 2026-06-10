@@ -153,7 +153,10 @@ export function renderSidebarInnerMarkup(params: RenderSidebarInnerParams): void
     activeFeedTab,
     feedsListCount: sourceFeeds.length,
     feedsHtml,
-    editorOverlayHtml: renderEditorOverlay(activeMemberEditor, [...feedsList, ...sharedFeedsList].filter((feed) => !feed.isSystem)),
+    editorOverlayHtml: renderEditorOverlay(
+      activeMemberEditor,
+      [...feedsList, ...sharedFeedsList].filter((feed) => !feed.isSystem || feed.id === activeMemberEditor?.feedId)
+    ),
   });
 
   container.appendChild(content);
