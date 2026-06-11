@@ -29,6 +29,7 @@ import {
   chooseProfileViewerImageUrl,
   getAmbiguousProfileViewerImageUrls,
 } from './profile-viewer-quality';
+import { sortProfileViewersByRecency } from './profile-viewer-order';
 import type {
   Feed,
   FeedMember,
@@ -188,7 +189,8 @@ function keepExistingIfIncomingEmpty(incoming: string | undefined, existing: str
 
 export async function upsertProfileViewers(
   userId: string,
-  viewers: ProfileViewerInput[]
+  viewers: ProfileViewerInput[],
+  existingViewers: ProfileViewer[]
 ): Promise<{
   savedCount: number;
   newCount: number;
@@ -198,57 +200,52 @@ export async function upsertProfileViewers(
   let newCount = 0;
   const newProfileUsernames: string[] = [];
   const now = Date.now();
-  const existingSnapshot = await getDocs(profileViewersCollection(userId));
-  const existingByUsername = new Map(
-    existingSnapshot.docs.map((snapshot) => [
-      snapshot.id.toLowerCase(),
-      snapshot.data() as Partial<ProfileViewer>,
-    ])
-  );
-  const ambiguousExistingImages = getAmbiguousProfileViewerImageUrls(
-    existingSnapshot.docs.map((snapshot) => ({
-      linkedinUsername: snapshot.id,
-      profileImageUrl: (snapshot.data() as Partial<ProfileViewer>).profileImageUrl,
+  const existingByUsername = new Map(existingViewers.map((viewer) => [viewer.linkedinUsername.toLowerCase(), viewer]));
+  const ambiguousExistingImages = getAmbiguousProfileViewerImageUrls(existingViewers);
+  const validViewers = viewers
+    .map((viewer, lastSeenPosition) => ({
+      viewer,
+      lastSeenPosition,
+      linkedinUsername: normalizeLinkedInUsername(
+        viewer.linkedinUsername || getUsernameFromLinkedInUrl(viewer.linkedinUrl)
+      ),
     }))
-  );
+    .filter(
+      (entry) =>
+        Boolean(entry.linkedinUsername) && Boolean(entry.viewer.linkedinUrl) && Boolean(entry.viewer.displayName.trim())
+    );
 
-  for (const viewer of viewers) {
-    const linkedinUsername = normalizeLinkedInUsername(viewer.linkedinUsername || getUsernameFromLinkedInUrl(viewer.linkedinUrl));
-    if (!linkedinUsername || !viewer.linkedinUrl || !viewer.displayName.trim()) {
-      continue;
-    }
+  if (validViewers.length > 500) {
+    throw new Error('A single profile visitors sync cannot persist more than 500 profiles.');
+  }
 
+  const batch = writeBatch(getFirebaseDb());
+
+  for (const { viewer, lastSeenPosition, linkedinUsername } of validViewers) {
     const viewerRef = doc(profileViewersCollection(userId), linkedinUsername);
-    const existingViewer = existingByUsername.get(linkedinUsername) || {};
-    const existingProfileImageUrl = ambiguousExistingImages.has(
-      existingViewer.profileImageUrl?.trim() || ''
-    )
+    const existingViewer: Partial<ProfileViewer> = existingByUsername.get(linkedinUsername) || {};
+    const existingProfileImageUrl = ambiguousExistingImages.has(existingViewer.profileImageUrl?.trim() || '')
       ? ''
       : existingViewer.profileImageUrl;
-    const firstSeenAt = existingByUsername.has(linkedinUsername)
-      ? (existingViewer.firstSeenAt || now)
-      : now;
+    const firstSeenAt = existingByUsername.has(linkedinUsername) ? existingViewer.firstSeenAt || now : now;
 
-    await setDoc(
+    batch.set(
       viewerRef,
       {
         linkedinUrl: viewer.linkedinUrl,
         linkedinUsername,
-        displayName: chooseProfileViewerDisplayName(
-          viewer.displayName,
-          existingViewer.displayName,
-          linkedinUsername
-        ),
+        displayName: chooseProfileViewerDisplayName(viewer.displayName, existingViewer.displayName, linkedinUsername),
         headline: keepExistingIfIncomingEmpty(viewer.headline, existingViewer.headline),
-        profileImageUrl: chooseProfileViewerImageUrl(
-          viewer.profileImageUrl,
-          existingProfileImageUrl
-        ),
+        profileImageUrl: chooseProfileViewerImageUrl(viewer.profileImageUrl, existingProfileImageUrl),
         connectionDegree: keepExistingIfIncomingEmpty(viewer.connectionDegree, existingViewer.connectionDegree),
         viewedAgoText: keepExistingIfIncomingEmpty(viewer.viewedAgoText, existingViewer.viewedAgoText),
-        mutualConnectionsText: keepExistingIfIncomingEmpty(viewer.mutualConnectionsText, existingViewer.mutualConnectionsText),
+        mutualConnectionsText: keepExistingIfIncomingEmpty(
+          viewer.mutualConnectionsText,
+          existingViewer.mutualConnectionsText
+        ),
         firstSeenAt,
         lastSeenAt: now,
+        lastSeenPosition,
         source: 'linkedin_profile_views',
       } satisfies Omit<ProfileViewer, 'id'>,
       { merge: true }
@@ -261,13 +258,17 @@ export async function upsertProfileViewers(
     }
   }
 
+  if (savedCount > 0) {
+    await batch.commit();
+  }
+
   return { savedCount, newCount, newProfileUsernames };
 }
 
 export async function getProfileViewers(userId: string): Promise<ProfileViewer[]> {
   const q = query(profileViewersCollection(userId), orderBy('lastSeenAt', 'desc'));
   const snapshot = await getDocs(q);
-  return snapshot.docs.map(docToProfileViewer);
+  return sortProfileViewersByRecency(snapshot.docs.map(docToProfileViewer));
 }
 
 export async function updateProfileViewer(

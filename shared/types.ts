@@ -45,10 +45,14 @@ export interface ProfileViewer {
   status?: 'connected' | 'pending' | 'connect' | 'following' | 'withdrawn' | 'unavailable' | 'loading';
   firstSeenAt: number;
   lastSeenAt: number;
+  lastSeenPosition?: number;
   source: 'linkedin_profile_views';
 }
 
-export type ProfileViewerInput = Omit<ProfileViewer, 'id' | 'firstSeenAt' | 'lastSeenAt' | 'source'>;
+export type ProfileViewerInput = Omit<
+  ProfileViewer,
+  'id' | 'firstSeenAt' | 'lastSeenAt' | 'lastSeenPosition' | 'source'
+>;
 
 export type FeedShareRole = 'reader' | 'editor';
 

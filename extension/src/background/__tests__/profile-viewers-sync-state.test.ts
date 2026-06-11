@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  PROFILE_VIEWERS_ATTEMPT_LEASE_MS,
   PROFILE_VIEWERS_RETRY_DELAY_MS,
   PROFILE_VIEWERS_SYNC_INTERVAL_MS,
   completeProfileViewersSyncFailure,
@@ -80,5 +81,27 @@ describe('profile viewers sync state', () => {
       attemptNumber: 2,
       runType: 'retry',
     });
+  });
+
+  it('recovers the first attempt when the service worker was interrupted', () => {
+    const now = 30_000;
+    const started = startProfileViewersSyncAttempt(createProfileViewersSyncState('user-1', now), now, 1);
+
+    expect(getNextProfileViewersAlarmAt(started)).toBe(now + PROFILE_VIEWERS_ATTEMPT_LEASE_MS);
+    expect(decideProfileViewersSync(started, now + PROFILE_VIEWERS_ATTEMPT_LEASE_MS, 'alarm')).toEqual({
+      shouldRun: true,
+      attemptNumber: 2,
+      runType: 'retry',
+      recoveredFromInterruptedAttempt: true,
+    });
+  });
+
+  it('does not retry an interrupted second attempt before the next daily cycle', () => {
+    const now = 40_000;
+    const firstStarted = startProfileViewersSyncAttempt(createProfileViewersSyncState('user-1', now), now, 1);
+    const secondStarted = startProfileViewersSyncAttempt(firstStarted, now + PROFILE_VIEWERS_ATTEMPT_LEASE_MS, 2);
+
+    expect(secondStarted.attemptExpiresAt).toBeUndefined();
+    expect(getNextProfileViewersAlarmAt(secondStarted)).toBe(secondStarted.nextDueAt);
   });
 });

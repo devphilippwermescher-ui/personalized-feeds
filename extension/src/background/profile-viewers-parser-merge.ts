@@ -1,8 +1,5 @@
 import type { ProfileViewerInput } from 'shared/types';
-import {
-  chooseProfileViewerDisplayName,
-  chooseProfileViewerImageUrl,
-} from 'shared/profile-viewer-quality';
+import { chooseProfileViewerDisplayName, chooseProfileViewerImageUrl } from 'shared/profile-viewer-quality';
 
 const ENRICHABLE_FIELDS = [
   'headline',
@@ -11,21 +8,11 @@ const ENRICHABLE_FIELDS = [
   'mutualConnectionsText',
 ] as const satisfies ReadonlyArray<keyof ProfileViewerInput>;
 
-function mergeProfileViewer(
-  existing: ProfileViewerInput,
-  incoming: ProfileViewerInput
-): ProfileViewerInput {
+function mergeProfileViewer(existing: ProfileViewerInput, incoming: ProfileViewerInput): ProfileViewerInput {
   const merged = {
     ...existing,
-    displayName: chooseProfileViewerDisplayName(
-      incoming.displayName,
-      existing.displayName,
-      existing.linkedinUsername
-    ),
-    profileImageUrl: chooseProfileViewerImageUrl(
-      incoming.profileImageUrl,
-      existing.profileImageUrl
-    ),
+    displayName: chooseProfileViewerDisplayName(incoming.displayName, existing.displayName, existing.linkedinUsername),
+    profileImageUrl: chooseProfileViewerImageUrl(incoming.profileImageUrl, existing.profileImageUrl),
   };
 
   ENRICHABLE_FIELDS.forEach((field) => {
@@ -37,10 +24,7 @@ function mergeProfileViewer(
   return merged;
 }
 
-export function mergeProfileViewerCandidates(
-  candidateGroups: ProfileViewerInput[][],
-  limit = 3
-): ProfileViewerInput[] {
+export function mergeProfileViewerCandidates(candidateGroups: ProfileViewerInput[][]): ProfileViewerInput[] {
   const viewers: ProfileViewerInput[] = [];
   const viewerIndexes = new Map<string, number>();
 
@@ -54,10 +38,6 @@ export function mergeProfileViewerCandidates(
       const existingIndex = viewerIndexes.get(username);
       if (existingIndex !== undefined) {
         viewers[existingIndex] = mergeProfileViewer(viewers[existingIndex], candidate);
-        return;
-      }
-
-      if (viewers.length >= limit) {
         return;
       }
 

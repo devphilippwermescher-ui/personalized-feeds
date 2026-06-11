@@ -1,5 +1,6 @@
 export const PROFILE_VIEWERS_SYNC_INTERVAL_MS = 24 * 60 * 60 * 1000;
 export const PROFILE_VIEWERS_RETRY_DELAY_MS = 2 * 60 * 60 * 1000;
+export const PROFILE_VIEWERS_ATTEMPT_LEASE_MS = 5 * 60 * 1000;
 
 export type ProfileViewersSyncTrigger =
   | 'service_worker'
@@ -36,14 +37,7 @@ export interface ProfileViewersSyncLog {
   trigger: ProfileViewersSyncTrigger;
   runType: ProfileViewersSyncRunType;
   attemptNumber: 1 | 2;
-  status:
-    | 'success'
-    | 'no_changes'
-    | 'auth_error'
-    | 'network_error'
-    | 'api_error'
-    | 'parse_error'
-    | 'unknown_error';
+  status: 'success' | 'no_changes' | 'auth_error' | 'network_error' | 'api_error' | 'parse_error' | 'unknown_error';
   httpStatus?: number;
   responseLength?: number;
   visibleCount: number;
@@ -52,6 +46,7 @@ export interface ProfileViewersSyncLog {
   updatedCount: number;
   visibleProfileUsernames: string[];
   newProfileUsernames: string[];
+  recoveredFromInterruptedAttempt?: boolean;
   errorCode?: ProfileViewersSyncErrorCode;
   errorMessage?: string;
   nextScheduledAt: number;
@@ -65,6 +60,8 @@ export interface ProfileViewersSyncState {
   nextDueAt?: number;
   retryAt?: number;
   cycleStartedAt?: number;
+  attemptStartedAt?: number;
+  attemptExpiresAt?: number;
   attemptsInCycle: 0 | 1 | 2;
   lastError?: ProfileViewersSyncErrorInfo;
   logs: ProfileViewersSyncLog[];
@@ -75,6 +72,7 @@ export interface ProfileViewersSyncDecision {
   shouldRun: boolean;
   attemptNumber?: 1 | 2;
   runType?: ProfileViewersSyncRunType;
+  recoveredFromInterruptedAttempt?: boolean;
 }
 
 export function createProfileViewersSyncState(userId: string, now: number): ProfileViewersSyncState {
@@ -101,6 +99,20 @@ export function decideProfileViewersSync(
     };
   }
 
+  const interruptedAttemptExpiresAt =
+    state.attemptsInCycle === 1 && !state.retryAt && !state.lastError
+      ? state.attemptExpiresAt ||
+        (state.lastAttemptAt ? state.lastAttemptAt + PROFILE_VIEWERS_ATTEMPT_LEASE_MS : undefined)
+      : undefined;
+  if (interruptedAttemptExpiresAt && now >= interruptedAttemptExpiresAt) {
+    return {
+      shouldRun: true,
+      attemptNumber: 2,
+      runType: 'retry',
+      recoveredFromInterruptedAttempt: true,
+    };
+  }
+
   if (!state.nextDueAt) {
     return { shouldRun: true, attemptNumber: 1, runType: 'initial' };
   }
@@ -115,9 +127,7 @@ export function decideProfileViewersSync(
 
   const canRetry = state.attemptsInCycle === 1 && Boolean(state.retryAt);
   const authRetryOnLinkedInActivity =
-    canRetry &&
-    trigger === 'linkedin_activity' &&
-    state.lastError?.code === 'linkedin_auth_required';
+    canRetry && trigger === 'linkedin_activity' && state.lastError?.code === 'linkedin_auth_required';
 
   if (canRetry && ((state.retryAt || 0) <= now || authRetryOnLinkedInActivity)) {
     return { shouldRun: true, attemptNumber: 2, runType: 'retry' };
@@ -138,8 +148,11 @@ export function startProfileViewersSyncAttempt(
     cycleStartedAt,
     attemptsInCycle: attemptNumber,
     lastAttemptAt: now,
+    attemptStartedAt: now,
+    attemptExpiresAt: attemptNumber === 1 ? now + PROFILE_VIEWERS_ATTEMPT_LEASE_MS : undefined,
     nextDueAt: attemptNumber === 1 ? cycleStartedAt + PROFILE_VIEWERS_SYNC_INTERVAL_MS : state.nextDueAt,
     retryAt: undefined,
+    lastError: attemptNumber === 1 ? undefined : state.lastError,
     updatedAt: now,
   };
 }
@@ -154,6 +167,8 @@ export function completeProfileViewersSyncSuccess(
     nextDueAt: finishedAt + PROFILE_VIEWERS_SYNC_INTERVAL_MS,
     retryAt: undefined,
     cycleStartedAt: undefined,
+    attemptStartedAt: undefined,
+    attemptExpiresAt: undefined,
     attemptsInCycle: 0,
     lastError: undefined,
     updatedAt: finishedAt,
@@ -174,6 +189,8 @@ export function completeProfileViewersSyncFailure(
     cycleStartedAt,
     nextDueAt: cycleStartedAt + PROFILE_VIEWERS_SYNC_INTERVAL_MS,
     retryAt: attemptNumber === 1 ? finishedAt + PROFILE_VIEWERS_RETRY_DELAY_MS : undefined,
+    attemptStartedAt: undefined,
+    attemptExpiresAt: undefined,
     lastError: {
       ...error,
       at: finishedAt,
@@ -185,9 +202,13 @@ export function completeProfileViewersSyncFailure(
 export function getNextProfileViewersAlarmAt(state: ProfileViewersSyncState): number | null {
   if (
     state.attemptsInCycle === 1 &&
-    state.retryAt &&
-    (!state.nextDueAt || state.retryAt < state.nextDueAt)
+    state.attemptExpiresAt &&
+    (!state.nextDueAt || state.attemptExpiresAt < state.nextDueAt)
   ) {
+    return state.attemptExpiresAt;
+  }
+
+  if (state.attemptsInCycle === 1 && state.retryAt && (!state.nextDueAt || state.retryAt < state.nextDueAt)) {
     return state.retryAt;
   }
 

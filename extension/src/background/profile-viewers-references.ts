@@ -32,8 +32,8 @@ function addReference(
 export function extractProfileViewerReferences(payload: string): ProfileViewerReference[] {
   const references: ProfileViewerReference[] = [];
   const seenUsernames = new Set<string>();
-  const profilePathPattern = /(?:https:\/\/www\.linkedin\.com)?\/in\/([a-z0-9%_.~-]+)/gi;
-  const connectStatePattern = /connect-button-disabled-([a-z0-9][a-z0-9-]{2,})/gi;
+  const profilePathPattern = /(?:https:\/\/www\.linkedin\.com)?\/in\/([\p{L}\p{N}%_.~-]+)/giu;
+  const connectStatePattern = /connect-button-disabled-([\p{L}\p{N}][\p{L}\p{N}-]{2,})/giu;
 
   let match: RegExpExecArray | null;
   while ((match = profilePathPattern.exec(payload))) {

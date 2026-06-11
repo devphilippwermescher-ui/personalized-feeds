@@ -62,6 +62,13 @@ import {
   humanizeLinkedInUsername,
   isUsableLinkedInProfileImageUrl,
 } from 'shared/profile-viewer-quality';
+import { fetchWithTimeout } from './fetch-with-timeout';
+import { validateProfileViewersRscPayload } from './profile-viewers-response';
+import {
+  hasCompleteProfileViewerIdentity,
+  mapWithConcurrency,
+  profileViewerNeedsEnrichment,
+} from './profile-viewers-enrichment-policy';
 
 type OffscreenAuthResult =
   | {
@@ -96,6 +103,10 @@ const FEATURE_SETTINGS_STORAGE_KEY = 'pf_feature_settings';
 const PROFILE_VIEWERS_ALARM_NAME = 'profile-viewers-sync';
 const PROFILE_VIEWERS_SYNC_STORAGE_KEY = 'pf_profile_viewers_sync';
 const PROFILE_VIEWERS_SYNC_LOG_LIMIT = 50;
+const PROFILE_VIEWERS_RSC_TIMEOUT_MS = 20_000;
+const PROFILE_VIEWERS_PEOPLE_SEARCH_TIMEOUT_MS = 10_000;
+const PROFILE_VIEWERS_PROFILE_PAGE_TIMEOUT_MS = 15_000;
+const PROFILE_VIEWERS_ENRICHMENT_CONCURRENCY = 2;
 const PROFILE_VIEWERS_URL = 'https://www.linkedin.com/me/profile-views?skipRedirect=true';
 const PROFILE_VIEWERS_RSC_URL = 'https://www.linkedin.com/flagship-web/rsc-action/actions/server-request?sduiid=WvmpEntityList';
 const PROFILE_VIEWERS_RSC_BODY = JSON.stringify({
@@ -275,7 +286,7 @@ function parseVisibleProfileViewers(html: string): ProfileViewerInput[] {
   const anchorPattern = /<a\b[^>]*\bhref\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))[^>]*>([\s\S]*?)<\/a>/gi;
 
   let match: RegExpExecArray | null;
-  while ((match = anchorPattern.exec(html)) && viewers.length < 3) {
+  while ((match = anchorPattern.exec(html))) {
     const href = match[2] || match[3] || match[4] || '';
     const viewer = extractProfileViewerFromAnchor(href, match[5] || '');
     if (!viewer || seenUsernames.has(viewer.linkedinUsername)) {
@@ -401,10 +412,6 @@ function parseProfileViewersFromRscPayload(payload: string): ProfileViewerInput[
   const references = extractProfileViewerReferences(normalizedPayload);
 
   for (const profile of references) {
-    if (viewers.length >= 3) {
-      break;
-    }
-
     if (seenUsernames.has(profile.linkedinUsername)) {
       continue;
     }
@@ -494,18 +501,22 @@ async function fetchProfileViewersFromRsc(): Promise<{
 
   let response: Response;
   try {
-    response = await fetch(PROFILE_VIEWERS_RSC_URL, {
-      method: 'POST',
-      credentials: 'include',
-      headers: {
-        accept: '*/*',
-        'content-type': 'application/json',
-        'csrf-token': csrfToken,
-        'x-li-anchor-page-key': 'd_flagship3_leia_wvmp',
-        'x-li-rsc-stream': 'true',
+    response = await fetchWithTimeout(
+      PROFILE_VIEWERS_RSC_URL,
+      {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          accept: '*/*',
+          'content-type': 'application/json',
+          'csrf-token': csrfToken,
+          'x-li-anchor-page-key': 'd_flagship3_leia_wvmp',
+          'x-li-rsc-stream': 'true',
+        },
+        body: PROFILE_VIEWERS_RSC_BODY,
       },
-      body: PROFILE_VIEWERS_RSC_BODY,
-    });
+      PROFILE_VIEWERS_RSC_TIMEOUT_MS
+    );
   } catch (error) {
     throw new ProfileViewersSyncError(
       error instanceof Error ? error.message : 'LinkedIn profile viewers API network request failed',
@@ -524,6 +535,15 @@ async function fetchProfileViewersFromRsc(): Promise<{
   }
 
   const payload = await response.text();
+  const validation = validateProfileViewersRscPayload(payload);
+  if (!validation.valid) {
+    throw new ProfileViewersSyncError(
+      validation.reason,
+      validation.authRequired ? 'linkedin_auth_required' : 'parse_error',
+      response.status
+    );
+  }
+
   try {
     return {
       viewers: parseProfileViewersFromPayload(payload),
@@ -608,10 +628,6 @@ async function scrapeProfileViewersFromPageDom(): Promise<ProfileViewerInput[]> 
     const anchors = Array.from(document.querySelectorAll<HTMLAnchorElement>('a[href*="/in/"]'));
 
     for (const anchor of anchors) {
-      if (viewers.length >= 3) {
-        break;
-      }
-
       const profile = normalizeProfileUrl(anchor.href);
       if (!profile || seenUsernames.has(profile.linkedinUsername)) {
         continue;
@@ -715,6 +731,7 @@ interface ProfileViewerEnrichmentDiagnostic {
   ignoredDuplicateExistingImage: boolean;
   removedAmbiguousFinalImage: boolean;
   hasFinalImage: boolean;
+  skippedEnrichment: boolean;
   profilePageStatus?: number;
 }
 
@@ -723,9 +740,7 @@ async function fetchProfileViewerPeopleSearchMatch(
   csrfToken: string
 ): Promise<LinkedInPeopleSearchResult | null> {
   const targetUsername = viewer.linkedinUsername.trim().toLowerCase();
-  const queries = Array.from(
-    new Set([viewer.displayName.trim(), viewer.linkedinUsername.trim()].filter(Boolean))
-  );
+  const queries = Array.from(new Set([viewer.displayName.trim(), viewer.linkedinUsername.trim()].filter(Boolean)));
 
   for (const query of queries) {
     const variables = `(keywords:${encodeURIComponent(query)})`;
@@ -734,31 +749,29 @@ async function fetchProfileViewerPeopleSearchMatch(
       '&queryId=voyagerSearchDashSharing.4e26d0f2284baec4fa3fe92c090494cd';
 
     try {
-      const response = await fetch(url, {
-        method: 'GET',
-        credentials: 'include',
-        headers: {
-          accept: 'application/vnd.linkedin.normalized+json+2.1',
-          'csrf-token': csrfToken,
-          'x-restli-protocol-version': '2.0.0',
+      const response = await fetchWithTimeout(
+        url,
+        {
+          method: 'GET',
+          credentials: 'include',
+          headers: {
+            accept: 'application/vnd.linkedin.normalized+json+2.1',
+            'csrf-token': csrfToken,
+            'x-restli-protocol-version': '2.0.0',
+          },
         },
-      });
+        PROFILE_VIEWERS_PEOPLE_SEARCH_TIMEOUT_MS
+      );
       if (!response.ok) {
         continue;
       }
 
-      const exactMatch = findLinkedInPeopleSearchResultByUsername(
-        await response.json(),
-        targetUsername
-      );
+      const exactMatch = findLinkedInPeopleSearchResultByUsername(await response.json(), targetUsername);
       if (exactMatch) {
         return exactMatch;
       }
     } catch (error) {
-      console.warn(
-        `[profile-viewers-sync] People search failed for ${viewer.linkedinUsername}:`,
-        error
-      );
+      console.warn(`[profile-viewers-sync] People search failed for ${viewer.linkedinUsername}:`, error);
     }
   }
 
@@ -775,9 +788,7 @@ async function enrichProfileViewerFromProfilePage(
   diagnostic: ProfileViewerEnrichmentDiagnostic;
 }> {
   const peopleSearchMatch = await fetchProfileViewerPeopleSearchMatch(viewer, csrfToken);
-  const peopleSearchImageUrl = isUsableLinkedInProfileImageUrl(
-    peopleSearchMatch?.profileImageUrl
-  )
+  const peopleSearchImageUrl = isUsableLinkedInProfileImageUrl(peopleSearchMatch?.profileImageUrl)
     ? peopleSearchMatch.profileImageUrl
     : '';
   const viewerWithTrustedData: ProfileViewerInput = {
@@ -804,18 +815,32 @@ async function enrichProfileViewerFromProfilePage(
       ignoredDuplicateExistingImage,
       removedAmbiguousFinalImage: false,
       hasFinalImage: Boolean(enrichedViewer.profileImageUrl),
+      skippedEnrichment: false,
       profilePageStatus,
     },
   });
 
+  const viewerAfterPeopleSearch = mergeProfileViewerWithPageMetadata(
+    viewerWithTrustedData,
+    { displayName: '', profileImageUrl: '' },
+    existingViewer
+  );
+  if (hasCompleteProfileViewerIdentity(viewerAfterPeopleSearch)) {
+    return createResult(viewerAfterPeopleSearch);
+  }
+
   try {
-    const response = await fetch(viewer.linkedinUrl, {
-      method: 'GET',
-      credentials: 'include',
-      headers: {
-        accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    const response = await fetchWithTimeout(
+      viewer.linkedinUrl,
+      {
+        method: 'GET',
+        credentials: 'include',
+        headers: {
+          accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        },
       },
-    });
+      PROFILE_VIEWERS_PROFILE_PAGE_TIMEOUT_MS
+    );
 
     if (!response.ok) {
       return createResult(
@@ -835,10 +860,7 @@ async function enrichProfileViewerFromProfilePage(
       Boolean(metadata.profileImageUrl)
     );
   } catch (error) {
-    console.warn(
-      `[profile-viewers-sync] Profile enrichment failed for ${viewer.linkedinUsername}:`,
-      error
-    );
+    console.warn(`[profile-viewers-sync] Profile enrichment failed for ${viewer.linkedinUsername}:`, error);
     return createResult(
       mergeProfileViewerWithPageMetadata(
         viewerWithTrustedData,
@@ -850,22 +872,20 @@ async function enrichProfileViewerFromProfilePage(
 }
 
 async function enrichVisibleProfileViewers(
-  userId: string,
-  viewers: ProfileViewerInput[]
+  viewers: ProfileViewerInput[],
+  existingViewers: ProfileViewer[]
 ): Promise<{
   viewers: ProfileViewerInput[];
   diagnostics: ProfileViewerEnrichmentDiagnostic[];
 }> {
-  const existingViewers = await getProfileViewers(userId);
-  const existingByUsername = new Map(
-    existingViewers.map((viewer) => [viewer.linkedinUsername.toLowerCase(), viewer])
-  );
+  if (viewers.length === 0) {
+    return { viewers: [], diagnostics: [] };
+  }
+
+  const existingByUsername = new Map(existingViewers.map((viewer) => [viewer.linkedinUsername.toLowerCase(), viewer]));
   const ambiguousExistingImages = getAmbiguousProfileViewerImageUrls(existingViewers);
   const csrfToken = await getLinkedInCsrfToken();
-  const enrichedViewers: ProfileViewerInput[] = [];
-  const diagnostics: ProfileViewerEnrichmentDiagnostic[] = [];
-
-  for (const viewer of viewers) {
+  const enrichments = await mapWithConcurrency(viewers, PROFILE_VIEWERS_ENRICHMENT_CONCURRENCY, async (viewer) => {
     const storedViewer = existingByUsername.get(viewer.linkedinUsername.toLowerCase());
     const existingImageUrl = storedViewer?.profileImageUrl?.trim() || '';
     const ignoredDuplicateExistingImage = ambiguousExistingImages.has(existingImageUrl);
@@ -875,15 +895,35 @@ async function enrichVisibleProfileViewers(
           profileImageUrl: ignoredDuplicateExistingImage ? '' : storedViewer.profileImageUrl,
         }
       : undefined;
-    const enrichment = await enrichProfileViewerFromProfilePage(
-      viewer,
-      existingViewer,
-      csrfToken,
-      ignoredDuplicateExistingImage
-    );
-    enrichedViewers.push(enrichment.viewer);
-    diagnostics.push(enrichment.diagnostic);
-  }
+
+    if (!profileViewerNeedsEnrichment(viewer, storedViewer, ignoredDuplicateExistingImage)) {
+      const mergedViewer = mergeProfileViewerWithPageMetadata(
+        viewer,
+        { displayName: '', profileImageUrl: '' },
+        existingViewer
+      );
+      return {
+        viewer: mergedViewer,
+        diagnostic: {
+          linkedinUsername: viewer.linkedinUsername,
+          parsedDisplayName: viewer.displayName,
+          finalDisplayName: mergedViewer.displayName,
+          hadRscImage: Boolean(viewer.profileImageUrl),
+          hadPeopleSearchImage: false,
+          hadProfilePageImage: false,
+          hadExistingImage: Boolean(existingViewer?.profileImageUrl),
+          ignoredDuplicateExistingImage,
+          removedAmbiguousFinalImage: false,
+          hasFinalImage: Boolean(mergedViewer.profileImageUrl),
+          skippedEnrichment: true,
+        },
+      };
+    }
+
+    return enrichProfileViewerFromProfilePage(viewer, existingViewer, csrfToken, ignoredDuplicateExistingImage);
+  });
+  const enrichedViewers = enrichments.map((enrichment) => enrichment.viewer);
+  const diagnostics = enrichments.map((enrichment) => enrichment.diagnostic);
 
   const ambiguousFinalImages = getAmbiguousProfileViewerImageUrls(enrichedViewers);
   enrichedViewers.forEach((viewer, index) => {
@@ -918,10 +958,11 @@ async function syncProfileViewersViaApi(authenticatedUser?: User): Promise<Profi
   }
 
   const { viewers: parsedViewers, httpStatus, responseLength } = await fetchProfileViewersFromRsc();
-  const enrichment = await enrichVisibleProfileViewers(user.uid, parsedViewers);
+  const existingViewers = await getProfileViewers(user.uid);
+  const enrichment = await enrichVisibleProfileViewers(parsedViewers, existingViewers);
   const visibleViewers = enrichment.viewers;
   console.info('[profile-viewers-sync] enrichment diagnostics', enrichment.diagnostics);
-  const result = await upsertProfileViewers(user.uid, visibleViewers);
+  const result = await upsertProfileViewers(user.uid, visibleViewers, existingViewers);
   return {
     ...result,
     visibleCount: visibleViewers.length,
@@ -941,8 +982,11 @@ async function syncProfileViewersViaPage(): Promise<ProfileViewersSyncResult> {
     );
   }
 
-  const visibleViewers = await scrapeProfileViewersFromInactiveTab();
-  const result = await upsertProfileViewers(user.uid, visibleViewers);
+  const [visibleViewers, existingViewers] = await Promise.all([
+    scrapeProfileViewersFromInactiveTab(),
+    getProfileViewers(user.uid),
+  ]);
+  const result = await upsertProfileViewers(user.uid, visibleViewers, existingViewers);
   return {
     ...result,
     visibleCount: visibleViewers.length,
@@ -1277,6 +1321,9 @@ async function runProfileViewersSyncCoordinator(
   const runType: ProfileViewersSyncRunType = decision.runType;
   state = startProfileViewersSyncAttempt(state, startedAt, attemptNumber);
   await setProfileViewersSyncState(state);
+  await scheduleNextProfileViewersAlarm(state).catch((error) => {
+    console.warn('[profile-viewers-sync] Failed to schedule attempt recovery alarm:', error);
+  });
 
   try {
     const result = await syncProfileViewersViaApi(user);
@@ -1299,6 +1346,7 @@ async function runProfileViewersSyncCoordinator(
       updatedCount: result.updatedCount,
       visibleProfileUsernames: result.visibleProfileUsernames,
       newProfileUsernames: result.newProfileUsernames,
+      recoveredFromInterruptedAttempt: decision.recoveredFromInterruptedAttempt,
       nextScheduledAt: state.nextDueAt || finishedAt,
     };
     state = appendProfileViewersSyncLog(state, log);
@@ -1329,6 +1377,7 @@ async function runProfileViewersSyncCoordinator(
       updatedCount: 0,
       visibleProfileUsernames: [],
       newProfileUsernames: [],
+      recoveredFromInterruptedAttempt: decision.recoveredFromInterruptedAttempt,
       errorCode: syncError.code,
       errorMessage: syncError.message,
       nextScheduledAt: getNextProfileViewersAlarmAt(state) || state.nextDueAt || finishedAt,
