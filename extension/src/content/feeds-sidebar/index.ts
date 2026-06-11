@@ -260,50 +260,21 @@ function updateProfileViewersState(viewers: ProfileViewer[]): void {
   feedsList = withProfileViewersFeed(feedsList);
 }
 
-async function refreshProfileViewers(): Promise<void> {
+async function refreshProfileViewersAfterBackgroundSync(): Promise<void> {
   const response = await sendMsg({ type: 'PROFILE_VIEWERS_GET' });
   if (!Array.isArray(response?.viewers)) {
     return;
   }
 
   updateProfileViewersState(response.viewers as ProfileViewer[]);
-}
-
-async function syncProfileViewersManually(messageType: string, label: string): Promise<void> {
-  loadingMembersFeedId = PROFILE_VIEWERS_FEED_ID;
-  expandedFeedId = PROFILE_VIEWERS_FEED_ID;
   renderSidebarContent();
+}
 
-  const syncResponse = await sendMsg({ type: messageType });
-  if (!syncResponse?.success) {
-    loadingMembersFeedId = null;
-    renderSidebarContent();
-    showToast((syncResponse?.error as string) || `Failed to refresh profile visitors via ${label}`, 'error');
-    return;
+chrome.runtime.onMessage.addListener((message) => {
+  if (message.type === 'PROFILE_VIEWERS_SYNC_COMPLETED') {
+    void refreshProfileViewersAfterBackgroundSync();
   }
-
-  await refreshProfileViewers();
-  await loadFeedMembers(PROFILE_VIEWERS_FEED_ID);
-
-  const visibleCount = Number(syncResponse.visibleCount || 0);
-  const newCount = Number(syncResponse.newCount || 0);
-  showToast(
-    newCount > 0
-      ? `${newCount} new profile visitor${newCount === 1 ? '' : 's'} saved via ${label}`
-      : visibleCount > 0
-        ? `Profile visitors are up to date via ${label}`
-        : `No visible profile visitors found via ${label}`,
-    visibleCount > 0 ? 'success' : 'error'
-  );
-}
-
-async function refreshProfileViewersViaApi(): Promise<void> {
-  await syncProfileViewersManually('PROFILE_VIEWERS_SYNC_API_NOW', 'API');
-}
-
-async function refreshProfileViewersViaPage(): Promise<void> {
-  await syncProfileViewersManually('PROFILE_VIEWERS_SYNC_PAGE_NOW', 'LinkedIn page');
-}
+});
 
 async function refreshSharedFeeds(): Promise<void> {
   const sharedResp = await sendMsg({ type: 'FEEDS_GET_SHARED_ALL' });
@@ -955,8 +926,6 @@ function renderSidebarInner(container: HTMLElement): void {
       showDuplicateSharedFeedModal: (feed) => showDuplicateSharedFeedModal(feed, getFeedActionDeps()),
       unfollowSharedFeed: (feed) => unfollowSharedFeed(feed, getFeedActionDeps()),
       deleteFeed: (feed) => deleteFeedAction(feed, getFeedActionDeps()),
-      refreshProfileViewersViaApi,
-      refreshProfileViewersViaPage,
       handleMemberDelete: (feedId, memberId) => handleMemberDelete(feedId, memberId, getMemberActionDeps()),
       openDashboard: () => window.open(DASHBOARD_URL, '_blank'),
       getFeeds: () => (activeFeedTab === 'owned' ? feedsList : sharedFeedsList),

@@ -53,6 +53,9 @@ onFeatureSettingsChange(applyFeatureSettings);
 function onPageReady(): void {
   domReady = true;
   applyFeatureUI();
+  chrome.runtime.sendMessage({ type: 'PROFILE_VIEWERS_LINKEDIN_ACTIVITY' }).catch(() => {
+    /* background may be unavailable while the extension is reloading */
+  });
 }
 
 if (document.readyState === 'complete') {

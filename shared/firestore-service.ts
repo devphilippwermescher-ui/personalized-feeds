@@ -24,6 +24,11 @@ import {
   normalizeLinkedInUsername,
   normalizeMemberNumericId,
 } from './linkedin-identity';
+import {
+  chooseProfileViewerDisplayName,
+  chooseProfileViewerImageUrl,
+  getAmbiguousProfileViewerImageUrls,
+} from './profile-viewer-quality';
 import type {
   Feed,
   FeedMember,
@@ -184,10 +189,28 @@ function keepExistingIfIncomingEmpty(incoming: string | undefined, existing: str
 export async function upsertProfileViewers(
   userId: string,
   viewers: ProfileViewerInput[]
-): Promise<{ savedCount: number; newCount: number }> {
+): Promise<{
+  savedCount: number;
+  newCount: number;
+  newProfileUsernames: string[];
+}> {
   let savedCount = 0;
   let newCount = 0;
+  const newProfileUsernames: string[] = [];
   const now = Date.now();
+  const existingSnapshot = await getDocs(profileViewersCollection(userId));
+  const existingByUsername = new Map(
+    existingSnapshot.docs.map((snapshot) => [
+      snapshot.id.toLowerCase(),
+      snapshot.data() as Partial<ProfileViewer>,
+    ])
+  );
+  const ambiguousExistingImages = getAmbiguousProfileViewerImageUrls(
+    existingSnapshot.docs.map((snapshot) => ({
+      linkedinUsername: snapshot.id,
+      profileImageUrl: (snapshot.data() as Partial<ProfileViewer>).profileImageUrl,
+    }))
+  );
 
   for (const viewer of viewers) {
     const linkedinUsername = normalizeLinkedInUsername(viewer.linkedinUsername || getUsernameFromLinkedInUrl(viewer.linkedinUrl));
@@ -196,9 +219,13 @@ export async function upsertProfileViewers(
     }
 
     const viewerRef = doc(profileViewersCollection(userId), linkedinUsername);
-    const existing = await getDoc(viewerRef);
-    const existingViewer = existing.exists() ? (existing.data() as Partial<ProfileViewer>) : {};
-    const firstSeenAt = existing.exists()
+    const existingViewer = existingByUsername.get(linkedinUsername) || {};
+    const existingProfileImageUrl = ambiguousExistingImages.has(
+      existingViewer.profileImageUrl?.trim() || ''
+    )
+      ? ''
+      : existingViewer.profileImageUrl;
+    const firstSeenAt = existingByUsername.has(linkedinUsername)
       ? (existingViewer.firstSeenAt || now)
       : now;
 
@@ -207,9 +234,16 @@ export async function upsertProfileViewers(
       {
         linkedinUrl: viewer.linkedinUrl,
         linkedinUsername,
-        displayName: viewer.displayName.trim(),
+        displayName: chooseProfileViewerDisplayName(
+          viewer.displayName,
+          existingViewer.displayName,
+          linkedinUsername
+        ),
         headline: keepExistingIfIncomingEmpty(viewer.headline, existingViewer.headline),
-        profileImageUrl: keepExistingIfIncomingEmpty(viewer.profileImageUrl, existingViewer.profileImageUrl),
+        profileImageUrl: chooseProfileViewerImageUrl(
+          viewer.profileImageUrl,
+          existingProfileImageUrl
+        ),
         connectionDegree: keepExistingIfIncomingEmpty(viewer.connectionDegree, existingViewer.connectionDegree),
         viewedAgoText: keepExistingIfIncomingEmpty(viewer.viewedAgoText, existingViewer.viewedAgoText),
         mutualConnectionsText: keepExistingIfIncomingEmpty(viewer.mutualConnectionsText, existingViewer.mutualConnectionsText),
@@ -221,12 +255,13 @@ export async function upsertProfileViewers(
     );
 
     savedCount += 1;
-    if (!existing.exists()) {
+    if (!existingByUsername.has(linkedinUsername)) {
       newCount += 1;
+      newProfileUsernames.push(linkedinUsername);
     }
   }
 
-  return { savedCount, newCount };
+  return { savedCount, newCount, newProfileUsernames };
 }
 
 export async function getProfileViewers(userId: string): Promise<ProfileViewer[]> {
