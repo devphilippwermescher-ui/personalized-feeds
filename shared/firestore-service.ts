@@ -190,7 +190,11 @@ function keepExistingIfIncomingEmpty(incoming: string | undefined, existing: str
 export async function upsertProfileViewers(
   userId: string,
   viewers: ProfileViewerInput[],
-  existingViewers: ProfileViewer[]
+  existingViewers: ProfileViewer[],
+  options: {
+    seenAt?: number;
+    positionOffset?: number;
+  } = {}
 ): Promise<{
   savedCount: number;
   newCount: number;
@@ -199,13 +203,14 @@ export async function upsertProfileViewers(
   let savedCount = 0;
   let newCount = 0;
   const newProfileUsernames: string[] = [];
-  const now = Date.now();
+  const now = options.seenAt || Date.now();
+  const positionOffset = options.positionOffset || 0;
   const existingByUsername = new Map(existingViewers.map((viewer) => [viewer.linkedinUsername.toLowerCase(), viewer]));
   const ambiguousExistingImages = getAmbiguousProfileViewerImageUrls(existingViewers);
   const validViewers = viewers
-    .map((viewer, lastSeenPosition) => ({
+    .map((viewer, index) => ({
       viewer,
-      lastSeenPosition,
+      lastSeenPosition: positionOffset + index,
       linkedinUsername: normalizeLinkedInUsername(
         viewer.linkedinUsername || getUsernameFromLinkedInUrl(viewer.linkedinUrl)
       ),

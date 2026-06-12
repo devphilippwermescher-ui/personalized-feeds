@@ -36,9 +36,13 @@ import type { User } from 'firebase/auth';
 import {
   completeProfileViewersSyncFailure,
   completeProfileViewersSyncSuccess,
+  canMakeProfileViewersRequest,
   createProfileViewersSyncState,
   decideProfileViewersSync,
   getNextProfileViewersAlarmAt,
+  getProfileViewersRateLimitResetAt,
+  getProfileViewersScheduledIntervalMs,
+  recordProfileViewersRequest,
   startProfileViewersSyncAttempt,
   type ProfileViewersSyncErrorCode,
   type ProfileViewersSyncLog,
@@ -69,6 +73,18 @@ import {
   mapWithConcurrency,
   profileViewerNeedsEnrichment,
 } from './profile-viewers-enrichment-policy';
+import { extractProfileViewerImageUrls } from './profile-viewers-rsc-images';
+import {
+  createProfileViewersPaginationBody,
+  createRecentProfileViewerSnapshot,
+  extendBackfillRecentProfileViewerSnapshot,
+  extractNextProfileViewersPaginationCursor,
+  PROFILE_VIEWERS_MAX_PAGES_PER_SYNC,
+  PROFILE_VIEWERS_PAGER_ID,
+  PROFILE_VIEWERS_RECENT_SNAPSHOT_LIMIT,
+  shouldStopIncrementalProfileViewerPagination,
+  type ProfileViewersPaginationCursor,
+} from './profile-viewers-pagination';
 
 type OffscreenAuthResult =
   | {
@@ -103,12 +119,16 @@ const FEATURE_SETTINGS_STORAGE_KEY = 'pf_feature_settings';
 const PROFILE_VIEWERS_ALARM_NAME = 'profile-viewers-sync';
 const PROFILE_VIEWERS_SYNC_STORAGE_KEY = 'pf_profile_viewers_sync';
 const PROFILE_VIEWERS_SYNC_LOG_LIMIT = 50;
+const PROFILE_VIEWERS_SYNC_LOG_USERNAME_LIMIT = 50;
 const PROFILE_VIEWERS_RSC_TIMEOUT_MS = 20_000;
 const PROFILE_VIEWERS_PEOPLE_SEARCH_TIMEOUT_MS = 10_000;
 const PROFILE_VIEWERS_PROFILE_PAGE_TIMEOUT_MS = 15_000;
 const PROFILE_VIEWERS_ENRICHMENT_CONCURRENCY = 2;
 const PROFILE_VIEWERS_URL = 'https://www.linkedin.com/me/profile-views?skipRedirect=true';
 const PROFILE_VIEWERS_RSC_URL = 'https://www.linkedin.com/flagship-web/rsc-action/actions/server-request?sduiid=WvmpEntityList';
+const PROFILE_VIEWERS_PAGINATION_URL =
+  `https://www.linkedin.com/flagship-web/rsc-action/actions/pagination?sduiid=` +
+  encodeURIComponent(PROFILE_VIEWERS_PAGER_ID);
 const PROFILE_VIEWERS_RSC_BODY = JSON.stringify({
   requestId: 'WvmpEntityList',
   serverRequest: {
@@ -409,6 +429,7 @@ function parseProfileViewersFromRscPayload(payload: string): ProfileViewerInput[
   const viewers: ProfileViewerInput[] = [];
   const seenUsernames = new Set<string>();
   const globalStrings = extractQuotedStrings(normalizedPayload);
+  const imageUrlsByDisplayName = extractProfileViewerImageUrls(normalizedPayload);
   const references = extractProfileViewerReferences(normalizedPayload);
 
   for (const profile of references) {
@@ -444,7 +465,7 @@ function parseProfileViewersFromRscPayload(payload: string): ProfileViewerInput[
       ...profile,
       displayName,
       headline: pickHeadlineFromStrings(strings, displayName, profile.linkedinUsername),
-      profileImageUrl: '',
+      profileImageUrl: imageUrlsByDisplayName.get(displayName.toLowerCase()) || '',
       connectionDegree,
       viewedAgoText,
       mutualConnectionsText,
@@ -486,23 +507,23 @@ async function getLinkedInCsrfToken(): Promise<string> {
   return (jsessionId?.value || '').replace(/^"|"$/g, '');
 }
 
-async function fetchProfileViewersFromRsc(): Promise<{
+interface ProfileViewersRscPage {
   viewers: ProfileViewerInput[];
   httpStatus: number;
   responseLength: number;
-}> {
-  const csrfToken = await getLinkedInCsrfToken();
-  if (!csrfToken) {
-    throw new ProfileViewersSyncError(
-      'LinkedIn CSRF token is unavailable. Make sure you are signed in to LinkedIn.',
-      'linkedin_auth_required'
-    );
-  }
+  nextCursor: ProfileViewersPaginationCursor | null;
+}
 
+async function fetchProfileViewersRscPage(
+  url: string,
+  body: string,
+  csrfToken: string,
+  allowPremiumPaginationProbe = false
+): Promise<ProfileViewersRscPage> {
   let response: Response;
   try {
     response = await fetchWithTimeout(
-      PROFILE_VIEWERS_RSC_URL,
+      url,
       {
         method: 'POST',
         credentials: 'include',
@@ -513,7 +534,7 @@ async function fetchProfileViewersFromRsc(): Promise<{
           'x-li-anchor-page-key': 'd_flagship3_leia_wvmp',
           'x-li-rsc-stream': 'true',
         },
-        body: PROFILE_VIEWERS_RSC_BODY,
+        body,
       },
       PROFILE_VIEWERS_RSC_TIMEOUT_MS
     );
@@ -545,10 +566,16 @@ async function fetchProfileViewersFromRsc(): Promise<{
   }
 
   try {
+    const viewers = parseProfileViewersFromPayload(payload);
     return {
-      viewers: parseProfileViewersFromPayload(payload),
+      viewers,
       httpStatus: response.status,
       responseLength: payload.length,
+      nextCursor:
+        extractNextProfileViewersPaginationCursor(payload) ||
+        (allowPremiumPaginationProbe && viewers.length > 3
+          ? { start: 10, count: 10 }
+          : null),
     };
   } catch (error) {
     throw new ProfileViewersSyncError(
@@ -557,6 +584,26 @@ async function fetchProfileViewersFromRsc(): Promise<{
       response.status
     );
   }
+}
+
+async function fetchProfileViewersFromRsc(csrfToken: string): Promise<ProfileViewersRscPage> {
+  return fetchProfileViewersRscPage(
+    PROFILE_VIEWERS_RSC_URL,
+    PROFILE_VIEWERS_RSC_BODY,
+    csrfToken,
+    true
+  );
+}
+
+async function fetchProfileViewersPaginationPage(
+  cursor: ProfileViewersPaginationCursor,
+  csrfToken: string
+): Promise<ProfileViewersRscPage> {
+  return fetchProfileViewersRscPage(
+    PROFILE_VIEWERS_PAGINATION_URL,
+    createProfileViewersPaginationBody(cursor),
+    csrfToken
+  );
 }
 
 function waitForTabComplete(tabId: number, timeoutMs = 25_000): Promise<void> {
@@ -718,6 +765,10 @@ interface ProfileViewersSyncResult {
   newProfileUsernames: string[];
   httpStatus?: number;
   responseLength?: number;
+  requestCount?: number;
+  pagesFetched?: number;
+  paginationComplete?: boolean;
+  paginationMode?: 'backfill' | 'incremental';
 }
 
 interface ProfileViewerEnrichmentDiagnostic {
@@ -948,7 +999,39 @@ async function enrichVisibleProfileViewers(
   };
 }
 
-async function syncProfileViewersViaApi(authenticatedUser?: User): Promise<ProfileViewersSyncResult> {
+function updateExistingProfileViewerSnapshot(
+  existingByUsername: Map<string, ProfileViewer>,
+  viewers: ProfileViewerInput[],
+  seenAt: number,
+  positionOffset: number
+): void {
+  viewers.forEach((viewer, index) => {
+    const username = viewer.linkedinUsername.toLowerCase();
+    const existing = existingByUsername.get(username);
+    const mergedViewer = mergeProfileViewerWithPageMetadata(
+      viewer,
+      { displayName: '', profileImageUrl: '' },
+      existing
+    );
+
+    existingByUsername.set(username, {
+      ...existing,
+      ...mergedViewer,
+      id: username,
+      linkedinUsername: username,
+      firstSeenAt: existing?.firstSeenAt || seenAt,
+      lastSeenAt: seenAt,
+      lastSeenPosition: positionOffset + index,
+      source: 'linkedin_profile_views',
+    });
+  });
+}
+
+async function syncProfileViewersViaApi(
+  authenticatedUser: User | undefined,
+  initialSyncState: ProfileViewersSyncState,
+  persistSyncProgress: (state: ProfileViewersSyncState) => Promise<void>
+): Promise<ProfileViewersSyncResult> {
   const user = authenticatedUser || (await getAuthenticatedFeedsUser());
   if (!user) {
     throw new ProfileViewersSyncError(
@@ -957,19 +1040,203 @@ async function syncProfileViewersViaApi(authenticatedUser?: User): Promise<Profi
     );
   }
 
-  const { viewers: parsedViewers, httpStatus, responseLength } = await fetchProfileViewersFromRsc();
   const existingViewers = await getProfileViewers(user.uid);
-  const enrichment = await enrichVisibleProfileViewers(parsedViewers, existingViewers);
-  const visibleViewers = enrichment.viewers;
-  console.info('[profile-viewers-sync] enrichment diagnostics', enrichment.diagnostics);
-  const result = await upsertProfileViewers(user.uid, visibleViewers, existingViewers);
+  const existingByUsername = new Map(
+    existingViewers.map((viewer) => [viewer.linkedinUsername.toLowerCase(), viewer])
+  );
+  const existingUsernames = new Set(existingByUsername.keys());
+  const csrfToken = await getLinkedInCsrfToken();
+  if (!csrfToken) {
+    throw new ProfileViewersSyncError(
+      'LinkedIn CSRF token is unavailable. Make sure you are signed in to LinkedIn.',
+      'linkedin_auth_required'
+    );
+  }
+
+  let syncState = initialSyncState;
+  const paginationMode = syncState.backfillStatus === 'complete' ? 'incremental' : 'backfill';
+  const syncSeenAt =
+    paginationMode === 'backfill'
+      ? syncState.backfillStartedAt || Date.now()
+      : Date.now();
+  const collectedViewers: ProfileViewerInput[] = [];
+  const newProfileUsernames: string[] = [];
+  const visitedCursors = new Set<number>();
+  let requestCount = 0;
+  let pagesFetched = 0;
+  let savedCount = 0;
+  let newCount = 0;
+  let responseLength = 0;
+  let httpStatus = 200;
+  let cursor: ProfileViewersPaginationCursor | null =
+    paginationMode === 'backfill' &&
+    syncState.backfillStatus === 'in_progress' &&
+    typeof syncState.backfillNextStart === 'number'
+      ? {
+          start: syncState.backfillNextStart,
+          count: syncState.backfillPageSize || 10,
+        }
+      : null;
+  let page =
+    cursor === null
+      ? await fetchProfileViewersFromRsc(csrfToken)
+      : await fetchProfileViewersPaginationPage(cursor, csrfToken);
+  let positionOffset = cursor?.start || 0;
+  if (cursor) {
+    visitedCursors.add(cursor.start);
+  }
+  let consecutivePagesWithoutNewProfiles = 0;
+  let paginationComplete = false;
+
+  while (true) {
+    requestCount += 1;
+    pagesFetched += 1;
+    responseLength += page.responseLength;
+    httpStatus = page.httpStatus;
+
+    const existingSnapshot = Array.from(existingByUsername.values());
+    const enrichment = await enrichVisibleProfileViewers(page.viewers, existingSnapshot);
+    const pageViewers = enrichment.viewers;
+    const pageHasNewProfiles = pageViewers.some(
+      (viewer) => !existingUsernames.has(viewer.linkedinUsername.toLowerCase())
+    );
+    consecutivePagesWithoutNewProfiles = pageHasNewProfiles
+      ? 0
+      : consecutivePagesWithoutNewProfiles + 1;
+
+    const writeResult = await upsertProfileViewers(
+      user.uid,
+      pageViewers,
+      existingSnapshot,
+      {
+        seenAt: syncSeenAt,
+        positionOffset,
+      }
+    );
+    savedCount += writeResult.savedCount;
+    newCount += writeResult.newCount;
+    newProfileUsernames.push(...writeResult.newProfileUsernames);
+    updateExistingProfileViewerSnapshot(
+      existingByUsername,
+      pageViewers,
+      syncSeenAt,
+      positionOffset
+    );
+    collectedViewers.splice(
+      0,
+      collectedViewers.length,
+      ...mergeProfileViewerCandidates([collectedViewers, pageViewers])
+    );
+
+    const nextCursor = page.nextCursor;
+    if (paginationMode === 'backfill') {
+      const completedBackfill = !nextCursor;
+      syncState = {
+        ...syncState,
+        backfillStatus: completedBackfill ? 'complete' : 'in_progress',
+        backfillNextStart: nextCursor?.start,
+        backfillPageSize: nextCursor?.count,
+        backfillStartedAt: syncState.backfillStartedAt || syncSeenAt,
+        backfillCompletedAt: completedBackfill ? Date.now() : undefined,
+        backfillPagesFetched: syncState.backfillPagesFetched + 1,
+        backfillProfilesSaved: syncState.backfillProfilesSaved + writeResult.savedCount,
+        recentProfileViewerUsernames: extendBackfillRecentProfileViewerSnapshot(
+          syncState.recentProfileViewerUsernames,
+          pageViewers.map((viewer) => viewer.linkedinUsername),
+          positionOffset
+        ),
+        updatedAt: Date.now(),
+      };
+      await persistSyncProgress(syncState);
+    }
+
+    if (!nextCursor) {
+      paginationComplete = true;
+      break;
+    }
+
+    if (
+      paginationMode === 'incremental' &&
+      shouldStopIncrementalProfileViewerPagination(
+        collectedViewers,
+        pageViewers,
+        existingUsernames,
+        syncState.recentProfileViewerUsernames,
+        consecutivePagesWithoutNewProfiles
+      )
+    ) {
+      paginationComplete = true;
+      break;
+    }
+
+    if (pagesFetched >= PROFILE_VIEWERS_MAX_PAGES_PER_SYNC) {
+      break;
+    }
+
+    if (visitedCursors.has(nextCursor.start)) {
+      throw new ProfileViewersSyncError(
+        `LinkedIn profile viewers pagination repeated cursor ${nextCursor.start}.`,
+        'parse_error',
+        page.httpStatus
+      );
+    }
+    visitedCursors.add(nextCursor.start);
+
+    if (!canMakeProfileViewersRequest(syncState, Date.now())) {
+      break;
+    }
+
+    syncState = recordProfileViewersRequest(syncState, Date.now());
+    if (paginationMode === 'backfill') {
+      syncState = {
+        ...syncState,
+        backfillStatus: 'in_progress',
+        backfillNextStart: nextCursor.start,
+        backfillPageSize: nextCursor.count,
+      };
+    }
+    await persistSyncProgress(syncState);
+
+    cursor = nextCursor;
+    positionOffset = cursor.start;
+    page = await fetchProfileViewersPaginationPage(cursor, csrfToken);
+  }
+
+  if (paginationMode === 'incremental') {
+    syncState = {
+      ...syncState,
+      recentProfileViewerUsernames: createRecentProfileViewerSnapshot(
+        collectedViewers.map((viewer) => viewer.linkedinUsername),
+        syncState.recentProfileViewerUsernames
+      ),
+      updatedAt: Date.now(),
+    };
+    await persistSyncProgress(syncState);
+  }
+
+  console.info('[profile-viewers-sync] pagination', {
+    mode: paginationMode,
+    pagesFetched,
+    requestCount,
+    profilesCollected: collectedViewers.length,
+    paginationComplete,
+    backfillStatus: syncState.backfillStatus,
+    backfillNextStart: syncState.backfillNextStart,
+  });
+
   return {
-    ...result,
-    visibleCount: visibleViewers.length,
-    updatedCount: result.savedCount - result.newCount,
-    visibleProfileUsernames: visibleViewers.map((viewer) => viewer.linkedinUsername),
+    savedCount,
+    newCount,
+    newProfileUsernames,
+    visibleCount: collectedViewers.length,
+    updatedCount: savedCount - newCount,
+    visibleProfileUsernames: collectedViewers.map((viewer) => viewer.linkedinUsername),
     httpStatus,
     responseLength,
+    requestCount,
+    pagesFetched,
+    paginationComplete,
+    paginationMode,
   };
 }
 
@@ -1176,20 +1443,71 @@ interface ProfileViewersSyncCoordinatorResult {
 let profileViewersSyncCoordinatorPromise: Promise<ProfileViewersSyncCoordinatorResult> | null = null;
 
 async function getProfileViewersSyncState(userId: string): Promise<ProfileViewersSyncState> {
+  const now = Date.now();
   const stored = await getStorageValue<{
     [PROFILE_VIEWERS_SYNC_STORAGE_KEY]?: Partial<ProfileViewersSyncState>;
   }>(PROFILE_VIEWERS_SYNC_STORAGE_KEY);
   const state = stored[PROFILE_VIEWERS_SYNC_STORAGE_KEY];
 
   if (state?.version !== 1 || state.userId !== userId) {
-    return createProfileViewersSyncState(userId, Date.now());
+    return createProfileViewersSyncState(userId, now);
   }
 
+  const isCurrentSchedulePolicy = state.schedulePolicyVersion === 2;
+
   return {
-    ...createProfileViewersSyncState(userId, Date.now()),
+    ...createProfileViewersSyncState(userId, now),
     ...state,
+    schedulePolicyVersion: 2,
+    nextDueAt: isCurrentSchedulePolicy ? state.nextDueAt : now,
+    retryAt: isCurrentSchedulePolicy ? state.retryAt : undefined,
+    cooldownUntil: isCurrentSchedulePolicy ? state.cooldownUntil : undefined,
+    cycleStartedAt: isCurrentSchedulePolicy ? state.cycleStartedAt : undefined,
+    attemptStartedAt: isCurrentSchedulePolicy ? state.attemptStartedAt : undefined,
+    attemptExpiresAt: isCurrentSchedulePolicy ? state.attemptExpiresAt : undefined,
+    requestWindowStartedAt: isCurrentSchedulePolicy ? state.requestWindowStartedAt : undefined,
+    lastError: isCurrentSchedulePolicy ? state.lastError : undefined,
+    requestCountInWindow:
+      isCurrentSchedulePolicy &&
+      typeof state.requestCountInWindow === 'number' &&
+      state.requestCountInWindow >= 0
+        ? state.requestCountInWindow
+        : 0,
+    consecutiveFailedCycles:
+      isCurrentSchedulePolicy &&
+      typeof state.consecutiveFailedCycles === 'number' &&
+      state.consecutiveFailedCycles >= 0
+        ? state.consecutiveFailedCycles
+        : 0,
+    backfillStatus:
+      state.backfillStatus === 'in_progress' || state.backfillStatus === 'complete'
+        ? state.backfillStatus
+        : 'not_started',
+    backfillPagesFetched:
+      typeof state.backfillPagesFetched === 'number' && state.backfillPagesFetched >= 0
+        ? state.backfillPagesFetched
+        : 0,
+    backfillProfilesSaved:
+      typeof state.backfillProfilesSaved === 'number' && state.backfillProfilesSaved >= 0
+        ? state.backfillProfilesSaved
+        : 0,
+    backfillNextStart:
+      typeof state.backfillNextStart === 'number' && state.backfillNextStart >= 0
+        ? state.backfillNextStart
+        : undefined,
+    backfillPageSize:
+      typeof state.backfillPageSize === 'number' && state.backfillPageSize > 0
+        ? state.backfillPageSize
+        : undefined,
+    recentProfileViewerUsernames: Array.isArray(state.recentProfileViewerUsernames)
+      ? state.recentProfileViewerUsernames.filter(
+          (username): username is string => typeof username === 'string'
+        ).slice(0, PROFILE_VIEWERS_RECENT_SNAPSHOT_LIMIT)
+      : [],
     attemptsInCycle:
-      state.attemptsInCycle === 1 || state.attemptsInCycle === 2 ? state.attemptsInCycle : 0,
+      isCurrentSchedulePolicy && (state.attemptsInCycle === 1 || state.attemptsInCycle === 2)
+        ? state.attemptsInCycle
+        : 0,
     logs: Array.isArray(state.logs) ? state.logs.slice(0, PROFILE_VIEWERS_SYNC_LOG_LIMIT) : [],
   };
 }
@@ -1319,16 +1637,21 @@ async function runProfileViewersSyncCoordinator(
   const startedAt = Date.now();
   const attemptNumber = decision.attemptNumber;
   const runType: ProfileViewersSyncRunType = decision.runType;
-  state = startProfileViewersSyncAttempt(state, startedAt, attemptNumber);
+  const attemptIntervalMs = getProfileViewersScheduledIntervalMs();
+  state = startProfileViewersSyncAttempt(state, startedAt, attemptNumber, attemptIntervalMs);
   await setProfileViewersSyncState(state);
   await scheduleNextProfileViewersAlarm(state).catch((error) => {
     console.warn('[profile-viewers-sync] Failed to schedule attempt recovery alarm:', error);
   });
 
   try {
-    const result = await syncProfileViewersViaApi(user);
+    const result = await syncProfileViewersViaApi(user, state, async (progressState) => {
+      state = progressState;
+      await setProfileViewersSyncState(state);
+    });
     const finishedAt = Date.now();
-    state = completeProfileViewersSyncSuccess(state, finishedAt);
+    const scheduledIntervalMs = getProfileViewersScheduledIntervalMs();
+    state = completeProfileViewersSyncSuccess(state, finishedAt, scheduledIntervalMs);
     const log: ProfileViewersSyncLog = {
       id: `${startedAt}-${attemptNumber}`,
       startedAt,
@@ -1340,13 +1663,28 @@ async function runProfileViewersSyncCoordinator(
       status: getProfileViewersSyncLogStatus(undefined, result.newCount),
       httpStatus: result.httpStatus,
       responseLength: result.responseLength,
+      requestCount: result.requestCount,
+      pagesFetched: result.pagesFetched,
+      paginationComplete: result.paginationComplete,
+      paginationMode: result.paginationMode,
+      backfillStatus: state.backfillStatus,
       visibleCount: result.visibleCount,
       savedCount: result.savedCount,
       newCount: result.newCount,
       updatedCount: result.updatedCount,
-      visibleProfileUsernames: result.visibleProfileUsernames,
-      newProfileUsernames: result.newProfileUsernames,
+      visibleProfileUsernames: result.visibleProfileUsernames.slice(
+        0,
+        PROFILE_VIEWERS_SYNC_LOG_USERNAME_LIMIT
+      ),
+      newProfileUsernames: result.newProfileUsernames.slice(
+        0,
+        PROFILE_VIEWERS_SYNC_LOG_USERNAME_LIMIT
+      ),
       recoveredFromInterruptedAttempt: decision.recoveredFromInterruptedAttempt,
+      requestCountInWindow: state.requestCountInWindow,
+      rateLimitResetAt: getProfileViewersRateLimitResetAt(state),
+      scheduledIntervalMs,
+      consecutiveFailedCycles: state.consecutiveFailedCycles,
       nextScheduledAt: state.nextDueAt || finishedAt,
     };
     state = appendProfileViewersSyncLog(state, log);
@@ -1378,6 +1716,11 @@ async function runProfileViewersSyncCoordinator(
       visibleProfileUsernames: [],
       newProfileUsernames: [],
       recoveredFromInterruptedAttempt: decision.recoveredFromInterruptedAttempt,
+      requestCountInWindow: state.requestCountInWindow,
+      rateLimitResetAt: getProfileViewersRateLimitResetAt(state),
+      consecutiveFailedCycles: state.consecutiveFailedCycles,
+      cooldownUntil: state.cooldownUntil,
+      backfillStatus: state.backfillStatus,
       errorCode: syncError.code,
       errorMessage: syncError.message,
       nextScheduledAt: getNextProfileViewersAlarmAt(state) || state.nextDueAt || finishedAt,
