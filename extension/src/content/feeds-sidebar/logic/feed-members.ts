@@ -30,12 +30,19 @@ interface FeedMembersDeps {
 }
 
 function startBackgroundStatusRefresh(feedId: string, members: FeedMemberInfo[], deps: FeedMembersDeps): void {
+  const profileMembers = members.some((member) => member.itemType === 'search')
+    ? members.filter((member) => member.itemType !== 'search')
+    : members;
+  if (profileMembers.length === 0) {
+    return;
+  }
+
   deps.getStatusFetchController()?.abort();
   const controller = new AbortController();
   deps.setStatusFetchController(controller);
 
   void deps.fetchStatusesProgressively(
-    members,
+    profileMembers,
     (member) => {
       void deps.persistResolvedMemberState(feedId, member);
       if (!deps.updateRenderedMemberState(feedId, member)) {
@@ -51,14 +58,21 @@ function startBackgroundStatusRefresh(feedId: string, members: FeedMemberInfo[],
 }
 
 function profileViewerToMember(viewer: Partial<FeedMemberInfo>): FeedMemberInfo | null {
-  if (!viewer.id || !viewer.linkedinUrl || !viewer.linkedinUsername || !viewer.displayName) {
+  if (
+    !viewer.id ||
+    !viewer.linkedinUrl ||
+    !viewer.displayName ||
+    (viewer.itemType !== 'search' && !viewer.linkedinUsername)
+  ) {
     return null;
   }
 
   return {
     id: viewer.id,
+    itemType: viewer.itemType || 'profile',
+    searchKey: viewer.searchKey,
     linkedinUrl: viewer.linkedinUrl,
-    linkedinUsername: viewer.linkedinUsername,
+    linkedinUsername: viewer.linkedinUsername || '',
     displayName: viewer.displayName,
     headline: viewer.headline || '',
     profileImageUrl: viewer.profileImageUrl || '',
@@ -219,6 +233,17 @@ export function renderMembersList(
       ${members
         .map((member) => {
           const status = getMemberStatus(member);
+          if (member.itemType === 'search') {
+            return renderMemberRow({
+              feedId: feed.id,
+              member,
+              messageButtonHtml: '',
+              statusActionHtml: '',
+              canEdit: false,
+              showMeta: true,
+            });
+          }
+
           const canMessage = status === 'loading' ? false : (member.canMessage ?? status === 'connected');
           // Relationship badges reflect the owner's connection context.
           // In shared feeds the recipient's relationship is unknown, so hide them entirely.
@@ -247,7 +272,14 @@ export function renderFeedPreview(feedId: string, feedMembersById: Record<string
     <div class="lfa-feed-preview">
       ${members
         .map((member) =>
-          member.profileImageUrl
+          member.itemType === 'search'
+            ? `<div class="lfa-feed-preview-avatar lfa-feed-preview-avatar--search" aria-label="${escapeHtml(member.displayName)}">
+                <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <circle cx="12" cy="8" r="4" fill="currentColor"></circle>
+                  <path d="M4.5 21a7.5 7.5 0 0 1 15 0" fill="currentColor"></path>
+                </svg>
+              </div>`
+            : member.profileImageUrl
             ? `<img class="lfa-feed-preview-avatar" src="${escapeHtml(member.profileImageUrl)}" alt="${escapeHtml(member.displayName)}" data-lfa-avatar-img="true" /><div class="lfa-feed-preview-avatar lfa-feed-preview-avatar--fallback" style="display:none;">${escapeHtml(getMemberInitials(member.displayName))}</div>`
             : `<div class="lfa-feed-preview-avatar lfa-feed-preview-avatar--fallback">${escapeHtml(getMemberInitials(member.displayName))}</div>`
         )

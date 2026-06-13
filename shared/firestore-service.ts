@@ -39,6 +39,9 @@ import type {
   LinkedInProfileData,
   ProfileViewer,
   ProfileViewerInput,
+  ProfileViewerListItem,
+  ProfileViewerSearch,
+  ProfileViewerSearchInput,
   SharedFeedSummary,
   UserFeatureSettings,
   UserProfile,
@@ -62,6 +65,10 @@ function followedFeedsCollection(userId: string) {
 
 function profileViewersCollection(userId: string) {
   return collection(getFirebaseDb(), 'users', userId, 'profileViewers');
+}
+
+function profileViewerSearchesCollection(userId: string) {
+  return collection(getFirebaseDb(), 'users', userId, 'profileViewerSearches');
 }
 
 function emailIndexCollection() {
@@ -90,6 +97,12 @@ function docToShareAccess(d: QueryDocumentSnapshot<DocumentData, DocumentData>):
 
 function docToProfileViewer(d: QueryDocumentSnapshot<DocumentData, DocumentData>): ProfileViewer {
   return { id: d.id, ...d.data() } as ProfileViewer;
+}
+
+function docToProfileViewerSearch(
+  d: QueryDocumentSnapshot<DocumentData, DocumentData>
+): ProfileViewerSearch {
+  return { id: d.id, ...d.data() } as ProfileViewerSearch;
 }
 
 function normalizeEmail(email: string): string {
@@ -126,6 +139,7 @@ const DEFAULT_USER_FEATURE_SETTINGS: UserFeatureSettings = {
   messagingButtons: true,
   postButtons: true,
   speechToComment: true,
+  hideProfileViewers: false,
 };
 
 // ── User ──
@@ -169,6 +183,7 @@ export async function getUserFeatureSettings(userId: string): Promise<UserFeatur
     messagingButtons: data.messagingButtons ?? DEFAULT_USER_FEATURE_SETTINGS.messagingButtons,
     postButtons: data.postButtons ?? DEFAULT_USER_FEATURE_SETTINGS.postButtons,
     speechToComment: data.speechToComment ?? DEFAULT_USER_FEATURE_SETTINGS.speechToComment,
+    hideProfileViewers: data.hideProfileViewers ?? DEFAULT_USER_FEATURE_SETTINGS.hideProfileViewers,
   };
 }
 
@@ -210,7 +225,7 @@ export async function upsertProfileViewers(
   const validViewers = viewers
     .map((viewer, index) => ({
       viewer,
-      lastSeenPosition: positionOffset + index,
+      lastSeenPosition: positionOffset + (viewer.listPosition ?? index),
       linkedinUsername: normalizeLinkedInUsername(
         viewer.linkedinUsername || getUsernameFromLinkedInUrl(viewer.linkedinUrl)
       ),
@@ -274,6 +289,100 @@ export async function getProfileViewers(userId: string): Promise<ProfileViewer[]
   const q = query(profileViewersCollection(userId), orderBy('lastSeenAt', 'desc'));
   const snapshot = await getDocs(q);
   return sortProfileViewersByRecency(snapshot.docs.map(docToProfileViewer));
+}
+
+export async function upsertProfileViewerSearches(
+  userId: string,
+  searches: ProfileViewerSearchInput[],
+  existingSearches: ProfileViewerSearch[],
+  options: {
+    seenAt?: number;
+    positionOffset?: number;
+  } = {}
+): Promise<{ savedCount: number; newCount: number }> {
+  const now = options.seenAt || Date.now();
+  const positionOffset = options.positionOffset || 0;
+  const existingByKey = new Map(
+    existingSearches.map((search) => [search.searchKey, search])
+  );
+  const uniqueSearches = new Map<string, ProfileViewerSearchInput>();
+
+  searches.forEach((search) => {
+    const searchKey = search.searchKey.trim();
+    if (searchKey && search.searchUrl.trim() && search.displayName.trim()) {
+      uniqueSearches.set(searchKey, search);
+    }
+  });
+
+  if (uniqueSearches.size > 500) {
+    throw new Error(
+      'A single profile visitors sync cannot persist more than 500 search segments.'
+    );
+  }
+
+  const batch = writeBatch(getFirebaseDb());
+  let savedCount = 0;
+  let newCount = 0;
+
+  for (const [searchKey, search] of uniqueSearches) {
+    const existing = existingByKey.get(searchKey);
+    const documentId = encodeURIComponent(searchKey);
+    const lastSeenPosition =
+      positionOffset + (search.listPosition ?? savedCount);
+
+    batch.set(
+      doc(profileViewerSearchesCollection(userId), documentId),
+      {
+        itemType: 'search',
+        searchKey,
+        searchUrl: search.searchUrl,
+        displayName: search.displayName,
+        keywords: search.keywords,
+        currentCompany: search.currentCompany || '',
+        viewedAgoText: keepExistingIfIncomingEmpty(
+          search.viewedAgoText,
+          existing?.viewedAgoText
+        ),
+        firstSeenAt: existing?.firstSeenAt || now,
+        lastSeenAt: now,
+        lastSeenPosition,
+        source: 'linkedin_profile_views',
+      } satisfies Omit<ProfileViewerSearch, 'id'>,
+      { merge: true }
+    );
+
+    savedCount += 1;
+    if (!existing) {
+      newCount += 1;
+    }
+  }
+
+  if (savedCount > 0) {
+    await batch.commit();
+  }
+
+  return { savedCount, newCount };
+}
+
+export async function getProfileViewerSearches(
+  userId: string
+): Promise<ProfileViewerSearch[]> {
+  const q = query(
+    profileViewerSearchesCollection(userId),
+    orderBy('lastSeenAt', 'desc')
+  );
+  const snapshot = await getDocs(q);
+  return sortProfileViewersByRecency(snapshot.docs.map(docToProfileViewerSearch));
+}
+
+export async function getProfileViewerItems(
+  userId: string
+): Promise<ProfileViewerListItem[]> {
+  const [viewers, searches] = await Promise.all([
+    getProfileViewers(userId),
+    getProfileViewerSearches(userId),
+  ]);
+  return sortProfileViewersByRecency([...viewers, ...searches]);
 }
 
 export async function updateProfileViewer(

@@ -10,6 +10,7 @@ export interface UserFeatureSettings {
   messagingButtons: boolean;
   postButtons: boolean;
   speechToComment: boolean;
+  hideProfileViewers: boolean;
 }
 
 export interface Feed {
@@ -52,7 +53,35 @@ export interface ProfileViewer {
 export type ProfileViewerInput = Omit<
   ProfileViewer,
   'id' | 'firstSeenAt' | 'lastSeenAt' | 'lastSeenPosition' | 'source'
->;
+> & {
+  sourceIndex?: number;
+  listPosition?: number;
+};
+
+export interface ProfileViewerSearch {
+  id: string;
+  itemType: 'search';
+  searchKey: string;
+  searchUrl: string;
+  displayName: string;
+  keywords: string;
+  currentCompany?: string;
+  viewedAgoText?: string;
+  firstSeenAt: number;
+  lastSeenAt: number;
+  lastSeenPosition?: number;
+  source: 'linkedin_profile_views';
+}
+
+export type ProfileViewerSearchInput = Omit<
+  ProfileViewerSearch,
+  'id' | 'firstSeenAt' | 'lastSeenAt' | 'lastSeenPosition' | 'source'
+> & {
+  sourceIndex?: number;
+  listPosition?: number;
+};
+
+export type ProfileViewerListItem = ProfileViewer | ProfileViewerSearch;
 
 export type FeedShareRole = 'reader' | 'editor';
 

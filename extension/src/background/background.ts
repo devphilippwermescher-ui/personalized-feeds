@@ -16,8 +16,11 @@ import {
   getFeedShares,
   getFollowedFeeds,
   getUserFeatureSettings,
+  getProfileViewerItems,
+  getProfileViewerSearches,
   getProfileViewers,
   removeProfileViewer,
+  upsertProfileViewerSearches,
   upsertProfileViewers,
   updateProfileViewer,
   shareFeedWithUser,
@@ -30,6 +33,7 @@ import type {
   LinkedInProfileData,
   ProfileViewer,
   ProfileViewerInput,
+  ProfileViewerSearchInput,
   UserFeatureSettings,
 } from 'shared/types';
 import type { User } from 'firebase/auth';
@@ -40,6 +44,7 @@ import {
   createProfileViewersSyncState,
   decideProfileViewersSync,
   getNextProfileViewersAlarmAt,
+  getProfileViewersAuthRecoveryPlan,
   getProfileViewersRateLimitResetAt,
   getProfileViewersScheduledIntervalMs,
   recordProfileViewersRequest,
@@ -85,6 +90,7 @@ import {
   shouldStopIncrementalProfileViewerPagination,
   type ProfileViewersPaginationCursor,
 } from './profile-viewers-pagination';
+import { extractProfileViewerSearches } from './profile-viewer-searches';
 
 type OffscreenAuthResult =
   | {
@@ -119,6 +125,8 @@ const FEATURE_SETTINGS_STORAGE_KEY = 'pf_feature_settings';
 const PROFILE_VIEWERS_ALARM_NAME = 'profile-viewers-sync';
 const PROFILE_VIEWERS_SYNC_STORAGE_KEY = 'pf_profile_viewers_sync';
 const PROFILE_VIEWERS_SYNC_LOG_LIMIT = 50;
+const PROFILE_VIEWERS_WAKE_LOG_STORAGE_KEY = 'pf_profile_viewers_wake_events';
+const PROFILE_VIEWERS_WAKE_LOG_LIMIT = 1000;
 const PROFILE_VIEWERS_SYNC_LOG_USERNAME_LIMIT = 50;
 const PROFILE_VIEWERS_RSC_TIMEOUT_MS = 20_000;
 const PROFILE_VIEWERS_PEOPLE_SEARCH_TIMEOUT_MS = 10_000;
@@ -168,6 +176,7 @@ const DEFAULT_FEATURE_SETTINGS: UserFeatureSettings = {
   messagingButtons: true,
   postButtons: true,
   speechToComment: true,
+  hideProfileViewers: false,
 };
 
 class ProfileViewersSyncError extends Error {
@@ -246,7 +255,11 @@ function normalizeLinkedInProfileUrl(rawHref: string): { linkedinUrl: string; li
   }
 }
 
-function extractProfileViewerFromAnchor(rawHref: string, anchorHtml: string): ProfileViewerInput | null {
+function extractProfileViewerFromAnchor(
+  rawHref: string,
+  anchorHtml: string,
+  sourceIndex?: number
+): ProfileViewerInput | null {
   const normalizedProfile = normalizeLinkedInProfileUrl(rawHref);
   if (!normalizedProfile) {
     return null;
@@ -297,6 +310,7 @@ function extractProfileViewerFromAnchor(rawHref: string, anchorHtml: string): Pr
     connectionDegree,
     viewedAgoText,
     mutualConnectionsText,
+    sourceIndex,
   };
 }
 
@@ -308,7 +322,7 @@ function parseVisibleProfileViewers(html: string): ProfileViewerInput[] {
   let match: RegExpExecArray | null;
   while ((match = anchorPattern.exec(html))) {
     const href = match[2] || match[3] || match[4] || '';
-    const viewer = extractProfileViewerFromAnchor(href, match[5] || '');
+    const viewer = extractProfileViewerFromAnchor(href, match[5] || '', match.index);
     if (!viewer || seenUsernames.has(viewer.linkedinUsername)) {
       continue;
     }
@@ -469,6 +483,7 @@ function parseProfileViewersFromRscPayload(payload: string): ProfileViewerInput[
       connectionDegree,
       viewedAgoText,
       mutualConnectionsText,
+      sourceIndex: profile.index,
     });
   }
 
@@ -509,6 +524,7 @@ async function getLinkedInCsrfToken(): Promise<string> {
 
 interface ProfileViewersRscPage {
   viewers: ProfileViewerInput[];
+  searches: ProfileViewerSearchInput[];
   httpStatus: number;
   responseLength: number;
   nextCursor: ProfileViewersPaginationCursor | null;
@@ -567,8 +583,27 @@ async function fetchProfileViewersRscPage(
 
   try {
     const viewers = parseProfileViewersFromPayload(payload);
+    const searches = extractProfileViewerSearches(payload);
+    const orderedItems = [
+      ...viewers.map((viewer) => ({
+        type: 'profile' as const,
+        sourceIndex: viewer.sourceIndex ?? Number.MAX_SAFE_INTEGER,
+        value: viewer,
+      })),
+      ...searches.map((search) => ({
+        type: 'search' as const,
+        sourceIndex: search.sourceIndex ?? Number.MAX_SAFE_INTEGER,
+        value: search,
+      })),
+    ].sort((left, right) => left.sourceIndex - right.sourceIndex);
+
+    orderedItems.forEach((item, listPosition) => {
+      item.value.listPosition = listPosition;
+    });
+
     return {
       viewers,
+      searches,
       httpStatus: response.status,
       responseLength: payload.length,
       nextCursor:
@@ -759,7 +794,10 @@ async function scrapeProfileViewersFromInactiveTab(): Promise<ProfileViewerInput
 interface ProfileViewersSyncResult {
   savedCount: number;
   newCount: number;
+  searchSavedCount?: number;
+  newSearchCount?: number;
   visibleCount: number;
+  visibleSearchCount?: number;
   updatedCount: number;
   visibleProfileUsernames: string[];
   newProfileUsernames: string[];
@@ -1040,9 +1078,15 @@ async function syncProfileViewersViaApi(
     );
   }
 
-  const existingViewers = await getProfileViewers(user.uid);
+  const [existingViewers, existingSearches] = await Promise.all([
+    getProfileViewers(user.uid),
+    getProfileViewerSearches(user.uid),
+  ]);
   const existingByUsername = new Map(
     existingViewers.map((viewer) => [viewer.linkedinUsername.toLowerCase(), viewer])
+  );
+  const existingSearchesByKey = new Map(
+    existingSearches.map((search) => [search.searchKey, search])
   );
   const existingUsernames = new Set(existingByUsername.keys());
   const csrfToken = await getLinkedInCsrfToken();
@@ -1060,12 +1104,15 @@ async function syncProfileViewersViaApi(
       ? syncState.backfillStartedAt || Date.now()
       : Date.now();
   const collectedViewers: ProfileViewerInput[] = [];
+  const collectedSearches = new Map<string, ProfileViewerSearchInput>();
   const newProfileUsernames: string[] = [];
   const visitedCursors = new Set<number>();
   let requestCount = 0;
   let pagesFetched = 0;
   let savedCount = 0;
   let newCount = 0;
+  let searchSavedCount = 0;
+  let newSearchCount = 0;
   let responseLength = 0;
   let httpStatus = 200;
   let cursor: ProfileViewersPaginationCursor | null =
@@ -1116,6 +1163,36 @@ async function syncProfileViewersViaApi(
     savedCount += writeResult.savedCount;
     newCount += writeResult.newCount;
     newProfileUsernames.push(...writeResult.newProfileUsernames);
+    const searchWriteResult = await upsertProfileViewerSearches(
+      user.uid,
+      page.searches,
+      Array.from(existingSearchesByKey.values()),
+      {
+        seenAt: syncSeenAt,
+        positionOffset,
+      }
+    );
+    searchSavedCount += searchWriteResult.savedCount;
+    newSearchCount += searchWriteResult.newCount;
+    page.searches.forEach((search) => {
+      const existing = existingSearchesByKey.get(search.searchKey);
+      existingSearchesByKey.set(search.searchKey, {
+        id: encodeURIComponent(search.searchKey),
+        itemType: 'search',
+        searchKey: search.searchKey,
+        searchUrl: search.searchUrl,
+        displayName: search.displayName,
+        keywords: search.keywords,
+        currentCompany: search.currentCompany,
+        viewedAgoText: search.viewedAgoText,
+        firstSeenAt: existing?.firstSeenAt || syncSeenAt,
+        lastSeenAt: syncSeenAt,
+        lastSeenPosition:
+          positionOffset + (search.listPosition ?? collectedSearches.size),
+        source: 'linkedin_profile_views',
+      });
+      collectedSearches.set(search.searchKey, search);
+    });
     updateExistingProfileViewerSnapshot(
       existingByUsername,
       pageViewers,
@@ -1219,6 +1296,7 @@ async function syncProfileViewersViaApi(
     pagesFetched,
     requestCount,
     profilesCollected: collectedViewers.length,
+    searchesCollected: collectedSearches.size,
     paginationComplete,
     backfillStatus: syncState.backfillStatus,
     backfillNextStart: syncState.backfillNextStart,
@@ -1227,8 +1305,11 @@ async function syncProfileViewersViaApi(
   return {
     savedCount,
     newCount,
+    searchSavedCount,
+    newSearchCount,
     newProfileUsernames,
     visibleCount: collectedViewers.length,
+    visibleSearchCount: collectedSearches.size,
     updatedCount: savedCount - newCount,
     visibleProfileUsernames: collectedViewers.map((viewer) => viewer.linkedinUsername),
     httpStatus,
@@ -1267,6 +1348,7 @@ function normalizeFeatureSettings(settings?: Partial<UserFeatureSettings> | null
     messagingButtons: settings?.messagingButtons ?? DEFAULT_FEATURE_SETTINGS.messagingButtons,
     postButtons: settings?.postButtons ?? DEFAULT_FEATURE_SETTINGS.postButtons,
     speechToComment: settings?.speechToComment ?? DEFAULT_FEATURE_SETTINGS.speechToComment,
+    hideProfileViewers: settings?.hideProfileViewers ?? DEFAULT_FEATURE_SETTINGS.hideProfileViewers,
   };
 }
 
@@ -1368,6 +1450,28 @@ async function getStoredFeedsAuthTokens(): Promise<StoredFeedsAuthTokens | null>
   return result.feedsAuthTokens || null;
 }
 
+async function getStoredFeedsAuthContext(): Promise<{
+  hasStoredUser: boolean;
+  hasStoredTokens: boolean;
+  userId?: string;
+}> {
+  const stored = await getStorageValue<{
+    feedsUserInfo?: { isAuthenticated?: boolean; userId?: string };
+    feedsAuthTokens?: StoredFeedsAuthTokens;
+  }>(['feedsUserInfo', 'feedsAuthTokens']);
+
+  return {
+    hasStoredUser: stored.feedsUserInfo?.isAuthenticated === true,
+    hasStoredTokens: Boolean(
+      stored.feedsAuthTokens?.idToken && stored.feedsAuthTokens?.accessToken
+    ),
+    userId:
+      typeof stored.feedsUserInfo?.userId === 'string' && stored.feedsUserInfo.userId
+        ? stored.feedsUserInfo.userId
+        : undefined,
+  };
+}
+
 async function setStoredFeedsAuthTokens(tokens: StoredFeedsAuthTokens): Promise<void> {
   await setStorageValue({ feedsAuthTokens: tokens });
 }
@@ -1440,16 +1544,93 @@ interface ProfileViewersSyncCoordinatorResult {
   error?: string;
 }
 
-let profileViewersSyncCoordinatorPromise: Promise<ProfileViewersSyncCoordinatorResult> | null = null;
+type ProfileViewersWakeEventName =
+  | 'worker_loaded'
+  | 'runtime_installed'
+  | 'chrome_startup'
+  | 'alarm_received'
+  | 'linkedin_activity'
+  | 'sign_in'
+  | 'coordinator_started'
+  | 'auth_unavailable_alarm_preserved'
+  | 'auth_unavailable_retry_scheduled'
+  | 'auth_absent_alarm_cleared'
+  | 'sync_skipped'
+  | 'sync_started'
+  | 'sync_completed'
+  | 'sync_failed'
+  | 'alarm_scheduled'
+  | 'alarm_cleared';
 
-async function getProfileViewersSyncState(userId: string): Promise<ProfileViewersSyncState> {
-  const now = Date.now();
+interface ProfileViewersWakeEvent {
+  id: string;
+  at: number;
+  event: ProfileViewersWakeEventName;
+  extensionId: string;
+  trigger?: ProfileViewersSyncTrigger;
+  reason?: string;
+  scheduledAt?: number;
+  nextDueAt?: number;
+  hasStoredUser?: boolean;
+  hasStoredTokens?: boolean;
+  authRecoveryAttempts?: number;
+  success?: boolean;
+  error?: string;
+}
+
+let profileViewersSyncCoordinatorPromise: Promise<ProfileViewersSyncCoordinatorResult> | null = null;
+let profileViewersWakeLogWritePromise: Promise<void> = Promise.resolve();
+
+function appendProfileViewersWakeEvent(
+  event: Omit<ProfileViewersWakeEvent, 'id' | 'at' | 'extensionId'>
+): Promise<void> {
+  const at = Date.now();
+  const wakeEvent: ProfileViewersWakeEvent = {
+    ...event,
+    id: `${at}-${Math.random().toString(36).slice(2, 8)}`,
+    at,
+    extensionId: chrome.runtime.id,
+  };
+
+  profileViewersWakeLogWritePromise = profileViewersWakeLogWritePromise
+    .catch(() => {
+      /* keep later diagnostic writes working after a storage failure */
+    })
+    .then(async () => {
+      const stored = await getStorageValue<{
+        [PROFILE_VIEWERS_WAKE_LOG_STORAGE_KEY]?: ProfileViewersWakeEvent[];
+      }>(PROFILE_VIEWERS_WAKE_LOG_STORAGE_KEY);
+      const events = Array.isArray(stored[PROFILE_VIEWERS_WAKE_LOG_STORAGE_KEY])
+        ? stored[PROFILE_VIEWERS_WAKE_LOG_STORAGE_KEY]
+        : [];
+
+      await setStorageValue({
+        [PROFILE_VIEWERS_WAKE_LOG_STORAGE_KEY]: [wakeEvent, ...events].slice(
+          0,
+          PROFILE_VIEWERS_WAKE_LOG_LIMIT
+        ),
+      });
+    })
+    .catch((error) => {
+      console.warn('[profile-viewers-sync] Failed to persist wake event:', error);
+    });
+
+  return profileViewersWakeLogWritePromise;
+}
+
+async function getStoredProfileViewersSyncState(): Promise<Partial<ProfileViewersSyncState> | null> {
   const stored = await getStorageValue<{
     [PROFILE_VIEWERS_SYNC_STORAGE_KEY]?: Partial<ProfileViewersSyncState>;
   }>(PROFILE_VIEWERS_SYNC_STORAGE_KEY);
   const state = stored[PROFILE_VIEWERS_SYNC_STORAGE_KEY];
+  return state?.version === 1 ? state : null;
+}
 
-  if (state?.version !== 1 || state.userId !== userId) {
+async function getProfileViewersSyncState(userId: string): Promise<ProfileViewersSyncState> {
+  const now = Date.now();
+  const state = await getStoredProfileViewersSyncState();
+
+  if (!state || state.userId !== userId) {
     return createProfileViewersSyncState(userId, now);
   }
 
@@ -1479,6 +1660,14 @@ async function getProfileViewersSyncState(userId: string): Promise<ProfileViewer
       state.consecutiveFailedCycles >= 0
         ? state.consecutiveFailedCycles
         : 0,
+    authRecoveryAttempts:
+      typeof state.authRecoveryAttempts === 'number' && state.authRecoveryAttempts >= 0
+        ? state.authRecoveryAttempts
+        : 0,
+    authRecoveryAt:
+      typeof state.authRecoveryAt === 'number' && state.authRecoveryAt > 0
+        ? state.authRecoveryAt
+        : undefined,
     backfillStatus:
       state.backfillStatus === 'in_progress' || state.backfillStatus === 'complete'
         ? state.backfillStatus
@@ -1521,24 +1710,59 @@ async function setProfileViewersSyncState(state: ProfileViewersSyncState): Promi
   });
 }
 
-async function clearProfileViewersAlarm(): Promise<void> {
+async function setProfileViewersAuthRecoveryState(
+  state: Partial<ProfileViewersSyncState> | null,
+  authRecoveryAttempts: number,
+  authRecoveryAt?: number
+): Promise<void> {
+  if (!state) {
+    return;
+  }
+
+  await setStorageValue({
+    [PROFILE_VIEWERS_SYNC_STORAGE_KEY]: {
+      ...state,
+      authRecoveryAttempts,
+      authRecoveryAt,
+      updatedAt: Date.now(),
+    },
+  });
+}
+
+async function clearProfileViewersAlarm(reason = 'no_next_run'): Promise<void> {
   if (!chrome.alarms?.clear) {
     return;
   }
 
-  await chrome.alarms.clear(PROFILE_VIEWERS_ALARM_NAME);
+  const cleared = await chrome.alarms.clear(PROFILE_VIEWERS_ALARM_NAME);
+  await appendProfileViewersWakeEvent({
+    event: 'alarm_cleared',
+    reason: `${reason}:${cleared ? 'existing' : 'missing'}`,
+  });
+}
+
+async function scheduleProfileViewersAlarmAt(when: number, reason: string): Promise<void> {
+  if (!chrome.alarms?.create) {
+    return;
+  }
+
+  const scheduledAt = Math.max(when, Date.now() + 30_000);
+  await chrome.alarms.create(PROFILE_VIEWERS_ALARM_NAME, { when: scheduledAt });
+  await appendProfileViewersWakeEvent({
+    event: 'alarm_scheduled',
+    reason,
+    scheduledAt,
+  });
 }
 
 async function scheduleNextProfileViewersAlarm(state: ProfileViewersSyncState): Promise<void> {
   const nextAlarmAt = getNextProfileViewersAlarmAt(state);
   if (!nextAlarmAt || !chrome.alarms?.create) {
-    await clearProfileViewersAlarm();
+    await clearProfileViewersAlarm('state_has_no_next_run');
     return;
   }
 
-  await chrome.alarms.create(PROFILE_VIEWERS_ALARM_NAME, {
-    when: Math.max(nextAlarmAt, Date.now() + 30_000),
-  });
+  await scheduleProfileViewersAlarmAt(nextAlarmAt, 'sync_state');
 }
 
 function getProfileViewersSyncError(error: unknown): {
@@ -1600,6 +1824,29 @@ function appendProfileViewersSyncLog(
   };
 }
 
+function getProfileViewersSyncSkipReason(
+  state: ProfileViewersSyncState,
+  now: number
+): string {
+  if (!canMakeProfileViewersRequest(state, now)) {
+    return 'request_rate_limit';
+  }
+
+  if (state.cooldownUntil && now < state.cooldownUntil) {
+    return 'cooldown';
+  }
+
+  if (state.retryAt && now < state.retryAt) {
+    return 'retry_not_due';
+  }
+
+  if (state.nextDueAt && now < state.nextDueAt) {
+    return 'next_run_not_due';
+  }
+
+  return 'decision_blocked';
+}
+
 async function notifyLinkedInTabsAboutProfileViewersSync(): Promise<void> {
   const tabs = await chrome.tabs.query({ url: 'https://www.linkedin.com/*' });
   await Promise.all(
@@ -1617,9 +1864,65 @@ async function runProfileViewersSyncCoordinator(
   trigger: ProfileViewersSyncTrigger,
   force = false
 ): Promise<ProfileViewersSyncCoordinatorResult> {
+  await appendProfileViewersWakeEvent({
+    event: 'coordinator_started',
+    trigger,
+    reason: force ? 'forced' : 'scheduled',
+  });
+
   const user = await getAuthenticatedFeedsUser();
   if (!user) {
-    await clearProfileViewersAlarm();
+    const now = Date.now();
+    const [authContext, storedState] = await Promise.all([
+      getStoredFeedsAuthContext(),
+      getStoredProfileViewersSyncState(),
+    ]);
+    const recoveryState =
+      authContext.userId && storedState?.userId !== authContext.userId
+        ? createProfileViewersSyncState(authContext.userId, now)
+        : storedState;
+    const authRecoveryPlan = getProfileViewersAuthRecoveryPlan({
+      now,
+      nextDueAt: recoveryState?.nextDueAt,
+      previousAttempts: recoveryState?.authRecoveryAttempts || 0,
+      hasAuthHint: authContext.hasStoredUser || authContext.hasStoredTokens,
+    });
+
+    if (authRecoveryPlan.action === 'clear_alarm') {
+      await setProfileViewersAuthRecoveryState(recoveryState, 0);
+      await clearProfileViewersAlarm('app_auth_absent');
+      await appendProfileViewersWakeEvent({
+        event: 'auth_absent_alarm_cleared',
+        trigger,
+        reason: authRecoveryPlan.reason,
+        hasStoredUser: authContext.hasStoredUser,
+        hasStoredTokens: authContext.hasStoredTokens,
+      });
+    } else {
+      await setProfileViewersAuthRecoveryState(
+        recoveryState,
+        authRecoveryPlan.attempts,
+        authRecoveryPlan.scheduledAt
+      );
+      await scheduleProfileViewersAlarmAt(
+        authRecoveryPlan.scheduledAt,
+        authRecoveryPlan.reason
+      );
+      await appendProfileViewersWakeEvent({
+        event:
+          authRecoveryPlan.reason === 'preserve_next_due'
+            ? 'auth_unavailable_alarm_preserved'
+            : 'auth_unavailable_retry_scheduled',
+        trigger,
+        reason: authRecoveryPlan.reason,
+        scheduledAt: authRecoveryPlan.scheduledAt,
+        nextDueAt: recoveryState?.nextDueAt,
+        hasStoredUser: authContext.hasStoredUser,
+        hasStoredTokens: authContext.hasStoredTokens,
+        authRecoveryAttempts: authRecoveryPlan.attempts,
+      });
+    }
+
     return {
       ran: false,
       success: false,
@@ -1628,9 +1931,29 @@ async function runProfileViewersSyncCoordinator(
   }
 
   let state = await getProfileViewersSyncState(user.uid);
-  const decision = decideProfileViewersSync(state, Date.now(), trigger, force);
+  const hadAuthRecoveryState = state.authRecoveryAttempts > 0 || Boolean(state.authRecoveryAt);
+  if (hadAuthRecoveryState) {
+    state = {
+      ...state,
+      authRecoveryAttempts: 0,
+      authRecoveryAt: undefined,
+      updatedAt: Date.now(),
+    };
+  }
+
+  const decisionAt = Date.now();
+  const decision = decideProfileViewersSync(state, decisionAt, trigger, force);
   if (!decision.shouldRun || !decision.attemptNumber || !decision.runType) {
+    if (hadAuthRecoveryState) {
+      await setProfileViewersSyncState(state);
+    }
     await scheduleNextProfileViewersAlarm(state);
+    await appendProfileViewersWakeEvent({
+      event: 'sync_skipped',
+      trigger,
+      reason: getProfileViewersSyncSkipReason(state, decisionAt),
+      nextDueAt: getNextProfileViewersAlarmAt(state) || undefined,
+    });
     return { ran: false, success: true };
   }
 
@@ -1638,6 +1961,12 @@ async function runProfileViewersSyncCoordinator(
   const attemptNumber = decision.attemptNumber;
   const runType: ProfileViewersSyncRunType = decision.runType;
   const attemptIntervalMs = getProfileViewersScheduledIntervalMs();
+  await appendProfileViewersWakeEvent({
+    event: 'sync_started',
+    trigger,
+    reason: runType,
+    nextDueAt: state.nextDueAt,
+  });
   state = startProfileViewersSyncAttempt(state, startedAt, attemptNumber, attemptIntervalMs);
   await setProfileViewersSyncState(state);
   await scheduleNextProfileViewersAlarm(state).catch((error) => {
@@ -1660,7 +1989,10 @@ async function runProfileViewersSyncCoordinator(
       trigger,
       runType,
       attemptNumber,
-      status: getProfileViewersSyncLogStatus(undefined, result.newCount),
+      status: getProfileViewersSyncLogStatus(
+        undefined,
+        result.newCount + (result.newSearchCount || 0)
+      ),
       httpStatus: result.httpStatus,
       responseLength: result.responseLength,
       requestCount: result.requestCount,
@@ -1669,8 +2001,11 @@ async function runProfileViewersSyncCoordinator(
       paginationMode: result.paginationMode,
       backfillStatus: state.backfillStatus,
       visibleCount: result.visibleCount,
+      visibleSearchCount: result.visibleSearchCount,
       savedCount: result.savedCount,
+      searchSavedCount: result.searchSavedCount,
       newCount: result.newCount,
+      newSearchCount: result.newSearchCount,
       updatedCount: result.updatedCount,
       visibleProfileUsernames: result.visibleProfileUsernames.slice(
         0,
@@ -1692,6 +2027,13 @@ async function runProfileViewersSyncCoordinator(
     await scheduleNextProfileViewersAlarm(state);
     await notifyLinkedInTabsAboutProfileViewersSync().catch((error) => {
       console.warn('[profile-viewers-sync] Failed to notify LinkedIn tabs:', error);
+    });
+    await appendProfileViewersWakeEvent({
+      event: 'sync_completed',
+      trigger,
+      reason: log.status,
+      nextDueAt: log.nextScheduledAt,
+      success: true,
     });
     console.info('[profile-viewers-sync]', log);
     return { ran: true, success: true, result };
@@ -1728,6 +2070,14 @@ async function runProfileViewersSyncCoordinator(
     state = appendProfileViewersSyncLog(state, log);
     await setProfileViewersSyncState(state);
     await scheduleNextProfileViewersAlarm(state);
+    await appendProfileViewersWakeEvent({
+      event: 'sync_failed',
+      trigger,
+      reason: syncError.code,
+      nextDueAt: log.nextScheduledAt,
+      success: false,
+      error: syncError.message,
+    });
     console.warn('[profile-viewers-sync]', log);
     return {
       ran: true,
@@ -1804,10 +2154,19 @@ function getFeedsAuthErrorResponse<T extends Record<string, unknown>>(
 
 chrome.runtime.onInstalled.addListener((details) => {
   const trigger: ProfileViewersSyncTrigger = details.reason === 'install' ? 'install' : 'update';
+  void appendProfileViewersWakeEvent({
+    event: 'runtime_installed',
+    trigger,
+    reason: details.reason,
+  });
   void queueProfileViewersSync(trigger);
 });
 
 chrome.runtime.onStartup.addListener(() => {
+  void appendProfileViewersWakeEvent({
+    event: 'chrome_startup',
+    trigger: 'chrome_startup',
+  });
   void queueProfileViewersSync('chrome_startup');
 });
 
@@ -1816,9 +2175,18 @@ chrome.alarms?.onAlarm.addListener((alarm) => {
     return;
   }
 
+  void appendProfileViewersWakeEvent({
+    event: 'alarm_received',
+    trigger: 'alarm',
+    scheduledAt: alarm.scheduledTime,
+  });
   void queueProfileViewersSync('alarm');
 });
 
+void appendProfileViewersWakeEvent({
+  event: 'worker_loaded',
+  trigger: 'service_worker',
+});
 void queueProfileViewersSync('service_worker');
 
 chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => {
@@ -1962,6 +2330,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           }),
         });
         sendResponse({ success: true, userId: user.uid });
+        void appendProfileViewersWakeEvent({
+          event: 'sign_in',
+          trigger: 'sign_in',
+        });
         void queueProfileViewersSync('sign_in');
       })
       .catch((error) => {
@@ -1978,7 +2350,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           removeStorageValue('feedsUserInfo'),
           removeStorageValue(FEATURE_SETTINGS_STORAGE_KEY),
           clearStoredFeedsAuthTokens(),
-          clearProfileViewersAlarm(),
+          clearProfileViewersAlarm('explicit_sign_out'),
         ]);
         sendResponse({ success: true });
       })
@@ -2089,7 +2461,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           return;
         }
 
-        return getProfileViewers(user.uid).then((viewers) => {
+        return getProfileViewerItems(user.uid).then((viewers) => {
           sendResponse({ success: true, viewers });
         });
       })
@@ -2104,6 +2476,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.type === 'PROFILE_VIEWERS_LINKEDIN_ACTIVITY') {
+    void appendProfileViewersWakeEvent({
+      event: 'linkedin_activity',
+      trigger: 'linkedin_activity',
+      reason: sender.tab?.id ? `tab:${sender.tab.id}` : 'content_script',
+    });
     queueProfileViewersSync('linkedin_activity')
       .then((result) => {
         sendResponse({ success: result.success, ran: result.ran });

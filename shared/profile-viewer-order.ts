@@ -1,10 +1,10 @@
-import type { ProfileViewer } from './types';
+import type { ProfileViewerListItem } from './types';
 
 function normalizePosition(position: number | undefined): number {
   return Number.isInteger(position) && position !== undefined && position >= 0 ? position : Number.MAX_SAFE_INTEGER;
 }
 
-export function sortProfileViewersByRecency(viewers: ProfileViewer[]): ProfileViewer[] {
+export function sortProfileViewersByRecency<T extends ProfileViewerListItem>(viewers: T[]): T[] {
   return [...viewers].sort((left, right) => {
     const lastSeenDifference = right.lastSeenAt - left.lastSeenAt;
     if (lastSeenDifference !== 0) {
@@ -21,6 +21,6 @@ export function sortProfileViewersByRecency(viewers: ProfileViewer[]): ProfileVi
       return firstSeenDifference;
     }
 
-    return left.linkedinUsername.localeCompare(right.linkedinUsername);
+    return left.id.localeCompare(right.id);
   });
 }

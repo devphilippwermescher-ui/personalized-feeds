@@ -8,6 +8,7 @@ const DEFAULT_SETTINGS: UserFeatureSettings = {
   messagingButtons: true,
   postButtons: true,
   speechToComment: true,
+  hideProfileViewers: false,
 };
 
 function syncSettingsToExtension(settings: Partial<UserFeatureSettings>): void {

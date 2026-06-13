@@ -825,6 +825,25 @@ export const FEEDS_SIDEBAR_CSS = `
     box-shadow: 0 2px 10px rgba(15, 23, 42, 0.04);
     transition: box-shadow 0.18s ease, border-color 0.18s ease, opacity 0.18s ease;
   }
+  .lfa-feed-group--system {
+    overflow: visible;
+  }
+  .lfa-feed-group--system .lfa-feed-item {
+    border-radius: 13px;
+  }
+  .lfa-feed-group--system .lfa-feed-item--expanded {
+    border-radius: 13px 13px 0 0;
+  }
+  .lfa-feed-group--system .lfa-feed-expanded {
+    border-radius: 0 0 13px 13px;
+  }
+  .lfa-feed-group--system:has(.lfa-feed-info:hover),
+  .lfa-feed-group--system:has(.lfa-feed-info:focus-visible),
+  .lfa-feed-group--system:has(.lfa-feed-pin:hover),
+  .lfa-feed-group--system:has(.lfa-feed-pin:focus-visible) {
+    position: relative;
+    z-index: 4;
+  }
   .lfa-feed-group.lfa-feed-group--dragging {
     opacity: 0.55;
     box-shadow: 0 12px 26px rgba(97, 93, 236, 0.16);
@@ -869,6 +888,78 @@ export const FEEDS_SIDEBAR_CSS = `
     flex-shrink: 0;
     cursor: grab;
   }
+  .lfa-feed-pin-wrap {
+    position: relative;
+    width: 16px;
+    height: 16px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .lfa-feed-pin {
+    width: 20px;
+    height: 20px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 5px;
+    color: #64748b;
+    cursor: help;
+    transition: color 0.16s ease, background-color 0.16s ease;
+  }
+  .lfa-feed-pin svg {
+    width: 16px;
+    height: 16px;
+  }
+  .lfa-feed-pin:hover,
+  .lfa-feed-pin:focus-visible {
+    color: #615DEC;
+    background: rgba(97, 93, 236, 0.10);
+  }
+  .lfa-feed-pin:focus-visible {
+    outline: 2px solid rgba(97, 93, 236, 0.24);
+    outline-offset: 2px;
+  }
+  .lfa-feed-pin-tooltip {
+    position: absolute;
+    top: calc(100% + 10px);
+    left: -8px;
+    width: max-content;
+    max-width: 190px;
+    padding: 8px 10px;
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    border-radius: 7px;
+    background: #172033;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1.35;
+    letter-spacing: 0;
+    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.20);
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(-4px);
+    transition: opacity 0.14s ease, transform 0.14s ease;
+    z-index: 10;
+  }
+  .lfa-feed-pin-tooltip::before {
+    content: '';
+    position: absolute;
+    left: 13px;
+    bottom: 100%;
+    width: 8px;
+    height: 8px;
+    background: #172033;
+    border-left: 1px solid rgba(148, 163, 184, 0.22);
+    border-top: 1px solid rgba(148, 163, 184, 0.22);
+    transform: translateY(50%) rotate(45deg);
+  }
+  .lfa-feed-pin:hover + .lfa-feed-pin-tooltip,
+  .lfa-feed-pin:focus-visible + .lfa-feed-pin-tooltip {
+    opacity: 1;
+    transform: translateY(0);
+  }
   .lfa-feed-item:active .lfa-feed-grip {
     cursor: grabbing;
   }
@@ -882,6 +973,16 @@ export const FEEDS_SIDEBAR_CSS = `
     display: flex;
     flex-direction: column;
     gap: 3px;
+  }
+  .lfa-feed-title-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+  }
+  .lfa-feed-title-row .lfa-feed-name {
+    min-width: 0;
+    flex: 0 1 auto;
   }
   .lfa-feed-name {
     appearance: none;
@@ -914,9 +1015,87 @@ export const FEEDS_SIDEBAR_CSS = `
     color: #615DEC;
     transform: scale(1.1);
   }
+  .lfa-feed-item--system .lfa-feed-name:hover {
+    transform: none;
+  }
   .lfa-feed-name:focus-visible {
     outline: 2px solid rgba(97, 93, 236, 0.24);
     outline-offset: 2px;
+  }
+  .lfa-feed-info-wrap {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    flex-shrink: 0;
+  }
+  .lfa-feed-info {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: transparent;
+    color: #64748b;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: help;
+    transition: color 0.16s ease, background-color 0.16s ease, transform 0.16s ease;
+  }
+  .lfa-feed-info svg {
+    width: 15px;
+    height: 15px;
+  }
+  .lfa-feed-info:hover,
+  .lfa-feed-info:focus-visible {
+    color: #615DEC;
+    background: rgba(97, 93, 236, 0.10);
+    transform: scale(1.06);
+  }
+  .lfa-feed-info:focus-visible {
+    outline: 2px solid rgba(97, 93, 236, 0.24);
+    outline-offset: 2px;
+  }
+  .lfa-feed-info-tooltip {
+    position: absolute;
+    top: calc(100% + 9px);
+    left: 50%;
+    width: max-content;
+    max-width: 190px;
+    padding: 8px 10px;
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    border-radius: 7px;
+    background: #172033;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1.35;
+    letter-spacing: 0;
+    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.20);
+    opacity: 0;
+    pointer-events: none;
+    transform: translate(-50%, -4px);
+    transition: opacity 0.14s ease, transform 0.14s ease;
+    z-index: 10;
+  }
+  .lfa-feed-info-tooltip::before {
+    content: '';
+    position: absolute;
+    left: 50%;
+    bottom: 100%;
+    width: 8px;
+    height: 8px;
+    background: #172033;
+    border-left: 1px solid rgba(148, 163, 184, 0.22);
+    border-top: 1px solid rgba(148, 163, 184, 0.22);
+    transform: translate(-50%, 50%) rotate(45deg);
+  }
+  .lfa-feed-info:hover + .lfa-feed-info-tooltip,
+  .lfa-feed-info:focus-visible + .lfa-feed-info-tooltip {
+    opacity: 1;
+    transform: translate(-50%, 0);
   }
   .lfa-feed-owner-badge {
     font-size: 11px;
@@ -1078,6 +1257,22 @@ export const FEEDS_SIDEBAR_CSS = `
     font-size: 11px;
     font-weight: 700;
   }
+  .lfa-member-avatar--search,
+  .lfa-feed-preview-avatar--search {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #e7e5e4;
+    color: #7890a5;
+  }
+  .lfa-member-avatar--search svg {
+    width: 29px;
+    height: 29px;
+  }
+  .lfa-feed-preview-avatar--search svg {
+    width: 18px;
+    height: 18px;
+  }
   .lfa-member-info {
     min-width: 0;
     display: flex;
@@ -1140,6 +1335,27 @@ export const FEEDS_SIDEBAR_CSS = `
   }
   .lfa-member-actions--empty {
     display: none;
+  }
+  .lfa-member-actions--search {
+    min-width: auto;
+  }
+  .lfa-member-search-btn {
+    min-width: 68px;
+    height: 30px;
+    padding: 0 14px;
+    border: 1px solid #64748b;
+    border-radius: 15px;
+    background: #fff;
+    color: #334155;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  }
+  .lfa-member-search-btn:hover {
+    border-color: #2563eb;
+    background: #eff6ff;
+    color: #1d4ed8;
   }
   .lfa-member-icon-btn {
     width: 24px;

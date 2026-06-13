@@ -20,6 +20,7 @@ let featureSettings: UserFeatureSettings = {
   messagingButtons: true,
   postButtons: true,
   speechToComment: true,
+  hideProfileViewers: false,
 };
 
 let domReady = false;

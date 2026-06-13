@@ -8,6 +8,13 @@ export const PROFILE_VIEWERS_REPEATED_FAILURE_BACKOFF_MS = 2 * 60 * 60 * 1000;
 export const PROFILE_VIEWERS_ATTEMPT_LEASE_MS = 5 * 60 * 1000;
 export const PROFILE_VIEWERS_RATE_LIMIT_WINDOW_MS = 24 * 60 * 60 * 1000;
 export const PROFILE_VIEWERS_MAX_REQUESTS_PER_WINDOW = 48;
+export const PROFILE_VIEWERS_AUTH_RECOVERY_DELAYS_MS = [
+  2 * 60 * 1000,
+  5 * 60 * 1000,
+  15 * 60 * 1000,
+  60 * 60 * 1000,
+  6 * 60 * 60 * 1000,
+] as const;
 
 export type ProfileViewersSyncTrigger =
   | 'service_worker'
@@ -49,8 +56,11 @@ export interface ProfileViewersSyncLog {
   httpStatus?: number;
   responseLength?: number;
   visibleCount: number;
+  visibleSearchCount?: number;
   savedCount: number;
+  searchSavedCount?: number;
   newCount: number;
+  newSearchCount?: number;
   updatedCount: number;
   visibleProfileUsernames: string[];
   newProfileUsernames: string[];
@@ -85,6 +95,8 @@ export interface ProfileViewersSyncState {
   requestWindowStartedAt?: number;
   requestCountInWindow: number;
   consecutiveFailedCycles: number;
+  authRecoveryAttempts: number;
+  authRecoveryAt?: number;
   backfillStatus: ProfileViewersBackfillStatus;
   backfillNextStart?: number;
   backfillPageSize?: number;
@@ -106,6 +118,19 @@ export interface ProfileViewersSyncDecision {
   recoveredFromInterruptedAttempt?: boolean;
 }
 
+export type ProfileViewersAuthRecoveryPlan =
+  | {
+      action: 'clear_alarm';
+      reason: 'no_auth_hint';
+      attempts: 0;
+    }
+  | {
+      action: 'schedule_alarm';
+      reason: 'preserve_next_due' | 'retry_auth_restore';
+      attempts: number;
+      scheduledAt: number;
+    };
+
 export function createProfileViewersSyncState(userId: string, now: number): ProfileViewersSyncState {
   return {
     version: 1,
@@ -113,6 +138,7 @@ export function createProfileViewersSyncState(userId: string, now: number): Prof
     userId,
     requestCountInWindow: 0,
     consecutiveFailedCycles: 0,
+    authRecoveryAttempts: 0,
     backfillStatus: 'not_started',
     backfillPagesFetched: 0,
     backfillProfilesSaved: 0,
@@ -120,6 +146,48 @@ export function createProfileViewersSyncState(userId: string, now: number): Prof
     attemptsInCycle: 0,
     logs: [],
     updatedAt: now,
+  };
+}
+
+export function getProfileViewersAuthRecoveryPlan({
+  now,
+  nextDueAt,
+  previousAttempts,
+  hasAuthHint,
+}: {
+  now: number;
+  nextDueAt?: number;
+  previousAttempts: number;
+  hasAuthHint: boolean;
+}): ProfileViewersAuthRecoveryPlan {
+  if (!hasAuthHint) {
+    return {
+      action: 'clear_alarm',
+      reason: 'no_auth_hint',
+      attempts: 0,
+    };
+  }
+
+  if (nextDueAt && nextDueAt > now) {
+    return {
+      action: 'schedule_alarm',
+      reason: 'preserve_next_due',
+      attempts: Math.max(0, previousAttempts),
+      scheduledAt: nextDueAt,
+    };
+  }
+
+  const attempts = Math.min(
+    Math.max(0, previousAttempts) + 1,
+    PROFILE_VIEWERS_AUTH_RECOVERY_DELAYS_MS.length
+  );
+  const delayIndex = Math.min(attempts - 1, PROFILE_VIEWERS_AUTH_RECOVERY_DELAYS_MS.length - 1);
+
+  return {
+    action: 'schedule_alarm',
+    reason: 'retry_auth_restore',
+    attempts,
+    scheduledAt: now + PROFILE_VIEWERS_AUTH_RECOVERY_DELAYS_MS[delayIndex],
   };
 }
 

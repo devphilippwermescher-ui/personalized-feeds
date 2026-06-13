@@ -56,6 +56,10 @@ service cloud.firestore {
         allow read, write: if isOwner(userId);
       }
 
+      match /profileViewerSearches/{searchId} {
+        allow read, write: if isOwner(userId);
+      }
+
       match /settings/{settingId} {
         allow read, write: if isOwner(userId);
       }

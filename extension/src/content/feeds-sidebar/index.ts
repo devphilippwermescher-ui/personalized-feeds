@@ -52,6 +52,10 @@ import {
   renderMembersList as renderMembersListMarkup,
   toggleFeedExpansion as toggleFeedExpansionLogic,
 } from './logic/feed-members';
+import {
+  buildLinkedInContentSearchUrl,
+  extractLinkedInMemberToken,
+} from './logic/feed-posts';
 import { showCreateFeedForm as showCreateFeedFormLogic } from './logic/create-feed-form';
 import {
   captureSidebarDomSnapshot,
@@ -70,7 +74,10 @@ import {
 } from './logic/sidebar-session';
 import { DEFAULT_FEATURE_SETTINGS, loadFeatureSettings, onFeatureSettingsChange } from '../feature-settings';
 import { showToast } from '../shared/toast';
-import type { ProfileViewer, UserFeatureSettings } from 'shared/types';
+import type {
+  ProfileViewerListItem,
+  UserFeatureSettings,
+} from 'shared/types';
 import { getCanonicalLinkedInUsername } from '../../../../shared/linkedin-identity';
 import type { Root } from 'react-dom/client';
 
@@ -175,24 +182,6 @@ let sidebarBindingsFrameId: number | null = null;
 let collapsingFeedId: string | null = null;
 const feedPostsOpenInFlight = new Set<string>();
 
-function extractLinkedInMemberToken(profileUrn?: string): string | null {
-  if (!profileUrn) {
-    return null;
-  }
-
-  const trimmed = profileUrn.trim();
-  if (!trimmed) {
-    return null;
-  }
-
-  if (/^ACo[A-Za-z0-9_-]+$/.test(trimmed)) {
-    return trimmed;
-  }
-
-  const match = trimmed.match(/urn:li:fsd_profile:([A-Za-z0-9_-]+)/i);
-  return match?.[1] || null;
-}
-
 function normalizeSharedFeed(feed: FeedInfo & { role?: 'reader' | 'editor' }): FeedInfo {
   return {
     ...feed,
@@ -201,9 +190,25 @@ function normalizeSharedFeed(feed: FeedInfo & { role?: 'reader' | 'editor' }): F
   };
 }
 
-function profileViewerToMember(viewer: ProfileViewer): FeedMemberInfo {
+function profileViewerToMember(viewer: ProfileViewerListItem): FeedMemberInfo {
+  if ('searchKey' in viewer) {
+    return {
+      id: viewer.id,
+      itemType: 'search',
+      searchKey: viewer.searchKey,
+      linkedinUrl: viewer.searchUrl,
+      linkedinUsername: '',
+      displayName: viewer.displayName,
+      viewedAgoText: viewer.viewedAgoText || '',
+      addedAt: viewer.lastSeenAt,
+      firstSeenAt: viewer.firstSeenAt,
+      lastSeenAt: viewer.lastSeenAt,
+    };
+  }
+
   return {
     id: viewer.id,
+    itemType: 'profile',
     linkedinUrl: viewer.linkedinUrl,
     linkedinUsername: viewer.linkedinUsername,
     profileUrn: viewer.profileUrn,
@@ -251,7 +256,7 @@ function withProfileViewersFeed(feeds: FeedInfo[]): FeedInfo[] {
   ];
 }
 
-function updateProfileViewersState(viewers: ProfileViewer[]): void {
+function updateProfileViewersState(viewers: ProfileViewerListItem[]): void {
   profileViewerMembers = viewers.map(profileViewerToMember);
   feedMembersById = {
     ...feedMembersById,
@@ -266,7 +271,7 @@ async function refreshProfileViewersAfterBackgroundSync(): Promise<void> {
     return;
   }
 
-  updateProfileViewersState(response.viewers as ProfileViewer[]);
+  updateProfileViewersState(response.viewers as ProfileViewerListItem[]);
   renderSidebarContent();
 }
 
@@ -297,11 +302,6 @@ async function openFeedPosts(feedId: string): Promise<void> {
     const feed = [...feedsList, ...sharedFeedsList].find((item) => item.id === feedId);
     if (!feed) {
       showToast('Feed not found', 'error');
-      return;
-    }
-
-    if (feed.systemType === 'profileViewers') {
-      await toggleFeedExpansion(feed.id);
       return;
     }
 
@@ -338,25 +338,13 @@ async function openFeedPosts(feedId: string): Promise<void> {
       renderSidebarContent();
     }
 
-    const memberTokens = Array.from(
-      new Set(
-        loadedMembers
-          .map((member) => extractLinkedInMemberToken(member.profileUrn))
-          .filter((token): token is string => Boolean(token))
-      )
-    );
-
-    if (memberTokens.length === 0) {
+    const searchUrl = buildLinkedInContentSearchUrl(loadedMembers);
+    if (!searchUrl) {
       showToast('Could not resolve LinkedIn member IDs for this feed yet', 'error');
       return;
     }
 
-    const searchUrl = new URL('https://www.linkedin.com/search/results/content/');
-    searchUrl.searchParams.set('origin', 'FACETED_SEARCH');
-    searchUrl.searchParams.set('sortBy', JSON.stringify(['date_posted']));
-    searchUrl.searchParams.set('fromMember', JSON.stringify(memberTokens));
-
-    window.open(searchUrl.toString(), '_blank');
+    window.open(searchUrl, '_blank');
   } finally {
     window.setTimeout(() => {
       feedPostsOpenInFlight.delete(feedId);
@@ -577,7 +565,7 @@ async function loadFeeds(): Promise<void> {
   }
 
   if (Array.isArray(profileViewersResp?.viewers)) {
-    updateProfileViewersState(profileViewersResp.viewers as ProfileViewer[]);
+    updateProfileViewersState(profileViewersResp.viewers as ProfileViewerListItem[]);
   } else {
     feedsList = withProfileViewersFeed(feedsList);
   }
@@ -906,6 +894,7 @@ function renderSidebarInner(container: HTMLElement): void {
 
         if (!response?.success) {
           showToast((response?.error as string) || 'Failed to update settings', 'error');
+          renderSidebarContent();
           return;
         }
 
@@ -913,6 +902,7 @@ function renderSidebarInner(container: HTMLElement): void {
           ...featureSettings,
           ...(response.settings as Partial<UserFeatureSettings>),
         };
+        renderSidebarContent();
       },
       renderSidebarContent,
       handleMemberSave: () => handleMemberSave(getMemberActionDeps()),
@@ -1017,7 +1007,7 @@ function init(): void {
   attachFeedSyncListeners();
   onFeatureSettingsChange((settings) => {
     featureSettings = settings;
-    if (sidebarOpen && !settingsMenuOpen) {
+    if (sidebarOpen) {
       renderSidebarContent();
     }
   });

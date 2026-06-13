@@ -13,6 +13,12 @@ function mergeProfileViewer(existing: ProfileViewerInput, incoming: ProfileViewe
     ...existing,
     displayName: chooseProfileViewerDisplayName(incoming.displayName, existing.displayName, existing.linkedinUsername),
     profileImageUrl: chooseProfileViewerImageUrl(incoming.profileImageUrl, existing.profileImageUrl),
+    sourceIndex:
+      existing.sourceIndex === undefined
+        ? incoming.sourceIndex
+        : incoming.sourceIndex === undefined
+          ? existing.sourceIndex
+          : Math.min(existing.sourceIndex, incoming.sourceIndex),
   };
 
   ENRICHABLE_FIELDS.forEach((field) => {

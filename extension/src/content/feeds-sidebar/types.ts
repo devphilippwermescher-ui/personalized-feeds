@@ -27,6 +27,8 @@ export interface FeedMemberInfo {
   id: string;
   linkedinUrl: string;
   linkedinUsername: string;
+  itemType?: 'profile' | 'search';
+  searchKey?: string;
   profileUrn?: string;
   memberNumericId?: string;
   canMessage?: boolean;

@@ -6,6 +6,7 @@ export const DEFAULT_FEATURE_SETTINGS: UserFeatureSettings = {
   messagingButtons: true,
   postButtons: true,
   speechToComment: true,
+  hideProfileViewers: false,
 };
 
 export function loadFeatureSettings(): Promise<UserFeatureSettings> {
@@ -17,6 +18,8 @@ export function loadFeatureSettings(): Promise<UserFeatureSettings> {
           messagingButtons: storedSettings.messagingButtons ?? DEFAULT_FEATURE_SETTINGS.messagingButtons,
           postButtons: storedSettings.postButtons ?? DEFAULT_FEATURE_SETTINGS.postButtons,
           speechToComment: storedSettings.speechToComment ?? DEFAULT_FEATURE_SETTINGS.speechToComment,
+          hideProfileViewers:
+            storedSettings.hideProfileViewers ?? DEFAULT_FEATURE_SETTINGS.hideProfileViewers,
         });
         return;
       }
@@ -27,6 +30,8 @@ export function loadFeatureSettings(): Promise<UserFeatureSettings> {
           messagingButtons: nextSettings.messagingButtons ?? DEFAULT_FEATURE_SETTINGS.messagingButtons,
           postButtons: nextSettings.postButtons ?? DEFAULT_FEATURE_SETTINGS.postButtons,
           speechToComment: nextSettings.speechToComment ?? DEFAULT_FEATURE_SETTINGS.speechToComment,
+          hideProfileViewers:
+            nextSettings.hideProfileViewers ?? DEFAULT_FEATURE_SETTINGS.hideProfileViewers,
         });
       });
     });
@@ -47,6 +52,8 @@ export function onFeatureSettingsChange(callback: (settings: UserFeatureSettings
       messagingButtons: nextSettings.messagingButtons ?? DEFAULT_FEATURE_SETTINGS.messagingButtons,
       postButtons: nextSettings.postButtons ?? DEFAULT_FEATURE_SETTINGS.postButtons,
       speechToComment: nextSettings.speechToComment ?? DEFAULT_FEATURE_SETTINGS.speechToComment,
+      hideProfileViewers:
+        nextSettings.hideProfileViewers ?? DEFAULT_FEATURE_SETTINGS.hideProfileViewers,
     });
   };
 

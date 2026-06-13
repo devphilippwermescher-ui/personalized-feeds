@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   PROFILE_VIEWERS_ATTEMPT_LEASE_MS,
+  PROFILE_VIEWERS_AUTH_RECOVERY_DELAYS_MS,
   PROFILE_VIEWERS_FIRST_FAILURE_BACKOFF_MS,
   PROFILE_VIEWERS_MAX_REQUESTS_PER_WINDOW,
   PROFILE_VIEWERS_MAX_SYNC_INTERVAL_MS,
@@ -15,6 +16,7 @@ import {
   createProfileViewersSyncState,
   decideProfileViewersSync,
   getNextProfileViewersAlarmAt,
+  getProfileViewersAuthRecoveryPlan,
   getProfileViewersScheduledIntervalMs,
   recordProfileViewersRequest,
   startProfileViewersSyncAttempt,
@@ -38,6 +40,75 @@ describe('profile viewers sync state', () => {
 
     expect(secondRequest.requestWindowStartedAt).toBe(1_000);
     expect(secondRequest.requestCountInWindow).toBe(2);
+  });
+
+  it('clears the alarm only when there is no durable authentication hint', () => {
+    expect(
+      getProfileViewersAuthRecoveryPlan({
+        now: 10_000,
+        nextDueAt: 20_000,
+        previousAttempts: 2,
+        hasAuthHint: false,
+      })
+    ).toEqual({
+      action: 'clear_alarm',
+      reason: 'no_auth_hint',
+      attempts: 0,
+    });
+  });
+
+  it('preserves a future due time while Firebase authentication is still restoring', () => {
+    expect(
+      getProfileViewersAuthRecoveryPlan({
+        now: 10_000,
+        nextDueAt: 20_000,
+        previousAttempts: 1,
+        hasAuthHint: true,
+      })
+    ).toEqual({
+      action: 'schedule_alarm',
+      reason: 'preserve_next_due',
+      attempts: 1,
+      scheduledAt: 20_000,
+    });
+  });
+
+  it('retries an overdue sync with bounded authentication recovery backoff', () => {
+    const now = 10_000;
+
+    for (const [index, delay] of PROFILE_VIEWERS_AUTH_RECOVERY_DELAYS_MS.entries()) {
+      expect(
+        getProfileViewersAuthRecoveryPlan({
+          now,
+          nextDueAt: now - 1,
+          previousAttempts: index,
+          hasAuthHint: true,
+        })
+      ).toEqual({
+        action: 'schedule_alarm',
+        reason: 'retry_auth_restore',
+        attempts: index + 1,
+        scheduledAt: now + delay,
+      });
+    }
+
+    expect(
+      getProfileViewersAuthRecoveryPlan({
+        now,
+        nextDueAt: now - 1,
+        previousAttempts: PROFILE_VIEWERS_AUTH_RECOVERY_DELAYS_MS.length + 5,
+        hasAuthHint: true,
+      })
+    ).toEqual({
+      action: 'schedule_alarm',
+      reason: 'retry_auth_restore',
+      attempts: PROFILE_VIEWERS_AUTH_RECOVERY_DELAYS_MS.length,
+      scheduledAt:
+        now +
+        PROFILE_VIEWERS_AUTH_RECOVERY_DELAYS_MS[
+          PROFILE_VIEWERS_AUTH_RECOVERY_DELAYS_MS.length - 1
+        ],
+    });
   });
 
   it('uses a randomized interval between 25 and 35 minutes', () => {
