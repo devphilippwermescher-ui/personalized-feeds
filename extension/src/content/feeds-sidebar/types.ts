@@ -21,6 +21,7 @@ export interface FeedInfo {
   followedAt?: number;
   isSystem?: boolean;
   systemType?: 'profileViewers';
+  privateViewerCount?: number;
 }
 
 export interface FeedMemberInfo {

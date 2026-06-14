@@ -60,6 +60,10 @@ service cloud.firestore {
         allow read, write: if isOwner(userId);
       }
 
+      match /profileViewerMetadata/{metadataId} {
+        allow read, write: if isOwner(userId);
+      }
+
       match /settings/{settingId} {
         allow read, write: if isOwner(userId);
       }

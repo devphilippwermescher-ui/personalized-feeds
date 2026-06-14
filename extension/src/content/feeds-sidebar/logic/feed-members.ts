@@ -1,5 +1,5 @@
 import type { FeedInfo, FeedMemberInfo, MemberEditorState } from '../types';
-import { getMemberInitials, getMemberStatus } from '../utils';
+import { canMemberReceiveMessage, getMemberInitials, getMemberStatus } from '../utils';
 import { renderFeedActions } from './feed-actions';
 import { renderMemberRow } from '../components/MemberRow/MemberRow';
 import { renderMemberStatusAction, renderMessageButton } from './member-actions';
@@ -244,7 +244,7 @@ export function renderMembersList(
             });
           }
 
-          const canMessage = status === 'loading' ? false : (member.canMessage ?? status === 'connected');
+          const canMessage = canMemberReceiveMessage(member, status);
           // Relationship badges reflect the owner's connection context.
           // In shared feeds the recipient's relationship is unknown, so hide them entirely.
           const showStatusAction = !feed.isShared && canEditMembers;

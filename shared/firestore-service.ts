@@ -20,6 +20,7 @@ import {
   extractProfileToken,
   getCanonicalLinkedInUsername,
   getUsernameFromLinkedInUrl,
+  isValidLinkedInProfileUsername,
   memberMatchesProfileIdentity,
   normalizeLinkedInUsername,
   normalizeMemberNumericId,
@@ -42,6 +43,7 @@ import type {
   ProfileViewerListItem,
   ProfileViewerSearch,
   ProfileViewerSearchInput,
+  ProfileViewerSummary,
   SharedFeedSummary,
   UserFeatureSettings,
   UserProfile,
@@ -69,6 +71,10 @@ function profileViewersCollection(userId: string) {
 
 function profileViewerSearchesCollection(userId: string) {
   return collection(getFirebaseDb(), 'users', userId, 'profileViewerSearches');
+}
+
+function profileViewerSummaryDoc(userId: string) {
+  return doc(getFirebaseDb(), 'users', userId, 'profileViewerMetadata', 'summary');
 }
 
 function emailIndexCollection() {
@@ -232,7 +238,9 @@ export async function upsertProfileViewers(
     }))
     .filter(
       (entry) =>
-        Boolean(entry.linkedinUsername) && Boolean(entry.viewer.linkedinUrl) && Boolean(entry.viewer.displayName.trim())
+        isValidLinkedInProfileUsername(entry.linkedinUsername) &&
+        Boolean(entry.viewer.linkedinUrl) &&
+        Boolean(entry.viewer.displayName.trim())
     );
 
   if (validViewers.length > 500) {
@@ -288,7 +296,23 @@ export async function upsertProfileViewers(
 export async function getProfileViewers(userId: string): Promise<ProfileViewer[]> {
   const q = query(profileViewersCollection(userId), orderBy('lastSeenAt', 'desc'));
   const snapshot = await getDocs(q);
-  return sortProfileViewersByRecency(snapshot.docs.map(docToProfileViewer));
+  const viewers = snapshot.docs.map(docToProfileViewer);
+  const invalidDocs = snapshot.docs.filter((viewerDoc) => {
+    const viewer = docToProfileViewer(viewerDoc);
+    return !isValidLinkedInProfileUsername(viewer.linkedinUsername || viewer.id);
+  });
+
+  if (invalidDocs.length > 0) {
+    const batch = writeBatch(getFirebaseDb());
+    invalidDocs.forEach((viewerDoc) => batch.delete(viewerDoc.ref));
+    await batch.commit();
+  }
+
+  return sortProfileViewersByRecency(
+    viewers.filter((viewer) =>
+      isValidLinkedInProfileUsername(viewer.linkedinUsername || viewer.id)
+    )
+  );
 }
 
 export async function upsertProfileViewerSearches(
@@ -383,6 +407,41 @@ export async function getProfileViewerItems(
     getProfileViewerSearches(userId),
   ]);
   return sortProfileViewersByRecency([...viewers, ...searches]);
+}
+
+export async function updateProfileViewerSummary(
+  userId: string,
+  privateViewerCount: number,
+  updatedAt = Date.now()
+): Promise<ProfileViewerSummary> {
+  const summary: ProfileViewerSummary = {
+    privateViewerCount: Math.max(0, Math.trunc(privateViewerCount)),
+    updatedAt,
+  };
+  await setDoc(profileViewerSummaryDoc(userId), summary, { merge: true });
+  return summary;
+}
+
+export async function getProfileViewerSummary(
+  userId: string
+): Promise<ProfileViewerSummary | null> {
+  const snapshot = await getDoc(profileViewerSummaryDoc(userId));
+  if (!snapshot.exists()) {
+    return null;
+  }
+
+  const data = snapshot.data() as Partial<ProfileViewerSummary>;
+  if (
+    !Number.isSafeInteger(data.privateViewerCount) ||
+    (data.privateViewerCount || 0) < 0
+  ) {
+    return null;
+  }
+
+  return {
+    privateViewerCount: data.privateViewerCount || 0,
+    updatedAt: typeof data.updatedAt === 'number' ? data.updatedAt : 0,
+  };
 }
 
 export async function updateProfileViewer(

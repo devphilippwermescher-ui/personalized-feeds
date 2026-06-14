@@ -15,7 +15,12 @@ function makeFeed(overrides: Partial<FeedInfo> = {}): FeedInfo {
 describe('renderFeedRow', () => {
   it('renders the system feed with a pinned icon and custom info tooltip', () => {
     const html = renderFeedRow({
-      feed: makeFeed({ isSystem: true, systemType: 'profileViewers' }),
+      feed: makeFeed({
+        isSystem: true,
+        systemType: 'profileViewers',
+        memberCount: 9,
+        privateViewerCount: 4,
+      }),
       expanded: false,
       previewHtml: '',
     });
@@ -26,6 +31,10 @@ describe('renderFeedRow', () => {
     expect(html).toContain('lfa-feed-info');
     expect(html).toContain('lfa-feed-info-tooltip');
     expect(html).toContain('Auto-saved from LinkedIn');
+    expect(html).toContain('>9 / 4</span>');
+    expect(html).toContain('9 visible visitor entries saved');
+    expect(html).toContain('4 additional visitors using private mode');
+    expect(html).toContain('lfa-profile-viewer-count-tooltip');
     expect(html).not.toContain('lfa-feed-owner-badge">auto-saved');
   });
 

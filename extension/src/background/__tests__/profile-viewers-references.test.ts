@@ -32,4 +32,19 @@ describe('extractProfileViewerReferences', () => {
       },
     ]);
   });
+
+  it('ignores LinkedIn self aliases and other reserved profile slugs', () => {
+    const payload = [
+      '"https://www.linkedin.com/in/me/"',
+      '"/in/me/recent-activity/"',
+      '"https://www.linkedin.com/in/undefined/"',
+      '"https://www.linkedin.com/in/real-viewer/"',
+    ].join(' ');
+
+    expect(
+      extractProfileViewerReferences(payload).map(
+        (reference) => reference.linkedinUsername
+      )
+    ).toEqual(['real-viewer']);
+  });
 });

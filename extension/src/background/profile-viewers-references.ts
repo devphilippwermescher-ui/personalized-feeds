@@ -17,7 +17,10 @@ function addReference(
     linkedinUsername = rawUsername.trim().toLowerCase();
   }
 
-  if (!linkedinUsername || seenUsernames.has(linkedinUsername)) {
+  if (
+    !isValidLinkedInProfileUsername(linkedinUsername) ||
+    seenUsernames.has(linkedinUsername)
+  ) {
     return;
   }
 
@@ -46,3 +49,4 @@ export function extractProfileViewerReferences(payload: string): ProfileViewerRe
 
   return references.sort((a, b) => a.index - b.index);
 }
+import { isValidLinkedInProfileUsername } from 'shared/linkedin-identity';

@@ -1,5 +1,6 @@
 import type { ProfileViewerInput } from 'shared/types';
 import { chooseProfileViewerDisplayName, chooseProfileViewerImageUrl } from 'shared/profile-viewer-quality';
+import { isValidLinkedInProfileUsername } from 'shared/linkedin-identity';
 
 const ENRICHABLE_FIELDS = [
   'headline',
@@ -37,7 +38,7 @@ export function mergeProfileViewerCandidates(candidateGroups: ProfileViewerInput
   candidateGroups.forEach((candidates) => {
     candidates.forEach((candidate) => {
       const username = candidate.linkedinUsername.trim().toLowerCase();
-      if (!username) {
+      if (!isValidLinkedInProfileUsername(username)) {
         return;
       }
 

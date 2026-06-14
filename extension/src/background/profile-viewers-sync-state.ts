@@ -57,6 +57,7 @@ export interface ProfileViewersSyncLog {
   responseLength?: number;
   visibleCount: number;
   visibleSearchCount?: number;
+  privateViewerCount?: number;
   savedCount: number;
   searchSavedCount?: number;
   newCount: number;

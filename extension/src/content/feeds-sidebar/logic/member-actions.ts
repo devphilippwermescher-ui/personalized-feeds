@@ -1,5 +1,5 @@
 import type { FeedInfo, FeedMemberInfo, MemberEditorState } from '../types';
-import { getMemberInitials, getMemberStatus, getMemberStatusMarkup, getMemberStatusTooltip } from '../utils';
+import { canMemberReceiveMessage, getMemberInitials, getMemberStatus, getMemberStatusMarkup, getMemberStatusTooltip } from '../utils';
 import {
   connectRequestSentMessage,
   profileMovedToFeedMessage,
@@ -188,7 +188,7 @@ export function bindMemberActionButtons(root: ParentNode, deps: MemberActionDeps
       if (!memberId || !feedId) return;
 
       const member = (getFeedMembersById()[feedId] || []).find((item) => item.id === memberId);
-      if (member?.linkedinUrl && member.canMessage) {
+      if (member?.linkedinUrl && canMemberReceiveMessage(member)) {
         openLinkedInMessage(member.linkedinUrl, member.profileUrn);
       }
     });
@@ -355,7 +355,7 @@ export function updateRenderedMemberState(
   }
 
   const status = getMemberStatus(member);
-  const canMessage = status === 'loading' ? false : (member.canMessage ?? status === 'connected');
+  const canMessage = canMemberReceiveMessage(member, status);
   const showMessagingButtons = deps.getMessagingButtonsEnabled?.() ?? true;
   const actions = row.querySelector('.lfa-member-actions');
   const currentMessageButton = row.querySelector('[data-member-action="message"]');
@@ -428,6 +428,10 @@ export async function persistResolvedMemberState(
   const updates: Partial<FeedMemberInfo> = {
     status: member.status,
   };
+
+  if (member.status === 'connected') {
+    member.canMessage = true;
+  }
 
   if (member.profileUrn) {
     updates.profileUrn = member.profileUrn;

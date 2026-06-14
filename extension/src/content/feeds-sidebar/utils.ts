@@ -20,6 +20,21 @@ export function getMemberStatus(member: FeedMemberInfo): MemberStatus {
   return 'connect';
 }
 
+export function canMemberReceiveMessage(
+  member: FeedMemberInfo,
+  status: MemberStatus = getMemberStatus(member)
+): boolean {
+  if (status === 'loading' || status === 'pending' || status === 'withdrawn' || status === 'unavailable') {
+    return false;
+  }
+
+  if (status === 'connected' || member.connectionDegree?.trim().toLowerCase() === '1st') {
+    return true;
+  }
+
+  return member.canMessage === true;
+}
+
 export function getMemberStatusTooltip(status: MemberStatus): string | null {
   if (status === 'withdrawn') {
     return 'Invitation was withdrawn earlier. LinkedIn lets you resend it 3 weeks after withdrawal.';

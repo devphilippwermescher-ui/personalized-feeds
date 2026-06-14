@@ -89,4 +89,28 @@ describe('fetchLinkedInRelationshipStatus', () => {
     );
     expect(result.profileImageUrl).toContain('e=1782345600');
   });
+
+  it('normalizes connected GraphQL results to allow messaging', async () => {
+    fetchWithGraphQL.mockResolvedValue({
+      status: 'connected',
+      canMessage: false,
+    });
+
+    const { fetchLinkedInRelationshipStatus } = await import('../service');
+    const member: FeedMemberInfo = {
+      id: 'connected-member',
+      linkedinUrl: 'https://www.linkedin.com/in/connected-member/',
+      linkedinUsername: 'connected-member',
+      displayName: 'Connected Member',
+      profileImageUrl: 'https://media.licdn.com/profile.jpg',
+      addedAt: Date.now(),
+    };
+
+    const firstResult = await fetchLinkedInRelationshipStatus(member);
+    const cachedResult = await fetchLinkedInRelationshipStatus(member);
+
+    expect(firstResult.canMessage).toBe(true);
+    expect(cachedResult.canMessage).toBe(true);
+    expect(fetchWithGraphQL).toHaveBeenCalledTimes(1);
+  });
 });

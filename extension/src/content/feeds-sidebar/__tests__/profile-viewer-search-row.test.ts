@@ -27,7 +27,8 @@ describe('profile viewer search row', () => {
     });
 
     expect(html).toContain('Software Developer at MagView');
-    expect(html).toContain('Viewed 1 month ago');
+    expect(html).not.toContain('Viewed 1 month ago');
+    expect(html).not.toContain('lfa-member-meta');
     expect(html).toContain('lfa-member-avatar--search');
     expect(html).toContain('lfa-member-search-btn');
     expect(html).toMatch(/>\s*Search\s*<\/button>/);

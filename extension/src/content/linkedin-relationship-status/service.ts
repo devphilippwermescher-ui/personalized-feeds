@@ -3,7 +3,7 @@ import { getCanonicalLinkedInUsername } from '../../../../shared/linkedin-identi
 import { cacheCanonicalUsername, cacheStatus, clearStatusCache, getCachedCanonicalUsername, getCachedStatus, invalidateCacheForUser } from './cache';
 import { GRAPHQL_QUERY_IDS, REQUEST_DELAY_MS, STATUS_FETCH_CONCURRENCY } from './constants';
 import { fetchProfileImageFromProfilePage, fetchStatusFromProfilePage, fetchWithGraphQL, isLikelyLinkedInProfileToken, resolveCanonicalLinkedInIdentity, resolveProfileUrn, sendLinkedInConnectRequest, sendLinkedInFollowState } from './api';
-import { delay } from './utils';
+import { delay, normalizeRelationshipResolution } from './utils';
 import type { RelationshipResolution } from './types';
 
 type RelationshipStatusResult = RelationshipResolution;
@@ -100,7 +100,9 @@ async function fetchSingleStatus(
     try {
       const result = await fetchWithGraphQL(username, queryId);
       if (result) {
-        const enrichedResult = await enrichResultWithProfileImage(username, result, member.profileImageUrl);
+        const enrichedResult = normalizeRelationshipResolution(
+          await enrichResultWithProfileImage(username, result, member.profileImageUrl)
+        );
         console.log(`[LFS] ${username}: status=${enrichedResult.status} isPremium=${enrichedResult.isPremium ?? false} (GraphQL ${queryId.slice(-8)})`);
         cacheStatus(
           username,
@@ -124,19 +126,20 @@ async function fetchSingleStatus(
   try {
     const htmlResult = await fetchStatusFromProfilePage(username);
     if (htmlResult) {
+      const normalizedHtmlResult = normalizeRelationshipResolution(htmlResult);
       cacheStatus(
         username,
-        htmlResult.status,
-        htmlResult.profileUrn,
-        htmlResult.canMessage,
-        htmlResult.canFollow,
-        htmlResult.canConnect,
-        htmlResult.isFollowing,
-        htmlResult.memberNumericId,
-        htmlResult.isPremium,
-        htmlResult.profileImageUrl
+        normalizedHtmlResult.status,
+        normalizedHtmlResult.profileUrn,
+        normalizedHtmlResult.canMessage,
+        normalizedHtmlResult.canFollow,
+        normalizedHtmlResult.canConnect,
+        normalizedHtmlResult.isFollowing,
+        normalizedHtmlResult.memberNumericId,
+        normalizedHtmlResult.isPremium,
+        normalizedHtmlResult.profileImageUrl
       );
-      return htmlResult;
+      return normalizedHtmlResult;
     }
   } catch (err) {
     console.warn(`[LFS] HTML fetch failed for ${username}:`, err);
@@ -153,7 +156,7 @@ export async function fetchLinkedInRelationshipStatus(
 
   const cached = getCachedStatus(username);
   if (cached && (isUsableProfileImageUrl(cached.profileImageUrl) || isUsableProfileImageUrl(member.profileImageUrl))) {
-    return {
+    return normalizeRelationshipResolution({
       status: cached.status,
       profileUrn: cached.profileUrn,
       canMessage: cached.canMessage,
@@ -163,7 +166,7 @@ export async function fetchLinkedInRelationshipStatus(
       memberNumericId: cached.memberNumericId,
       isPremium: cached.isPremium,
       profileImageUrl: isUsableProfileImageUrl(cached.profileImageUrl) ? cached.profileImageUrl : member.profileImageUrl,
-    };
+    });
   }
 
   return fetchSingleStatus(member);
@@ -192,7 +195,7 @@ export async function fetchStatusesProgressively(
     if (cached && (isUsableProfileImageUrl(cached.profileImageUrl) || isUsableProfileImageUrl(member.profileImageUrl))) {
       member.status = cached.status;
       member.profileUrn = cached.profileUrn;
-      member.canMessage = cached.canMessage;
+      member.canMessage = cached.status === 'connected' ? true : cached.canMessage;
       member.canFollow = cached.canFollow;
       member.canConnect = cached.canConnect;
       member.isFollowing = cached.isFollowing;

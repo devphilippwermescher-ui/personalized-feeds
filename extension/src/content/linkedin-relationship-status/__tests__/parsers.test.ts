@@ -620,6 +620,42 @@ describe('parseGraphQLRelationshipStatus — Premium profile detection', () => {
     expect(result?.canMessage).toBe(true);
   });
 
+  it('allows messaging for a connected profile even without a compose option', () => {
+    const payload = {
+      data: {
+        identityDashProfilesByMemberIdentity: {
+          elements: [
+            {
+              entityUrn: 'urn:li:fsd_profile:ACoAABcConnected',
+              profileStatefulProfileActions: {
+                primaryActionResolutionResult: {
+                  statefulAction: {
+                    actionDataModel: {
+                      relationshipActionData: {
+                        relationshipData: {
+                          connectionOrInvitation: {
+                            memberRelationship: {
+                              connection: { createdAt: 1234567890 },
+                            },
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          ],
+        },
+      },
+    };
+
+    const result = parseGraphQLRelationshipStatus(payload);
+
+    expect(result?.status).toBe('connected');
+    expect(result?.canMessage).toBe(true);
+  });
+
   it('sets isPremium=true and canMessage=false for premiumFeatures with hasAccess (no INMAIL)', () => {
     const payload = makeGraphQLPayload({
       premiumFeatures: [{ featureType: 'SUBSCRIBER', hasAccess: true }],

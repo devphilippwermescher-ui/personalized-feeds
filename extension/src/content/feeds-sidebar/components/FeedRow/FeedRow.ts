@@ -22,6 +22,18 @@ export function renderFeedRow({
   const isShared = Boolean(feed.isShared);
   const isSystem = Boolean(feed.isSystem);
   const isProfileViewers = feed.systemType === 'profileViewers';
+  const hasPrivateViewerCount =
+    isProfileViewers &&
+    Number.isSafeInteger(feed.privateViewerCount) &&
+    (feed.privateViewerCount || 0) >= 0;
+  const privateViewerCount = feed.privateViewerCount || 0;
+  const viewerCountLabel = hasPrivateViewerCount
+    ? `${feed.memberCount || 0} / ${privateViewerCount}`
+    : `${feed.memberCount || 0}`;
+  const visibleEntryCount = feed.memberCount || 0;
+  const viewerCountTooltip = hasPrivateViewerCount
+    ? `${visibleEntryCount} visible visitor ${visibleEntryCount === 1 ? 'entry' : 'entries'} saved. LinkedIn reports ${privateViewerCount} additional ${privateViewerCount === 1 ? 'visitor' : 'visitors'} using private mode.`
+    : '';
   const itemClasses = [
     'lfa-feed-item',
     isShared ? 'lfa-feed-item--shared' : '',
@@ -89,7 +101,16 @@ export function renderFeedRow({
         <div class="lfa-feed-meta">
           ${isShared ? `<span class="lfa-feed-role">${feed.accessRole === 'editor' ? 'Editor' : 'Reader'}</span>` : ''}
           ${previewHtml}
-          <span>${feed.memberCount || 0}</span>
+          ${
+            isProfileViewers && hasPrivateViewerCount
+              ? `
+                <span class="lfa-profile-viewer-count-wrap">
+                  <span class="lfa-profile-viewer-count" tabindex="0" aria-label="${escapeHtml(viewerCountTooltip)}">${escapeHtml(viewerCountLabel)}</span>
+                  <span class="lfa-profile-viewer-count-tooltip" role="tooltip">${escapeHtml(viewerCountTooltip)}</span>
+                </span>
+              `
+              : `<span>${escapeHtml(viewerCountLabel)}</span>`
+          }
           <span class="lfa-feed-chevron ${expanded ? 'expanded' : ''}">
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M6 9l6 6 6-6"></path>

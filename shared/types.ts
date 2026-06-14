@@ -83,6 +83,11 @@ export type ProfileViewerSearchInput = Omit<
 
 export type ProfileViewerListItem = ProfileViewer | ProfileViewerSearch;
 
+export interface ProfileViewerSummary {
+  privateViewerCount: number;
+  updatedAt: number;
+}
+
 export type FeedShareRole = 'reader' | 'editor';
 
 export interface FeedShareAccess {

@@ -59,4 +59,12 @@ describe('mergeProfileViewerCandidates', () => {
     ]);
     expect(result[2].headline).toBe('Updated headline');
   });
+
+  it('drops reserved LinkedIn aliases before they can be persisted', () => {
+    const result = mergeProfileViewerCandidates([
+      [viewer('me'), viewer('undefined'), viewer('real-viewer')],
+    ]);
+
+    expect(result.map((item) => item.linkedinUsername)).toEqual(['real-viewer']);
+  });
 });

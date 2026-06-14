@@ -18,10 +18,12 @@ import {
   getUserFeatureSettings,
   getProfileViewerItems,
   getProfileViewerSearches,
+  getProfileViewerSummary,
   getProfileViewers,
   removeProfileViewer,
   upsertProfileViewerSearches,
   upsertProfileViewers,
+  updateProfileViewerSummary,
   updateProfileViewer,
   shareFeedWithUser,
   unfollowFeed,
@@ -91,6 +93,8 @@ import {
   type ProfileViewersPaginationCursor,
 } from './profile-viewers-pagination';
 import { extractProfileViewerSearches } from './profile-viewer-searches';
+import { extractPrivateProfileViewerCount } from './profile-viewer-private-count';
+import { isValidLinkedInProfileUsername } from 'shared/linkedin-identity';
 
 type OffscreenAuthResult =
   | {
@@ -242,7 +246,7 @@ function normalizeLinkedInProfileUrl(rawHref: string): { linkedinUrl: string; li
     }
 
     const linkedinUsername = decodeURIComponent(match[1]).trim().toLowerCase();
-    if (!linkedinUsername) {
+    if (!isValidLinkedInProfileUsername(linkedinUsername)) {
       return null;
     }
 
@@ -525,6 +529,7 @@ async function getLinkedInCsrfToken(): Promise<string> {
 interface ProfileViewersRscPage {
   viewers: ProfileViewerInput[];
   searches: ProfileViewerSearchInput[];
+  privateViewerCount: number | null;
   httpStatus: number;
   responseLength: number;
   nextCursor: ProfileViewersPaginationCursor | null;
@@ -584,6 +589,7 @@ async function fetchProfileViewersRscPage(
   try {
     const viewers = parseProfileViewersFromPayload(payload);
     const searches = extractProfileViewerSearches(payload);
+    const privateViewerCount = extractPrivateProfileViewerCount(payload);
     const orderedItems = [
       ...viewers.map((viewer) => ({
         type: 'profile' as const,
@@ -604,6 +610,7 @@ async function fetchProfileViewersRscPage(
     return {
       viewers,
       searches,
+      privateViewerCount,
       httpStatus: response.status,
       responseLength: payload.length,
       nextCursor:
@@ -691,7 +698,12 @@ async function scrapeProfileViewersFromPageDom(): Promise<ProfileViewerInput[]> 
       }
 
       const linkedinUsername = decodeURIComponent(match[1]).trim().toLowerCase();
-      if (!linkedinUsername) {
+      const reservedUsernames = new Set(['me', 'null', 'undefined', 'profile', 'settings']);
+      if (
+        linkedinUsername.length < 3 ||
+        reservedUsernames.has(linkedinUsername) ||
+        !/^[\p{L}\p{N}_.~-]+$/u.test(linkedinUsername)
+      ) {
         return null;
       }
 
@@ -798,6 +810,7 @@ interface ProfileViewersSyncResult {
   newSearchCount?: number;
   visibleCount: number;
   visibleSearchCount?: number;
+  privateViewerCount?: number;
   updatedCount: number;
   visibleProfileUsernames: string[];
   newProfileUsernames: string[];
@@ -1113,6 +1126,7 @@ async function syncProfileViewersViaApi(
   let newCount = 0;
   let searchSavedCount = 0;
   let newSearchCount = 0;
+  let privateViewerCount: number | undefined;
   let responseLength = 0;
   let httpStatus = 200;
   let cursor: ProfileViewersPaginationCursor | null =
@@ -1174,6 +1188,9 @@ async function syncProfileViewersViaApi(
     );
     searchSavedCount += searchWriteResult.savedCount;
     newSearchCount += searchWriteResult.newCount;
+    if (page.privateViewerCount !== null) {
+      privateViewerCount = page.privateViewerCount;
+    }
     page.searches.forEach((search) => {
       const existing = existingSearchesByKey.get(search.searchKey);
       existingSearchesByKey.set(search.searchKey, {
@@ -1279,6 +1296,10 @@ async function syncProfileViewersViaApi(
     page = await fetchProfileViewersPaginationPage(cursor, csrfToken);
   }
 
+  if (privateViewerCount !== undefined) {
+    await updateProfileViewerSummary(user.uid, privateViewerCount, syncSeenAt);
+  }
+
   if (paginationMode === 'incremental') {
     syncState = {
       ...syncState,
@@ -1297,6 +1318,7 @@ async function syncProfileViewersViaApi(
     requestCount,
     profilesCollected: collectedViewers.length,
     searchesCollected: collectedSearches.size,
+    privateViewerCount,
     paginationComplete,
     backfillStatus: syncState.backfillStatus,
     backfillNextStart: syncState.backfillNextStart,
@@ -1310,6 +1332,7 @@ async function syncProfileViewersViaApi(
     newProfileUsernames,
     visibleCount: collectedViewers.length,
     visibleSearchCount: collectedSearches.size,
+    privateViewerCount,
     updatedCount: savedCount - newCount,
     visibleProfileUsernames: collectedViewers.map((viewer) => viewer.linkedinUsername),
     httpStatus,
@@ -2002,6 +2025,7 @@ async function runProfileViewersSyncCoordinator(
       backfillStatus: state.backfillStatus,
       visibleCount: result.visibleCount,
       visibleSearchCount: result.visibleSearchCount,
+      privateViewerCount: result.privateViewerCount,
       savedCount: result.savedCount,
       searchSavedCount: result.searchSavedCount,
       newCount: result.newCount,
@@ -2461,8 +2485,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           return;
         }
 
-        return getProfileViewerItems(user.uid).then((viewers) => {
-          sendResponse({ success: true, viewers });
+        return Promise.all([
+          getProfileViewerItems(user.uid),
+          getProfileViewerSummary(user.uid),
+        ]).then(([viewers, summary]) => {
+          sendResponse({ success: true, viewers, summary });
         });
       })
       .catch((error) => {

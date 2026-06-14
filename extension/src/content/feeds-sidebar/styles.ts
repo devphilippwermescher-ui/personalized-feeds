@@ -840,7 +840,9 @@ export const FEEDS_SIDEBAR_CSS = `
   .lfa-feed-group--system:has(.lfa-feed-info:hover),
   .lfa-feed-group--system:has(.lfa-feed-info:focus-visible),
   .lfa-feed-group--system:has(.lfa-feed-pin:hover),
-  .lfa-feed-group--system:has(.lfa-feed-pin:focus-visible) {
+  .lfa-feed-group--system:has(.lfa-feed-pin:focus-visible),
+  .lfa-feed-group--system:has(.lfa-profile-viewer-count:hover),
+  .lfa-feed-group--system:has(.lfa-profile-viewer-count:focus-visible) {
     position: relative;
     z-index: 4;
   }
@@ -1257,6 +1259,69 @@ export const FEEDS_SIDEBAR_CSS = `
     font-size: 11px;
     font-weight: 700;
   }
+  .lfa-profile-viewer-count-wrap {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+  }
+  .lfa-profile-viewer-count {
+    display: inline-flex;
+    align-items: center;
+    min-height: 22px;
+    padding: 0 3px;
+    border-radius: 5px;
+    cursor: help;
+    white-space: nowrap;
+    transition: color 0.16s ease, background-color 0.16s ease;
+  }
+  .lfa-profile-viewer-count:hover,
+  .lfa-profile-viewer-count:focus-visible {
+    color: #615DEC;
+    background: rgba(97, 93, 236, 0.10);
+  }
+  .lfa-profile-viewer-count:focus-visible {
+    outline: 2px solid rgba(97, 93, 236, 0.24);
+    outline-offset: 1px;
+  }
+  .lfa-profile-viewer-count-tooltip {
+    position: absolute;
+    top: calc(100% + 9px);
+    right: -22px;
+    width: 240px;
+    padding: 8px 10px;
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    border-radius: 7px;
+    background: #172033;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1.35;
+    letter-spacing: 0;
+    white-space: normal;
+    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.20);
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(-4px);
+    transition: opacity 0.14s ease, transform 0.14s ease;
+    z-index: 12;
+  }
+  .lfa-profile-viewer-count-tooltip::before {
+    content: '';
+    position: absolute;
+    right: 29px;
+    bottom: 100%;
+    width: 8px;
+    height: 8px;
+    background: #172033;
+    border-left: 1px solid rgba(148, 163, 184, 0.22);
+    border-top: 1px solid rgba(148, 163, 184, 0.22);
+    transform: translateY(50%) rotate(45deg);
+  }
+  .lfa-profile-viewer-count:hover + .lfa-profile-viewer-count-tooltip,
+  .lfa-profile-viewer-count:focus-visible + .lfa-profile-viewer-count-tooltip {
+    opacity: 1;
+    transform: translateY(0);
+  }
   .lfa-member-avatar--search,
   .lfa-feed-preview-avatar--search {
     display: flex;
@@ -1340,15 +1405,21 @@ export const FEEDS_SIDEBAR_CSS = `
     min-width: auto;
   }
   .lfa-member-search-btn {
-    min-width: 68px;
-    height: 30px;
-    padding: 0 14px;
-    border: 1px solid #64748b;
-    border-radius: 15px;
-    background: #fff;
-    color: #334155;
-    font-size: 11px;
-    font-weight: 600;
+    width: 112px;
+    height: 25px;
+    min-height: 25px;
+    padding: 0 8px;
+    border: 1px solid #dbe3f0;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.72);
+    color: #475569;
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    white-space: nowrap;
     cursor: pointer;
     transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
   }

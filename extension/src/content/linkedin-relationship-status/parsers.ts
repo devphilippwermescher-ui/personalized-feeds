@@ -1,4 +1,4 @@
-import { asArray, asRecord, asString, decodeHtmlEntities, getComposeOptionType, isFollowingStateActive, pickProfileUrn, trimLinkedInValue } from './utils';
+import { asArray, asRecord, asString, decodeHtmlEntities, getComposeOptionType, isFollowingStateActive, normalizeRelationshipResolution, pickProfileUrn, trimLinkedInValue } from './utils';
 import type { RelationshipResolution, RelationshipStatus } from './types';
 
 // ── Rehydration (window.__como_rehydration__) parser ──────────────────────
@@ -583,7 +583,12 @@ function extractStatusFromProfileEntry(
     if (resolvedStatus.status === 'connect') {
       connectCandidate = true;
     } else {
-      return { ...resolvedStatus, canMessage, isPremium: isPremium || undefined, profileImageUrl };
+      return normalizeRelationshipResolution({
+        ...resolvedStatus,
+        canMessage,
+        isPremium: isPremium || undefined,
+        profileImageUrl,
+      });
     }
   }
 
@@ -608,7 +613,12 @@ function extractStatusFromProfileEntry(
       if (overflowStatus.status === 'connect') {
         connectCandidate = true;
       } else {
-        return { ...overflowStatus, canMessage, isPremium: isPremium || undefined, profileImageUrl };
+        return normalizeRelationshipResolution({
+          ...overflowStatus,
+          canMessage,
+          isPremium: isPremium || undefined,
+          profileImageUrl,
+        });
       }
     }
   }

@@ -76,6 +76,7 @@ import { DEFAULT_FEATURE_SETTINGS, loadFeatureSettings, onFeatureSettingsChange 
 import { showToast } from '../shared/toast';
 import type {
   ProfileViewerListItem,
+  ProfileViewerSummary,
   UserFeatureSettings,
 } from 'shared/types';
 import { getCanonicalLinkedInUsername } from '../../../../shared/linkedin-identity';
@@ -152,6 +153,7 @@ let currentUser: UserInfo | null = null;
 let feedsList: FeedInfo[] = [];
 let sharedFeedsList: FeedInfo[] = [];
 let profileViewerMembers: FeedMemberInfo[] = [];
+let profileViewerPrivateCount: number | undefined;
 let sidebarEl: HTMLElement | null = null;
 let triggerBtn: HTMLElement | null = null;
 let isLoading = false;
@@ -238,6 +240,7 @@ function createProfileViewersFeed(): FeedInfo {
     description: 'Auto-saved LinkedIn profile viewers',
     color: '#0A66C2',
     memberCount: profileViewerMembers.length,
+    privateViewerCount: profileViewerPrivateCount,
     sortOrder: -1,
     ownerId: currentUser?.userId,
     isSystem: true,
@@ -256,8 +259,19 @@ function withProfileViewersFeed(feeds: FeedInfo[]): FeedInfo[] {
   ];
 }
 
-function updateProfileViewersState(viewers: ProfileViewerListItem[]): void {
+function updateProfileViewersState(
+  viewers: ProfileViewerListItem[],
+  summary?: ProfileViewerSummary | null
+): void {
   profileViewerMembers = viewers.map(profileViewerToMember);
+  profileViewerPrivateCount = undefined;
+  if (
+    summary &&
+    Number.isSafeInteger(summary.privateViewerCount) &&
+    summary.privateViewerCount >= 0
+  ) {
+    profileViewerPrivateCount = summary.privateViewerCount;
+  }
   feedMembersById = {
     ...feedMembersById,
     [PROFILE_VIEWERS_FEED_ID]: profileViewerMembers,
@@ -271,7 +285,10 @@ async function refreshProfileViewersAfterBackgroundSync(): Promise<void> {
     return;
   }
 
-  updateProfileViewersState(response.viewers as ProfileViewerListItem[]);
+  updateProfileViewersState(
+    response.viewers as ProfileViewerListItem[],
+    (response.summary as ProfileViewerSummary | null | undefined) || null
+  );
   renderSidebarContent();
 }
 
@@ -535,6 +552,7 @@ async function handleSignOut(): Promise<void> {
       feedsList = feeds as FeedInfo[];
       sharedFeedsList = [];
       profileViewerMembers = [];
+      profileViewerPrivateCount = undefined;
       const nextFeedMembersById = { ...feedMembersById };
       delete nextFeedMembersById[PROFILE_VIEWERS_FEED_ID];
       feedMembersById = nextFeedMembersById;
@@ -565,7 +583,10 @@ async function loadFeeds(): Promise<void> {
   }
 
   if (Array.isArray(profileViewersResp?.viewers)) {
-    updateProfileViewersState(profileViewersResp.viewers as ProfileViewerListItem[]);
+    updateProfileViewersState(
+      profileViewersResp.viewers as ProfileViewerListItem[],
+      (profileViewersResp.summary as ProfileViewerSummary | null | undefined) || null
+    );
   } else {
     feedsList = withProfileViewersFeed(feedsList);
   }

@@ -1,3 +1,18 @@
+import type { RelationshipResolution } from './types';
+
+export function normalizeRelationshipResolution(
+  resolution: RelationshipResolution
+): RelationshipResolution {
+  if (resolution.status !== 'connected' || resolution.canMessage === true) {
+    return resolution;
+  }
+
+  return {
+    ...resolution,
+    canMessage: true,
+  };
+}
+
 export function getCsrfToken(): string {
   const match = document.cookie.match(/JSESSIONID="([^"]+)"/);
   return match ? match[1] : '';
