@@ -4,20 +4,24 @@ import { CONTENT_COPY, getMemberCountLabel } from '../shared/copy';
 import type { FeedSummary, PostAuthorProfile } from './types';
 import { feedAddedMessage, profileAlreadyInFeedMessage } from '../shared/toast-messages';
 import { showToast } from '../shared/toast';
-import { escapeHtml, extractPostAuthorProfile, findPostCandidates } from './utils';
+import { escapeHtml, extractPostAuthorProfile, findPostAuthorDrawerHost, findPostCandidates } from './utils';
 import { dispatchFeedMemberAdded } from '../feeds-sidebar/sync-events';
 import type { FeedMemberInfo } from '../feeds-sidebar/types';
+import { enrichProfileDataForFeed } from '../shared/enrich-profile-data';
 
 const POST_FLAG = 'data-lfa-post-buttons-bound';
 const STYLE_ID = 'lfa-post-buttons-styles';
 const MODAL_ID = 'lfa-post-feed-modal-overlay';
 const TOGGLE_ID = 'lfa-post-toggle-btn';
 const DRAWER_ID = 'lfa-post-drawer-btn';
+const POST_CONTROL_EVENTS = ['pointerdown', 'mousedown', 'mouseup', 'touchstart', 'click'] as const;
 
 let observer: MutationObserver | null = null;
 let scanTimer: number | null = null;
 let iconUrl = '';
 let activeProfile: PostAuthorProfile | null = null;
+let globalPostControlEventsBound = false;
+const postControlProfiles = new WeakMap<HTMLElement, PostAuthorProfile>();
 
 function sendMessage<T>(message: Record<string, unknown>): Promise<T | null> {
   return new Promise((resolve) => {
@@ -80,16 +84,29 @@ async function getFeeds(): Promise<FeedSummary[]> {
   return response.feeds || [];
 }
 
-async function getMemberships(profile: LinkedInProfileData): Promise<Map<string, string>> {
+async function enrichPostProfile(profile: PostAuthorProfile): Promise<PostAuthorProfile> {
+  const enriched = await enrichProfileDataForFeed(profile);
+  return {
+    ...profile,
+    ...enriched,
+    memberId: enriched.memberNumericId || enriched.memberId || profile.memberId,
+  };
+}
+
+async function getMemberships(profile: PostAuthorProfile): Promise<Map<string, string>> {
   const response = await sendMessage<{ memberships?: Array<{ feedId: string; memberId: string }> }>({
     type: 'FEEDS_GET_PROFILE_MEMBERSHIPS',
     linkedinUsername: profile.linkedinUsername,
+    linkedinUrl: profile.linkedinUrl,
+    memberNumericId: profile.memberNumericId || profile.memberId,
+    profileUrn: profile.profileUrn,
   });
 
   return new Map((response?.memberships || []).map((membership) => [membership.feedId, membership.memberId]));
 }
 
-async function addProfileToFeed(feedId: string, feedName: string, profile: LinkedInProfileData): Promise<boolean> {
+async function addProfileToFeed(feedId: string, feedName: string, profile: PostAuthorProfile): Promise<boolean> {
+  const enrichedProfile = await enrichPostProfile(profile);
   const response = await sendMessage<{
     success: boolean;
     error?: string;
@@ -98,7 +115,7 @@ async function addProfileToFeed(feedId: string, feedName: string, profile: Linke
   }>({
     type: 'FEEDS_ADD_MEMBER',
     feedId,
-    profileData: profile,
+    profileData: enrichedProfile,
   });
 
   if (!response?.success) {
@@ -130,7 +147,11 @@ async function openFeedModal(profile: PostAuthorProfile, feeds: FeedSummary[]): 
   body.innerHTML = `<div class="lfa-post-feed-modal__empty">${CONTENT_COPY.postButtons.loadingFeeds}</div>`;
   overlay.style.display = 'flex';
 
-  const memberships = await getMemberships(profile);
+  const enrichedProfile = await enrichPostProfile(profile);
+  activeProfile = enrichedProfile;
+  subtitle.innerHTML = CONTENT_COPY.postButtons.authorAddSubtitle(escapeHtml(enrichedProfile.displayName));
+
+  const memberships = await getMemberships(enrichedProfile);
 
   if (feeds.length === 0) {
     body.innerHTML = `
@@ -202,17 +223,6 @@ async function handlePostButtonClick(profile: PostAuthorProfile): Promise<void> 
   }
 
   const feeds = await getFeeds();
-  if (feeds.length === 1) {
-    const added = await addProfileToFeed(feeds[0].id, feeds[0].name, profile);
-    showToast(
-      added
-        ? feedAddedMessage(profile.displayName, feeds[0].name)
-        : profileAlreadyInFeedMessage(profile.displayName, feeds[0].name),
-      added ? 'success' : 'error'
-    );
-    return;
-  }
-
   await openFeedModal(profile, feeds);
 }
 
@@ -239,6 +249,92 @@ function buildDrawerButton(): HTMLButtonElement {
   return button;
 }
 
+function stopLinkedInNavigation(event: Event): void {
+  event.preventDefault();
+  event.stopPropagation();
+  if (typeof event.stopImmediatePropagation === 'function') {
+    event.stopImmediatePropagation();
+  }
+}
+
+function findPostControlFromEvent(event: Event): HTMLElement | null {
+  const targetControl = event.target instanceof Element
+    ? event.target.closest<HTMLElement>('[data-lfa-post-control]')
+    : null;
+  if (targetControl) {
+    return targetControl;
+  }
+
+  const pointerEvent = event as MouseEvent;
+  if (typeof pointerEvent.clientX !== 'number' || typeof pointerEvent.clientY !== 'number') {
+    return null;
+  }
+
+  const controls = Array.from(document.querySelectorAll<HTMLElement>('[data-lfa-post-control]')).reverse();
+  return controls.find((control) => {
+    const rect = control.getBoundingClientRect();
+    return (
+      pointerEvent.clientX >= rect.left &&
+      pointerEvent.clientX <= rect.right &&
+      pointerEvent.clientY >= rect.top &&
+      pointerEvent.clientY <= rect.bottom
+    );
+  }) || null;
+}
+
+function handleGlobalPostControlEvent(event: Event): void {
+  const control = findPostControlFromEvent(event);
+  if (!control) {
+    return;
+  }
+
+  stopLinkedInNavigation(event);
+
+  if (event.type !== 'click') {
+    return;
+  }
+
+  const profile = postControlProfiles.get(control);
+  if (!profile) {
+    showToast(CONTENT_COPY.postButtons.failedToOpenFeeds, 'error');
+    return;
+  }
+
+  void handlePostButtonClick(profile).catch((error) => {
+    showToast(error instanceof Error ? error.message : CONTENT_COPY.postButtons.failedToOpenFeeds, 'error');
+  });
+}
+
+function ensureGlobalPostControlEvents(): void {
+  if (globalPostControlEventsBound) {
+    return;
+  }
+
+  POST_CONTROL_EVENTS.forEach((eventName) => {
+    window.addEventListener(eventName, handleGlobalPostControlEvent, { capture: true });
+  });
+  globalPostControlEventsBound = true;
+}
+
+function removeGlobalPostControlEvents(): void {
+  if (!globalPostControlEventsBound) {
+    return;
+  }
+
+  POST_CONTROL_EVENTS.forEach((eventName) => {
+    window.removeEventListener(eventName, handleGlobalPostControlEvent, true);
+  });
+  globalPostControlEventsBound = false;
+}
+
+function bindPostControlButton(button: HTMLButtonElement, profile: PostAuthorProfile): void {
+  postControlProfiles.set(button, profile);
+
+  POST_CONTROL_EVENTS.forEach((eventName) => {
+    button.addEventListener(eventName, stopLinkedInNavigation, { capture: true });
+  });
+}
+
 function injectButtonsIntoPost(post: HTMLElement): void {
   const profile = extractPostAuthorProfile(post);
   if (!profile) {
@@ -252,42 +348,27 @@ function injectButtonsIntoPost(post: HTMLElement): void {
   }
   post.setAttribute(POST_FLAG, profileKey);
 
-  const drawerHost = post.querySelector(
-    '.update-components-actor__sub-description, .update-components-actor__meta, .feed-shared-actor__sub-description, .feed-shared-actor__meta'
-  );
+  const drawerHost = findPostAuthorDrawerHost(post);
   if (drawerHost && !post.querySelector('.lfa-post-drawer-btn-wrapper')) {
-    const wrapper = document.createElement('div');
+    const wrapper = document.createElement('span');
     wrapper.className = 'lfa-post-drawer-btn-wrapper';
     const drawerButton = buildDrawerButton();
     drawerButton.dataset.lfaPostControl = DRAWER_ID;
-    drawerButton.addEventListener('click', async (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      try {
-        await handlePostButtonClick(profile);
-      } catch (error) {
-        showToast(error instanceof Error ? error.message : CONTENT_COPY.postButtons.failedToOpenFeeds, 'error');
-      }
-    });
+    bindPostControlButton(drawerButton, profile);
     wrapper.appendChild(drawerButton);
     drawerHost.appendChild(wrapper);
   }
 
   if (!post.querySelector('.lfa-post-toggle')) {
+    if (window.getComputedStyle(post).position === 'static') {
+      post.style.position = 'relative';
+    }
     post.style.overflow = 'visible';
     const toggleWrap = document.createElement('div');
     toggleWrap.className = 'lfa-post-toggle';
     const toggleButton = buildToggleButton();
     toggleButton.dataset.lfaPostControl = TOGGLE_ID;
-    toggleButton.addEventListener('click', async (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      try {
-        await handlePostButtonClick(profile);
-      } catch (error) {
-        showToast(error instanceof Error ? error.message : CONTENT_COPY.postButtons.failedToOpenFeeds, 'error');
-      }
-    });
+    bindPostControlButton(toggleButton, profile);
     toggleWrap.appendChild(toggleButton);
     post.appendChild(toggleWrap);
   }
@@ -312,6 +393,7 @@ export function initPostButtons(): void {
   iconUrl = chrome.runtime.getURL('icons/icon48.png');
   ensureStyles();
   ensureModal();
+  ensureGlobalPostControlEvents();
   scanPosts();
 
   observer?.disconnect();
@@ -329,6 +411,7 @@ export function destroyPostButtons(): void {
     scanTimer = null;
   }
   activeProfile = null;
+  removeGlobalPostControlEvents();
   document.querySelectorAll('.lfa-post-toggle, .lfa-post-drawer-btn-wrapper').forEach((element) => element.remove());
   document.querySelectorAll(`[${POST_FLAG}]`).forEach((element) => element.removeAttribute(POST_FLAG));
   document.getElementById(MODAL_ID)?.remove();
