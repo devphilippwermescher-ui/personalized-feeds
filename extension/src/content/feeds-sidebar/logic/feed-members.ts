@@ -93,6 +93,22 @@ function profileViewerToMember(viewer: Partial<FeedMemberInfo>): FeedMemberInfo 
   };
 }
 
+export function getStaleFeedMemberCacheIds(
+  feeds: FeedInfo[],
+  feedMembersById: Record<string, FeedMemberInfo[]>
+): string[] {
+  return feeds
+    .filter((feed) => {
+      if (feed.systemType === 'profileViewers') {
+        return false;
+      }
+
+      const cachedMembers = feedMembersById[feed.id];
+      return Array.isArray(cachedMembers) && cachedMembers.length !== (feed.memberCount || 0);
+    })
+    .map((feed) => feed.id);
+}
+
 export async function loadFeedMembers(feedId: string, deps: FeedMembersDeps): Promise<void> {
   deps.setLoadingMembersFeedId(feedId);
   deps.renderSidebarContent();

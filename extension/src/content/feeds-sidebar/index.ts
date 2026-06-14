@@ -48,6 +48,7 @@ import {
 } from './logic/member-actions';
 import {
   loadFeedMembers as loadFeedMembersLogic,
+  getStaleFeedMemberCacheIds,
   renderFeedPreview as renderFeedPreviewMarkup,
   renderMembersList as renderMembersListMarkup,
   toggleFeedExpansion as toggleFeedExpansionLogic,
@@ -403,17 +404,9 @@ function getFeedActionDeps() {
 }
 
 async function handleExternalMemberAdded(detail: { feedId: string; feedName: string; member: FeedMemberInfo }): Promise<void> {
-  const incrementMemberCount = (feed: FeedInfo): FeedInfo =>
-    feed.id === detail.feedId
-      ? {
-          ...feed,
-          memberCount: (feed.memberCount || 0) + 1,
-        }
-      : feed;
-  feedsList = feedsList.map(incrementMemberCount);
-  sharedFeedsList = sharedFeedsList.map(incrementMemberCount);
-
-  const existingMembers = feedMembersById[detail.feedId] || [];
+  const cachedMembers = feedMembersById[detail.feedId];
+  const hasCompleteLocalCache = Array.isArray(cachedMembers);
+  const existingMembers = cachedMembers || [];
   const memberWithLoadingState: FeedMemberInfo = {
     ...detail.member,
     linkedinUsername: getCanonicalLinkedInUsername(detail.member),
@@ -425,6 +418,24 @@ async function handleExternalMemberAdded(detail: { feedId: string; feedName: str
   );
 
   if (!exists) {
+    if (!hasCompleteLocalCache) {
+      await loadFeeds();
+      if (expandedFeedId === detail.feedId && !feedMembersById[detail.feedId]) {
+        await loadFeedMembers(detail.feedId);
+      }
+      renderSidebarContent();
+      return;
+    }
+
+    const incrementMemberCount = (feed: FeedInfo): FeedInfo =>
+      feed.id === detail.feedId
+        ? {
+            ...feed,
+            memberCount: (feed.memberCount || 0) + 1,
+          }
+        : feed;
+    feedsList = feedsList.map(incrementMemberCount);
+    sharedFeedsList = sharedFeedsList.map(incrementMemberCount);
     feedMembersById = {
       ...feedMembersById,
       [detail.feedId]: [...existingMembers, memberWithLoadingState],
@@ -593,6 +604,22 @@ async function loadFeeds(): Promise<void> {
 
   if (Array.isArray(sharedResp?.sharedFeeds)) {
     sharedFeedsList = (sharedResp.sharedFeeds as Array<FeedInfo & { role?: 'reader' | 'editor' }>).map(normalizeSharedFeed);
+  }
+
+  const staleFeedIds = getStaleFeedMemberCacheIds(
+    [...feedsList, ...sharedFeedsList],
+    feedMembersById
+  );
+  if (staleFeedIds.length > 0) {
+    const nextFeedMembersById = { ...feedMembersById };
+    staleFeedIds.forEach((feedId) => {
+      delete nextFeedMembersById[feedId];
+    });
+    feedMembersById = nextFeedMembersById;
+
+    if (expandedFeedId && staleFeedIds.includes(expandedFeedId)) {
+      await loadFeedMembers(expandedFeedId);
+    }
   }
 
   await handlePendingSharedFeedLink();

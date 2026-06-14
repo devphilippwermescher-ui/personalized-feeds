@@ -4,9 +4,10 @@ import { CONTENT_COPY, getMemberCountLabel } from '../shared/copy';
 import type { FeedSummary, PostAuthorProfile } from './types';
 import { feedAddedMessage, profileAlreadyInFeedMessage } from '../shared/toast-messages';
 import { showToast } from '../shared/toast';
-import { escapeHtml, extractPostAuthorProfile } from './utils';
+import { escapeHtml, extractPostAuthorProfile, findPostCandidates } from './utils';
+import { dispatchFeedMemberAdded } from '../feeds-sidebar/sync-events';
+import type { FeedMemberInfo } from '../feeds-sidebar/types';
 
-const POST_SELECTOR = '.feed-shared-update-v2[role="article"], .feed-shared-update-v2[data-urn]';
 const POST_FLAG = 'data-lfa-post-buttons-bound';
 const STYLE_ID = 'lfa-post-buttons-styles';
 const MODAL_ID = 'lfa-post-feed-modal-overlay';
@@ -14,6 +15,7 @@ const TOGGLE_ID = 'lfa-post-toggle-btn';
 const DRAWER_ID = 'lfa-post-drawer-btn';
 
 let observer: MutationObserver | null = null;
+let scanTimer: number | null = null;
 let iconUrl = '';
 let activeProfile: PostAuthorProfile | null = null;
 
@@ -88,7 +90,12 @@ async function getMemberships(profile: LinkedInProfileData): Promise<Map<string,
 }
 
 async function addProfileToFeed(feedId: string, feedName: string, profile: LinkedInProfileData): Promise<boolean> {
-  const response = await sendMessage<{ success: boolean; error?: string; alreadyExists?: boolean }>({
+  const response = await sendMessage<{
+    success: boolean;
+    error?: string;
+    alreadyExists?: boolean;
+    member?: FeedMemberInfo;
+  }>({
     type: 'FEEDS_ADD_MEMBER',
     feedId,
     profileData: profile,
@@ -98,7 +105,16 @@ async function addProfileToFeed(feedId: string, feedName: string, profile: Linke
     throw new Error(response?.error || `Failed to add to "${feedName}"`);
   }
 
-  return response.alreadyExists !== true;
+  const added = response.alreadyExists !== true;
+  if (added && response.member) {
+    dispatchFeedMemberAdded({
+      feedId,
+      feedName,
+      member: response.member,
+    });
+  }
+
+  return added;
 }
 
 async function openFeedModal(profile: PostAuthorProfile, feeds: FeedSummary[]): Promise<void> {
@@ -224,23 +240,26 @@ function buildDrawerButton(): HTMLButtonElement {
 }
 
 function injectButtonsIntoPost(post: HTMLElement): void {
-  if (post.getAttribute(POST_FLAG) === 'true') {
-    return;
-  }
-
   const profile = extractPostAuthorProfile(post);
   if (!profile) {
     return;
   }
 
-  post.setAttribute(POST_FLAG, 'true');
+  const profileKey = profile.linkedinUsername.toLowerCase();
+  const previousProfileKey = post.getAttribute(POST_FLAG);
+  if (previousProfileKey && previousProfileKey !== profileKey) {
+    post.querySelectorAll('.lfa-post-toggle, .lfa-post-drawer-btn-wrapper').forEach((element) => element.remove());
+  }
+  post.setAttribute(POST_FLAG, profileKey);
 
-  const drawerHost = post.querySelector('.update-components-actor__sub-description, .update-components-actor__meta');
+  const drawerHost = post.querySelector(
+    '.update-components-actor__sub-description, .update-components-actor__meta, .feed-shared-actor__sub-description, .feed-shared-actor__meta'
+  );
   if (drawerHost && !post.querySelector('.lfa-post-drawer-btn-wrapper')) {
     const wrapper = document.createElement('div');
     wrapper.className = 'lfa-post-drawer-btn-wrapper';
     const drawerButton = buildDrawerButton();
-    drawerButton.id = DRAWER_ID;
+    drawerButton.dataset.lfaPostControl = DRAWER_ID;
     drawerButton.addEventListener('click', async (event) => {
       event.preventDefault();
       event.stopPropagation();
@@ -259,7 +278,7 @@ function injectButtonsIntoPost(post: HTMLElement): void {
     const toggleWrap = document.createElement('div');
     toggleWrap.className = 'lfa-post-toggle';
     const toggleButton = buildToggleButton();
-    toggleButton.id = TOGGLE_ID;
+    toggleButton.dataset.lfaPostControl = TOGGLE_ID;
     toggleButton.addEventListener('click', async (event) => {
       event.preventDefault();
       event.stopPropagation();
@@ -275,7 +294,18 @@ function injectButtonsIntoPost(post: HTMLElement): void {
 }
 
 function scanPosts(): void {
-  document.querySelectorAll<HTMLElement>(POST_SELECTOR).forEach(injectButtonsIntoPost);
+  findPostCandidates(document).forEach(injectButtonsIntoPost);
+}
+
+function schedulePostScan(): void {
+  if (scanTimer !== null) {
+    return;
+  }
+
+  scanTimer = window.setTimeout(() => {
+    scanTimer = null;
+    scanPosts();
+  }, 75);
 }
 
 export function initPostButtons(): void {
@@ -286,7 +316,7 @@ export function initPostButtons(): void {
 
   observer?.disconnect();
   observer = new MutationObserver(() => {
-    scanPosts();
+    schedulePostScan();
   });
   observer.observe(document.body, { childList: true, subtree: true });
 }
@@ -294,6 +324,10 @@ export function initPostButtons(): void {
 export function destroyPostButtons(): void {
   observer?.disconnect();
   observer = null;
+  if (scanTimer !== null) {
+    window.clearTimeout(scanTimer);
+    scanTimer = null;
+  }
   activeProfile = null;
   document.querySelectorAll('.lfa-post-toggle, .lfa-post-drawer-btn-wrapper').forEach((element) => element.remove());
   document.querySelectorAll(`[${POST_FLAG}]`).forEach((element) => element.removeAttribute(POST_FLAG));

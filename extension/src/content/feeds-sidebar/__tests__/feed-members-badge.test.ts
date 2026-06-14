@@ -17,7 +17,7 @@
  */
 
 import { describe, it, expect, vi } from 'vitest';
-import { toggleFeedExpansion, loadFeedMembers } from '../logic/feed-members';
+import { getStaleFeedMemberCacheIds, toggleFeedExpansion, loadFeedMembers } from '../logic/feed-members';
 import type { FeedInfo, FeedMemberInfo } from '../types';
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -337,5 +337,37 @@ describe('adding a new member does not reset existing member statuses', () => {
     expect(members[0].status).toBe('connected');   // existing member — NOT loading
     expect(members[1].status).toBe('following');   // existing member — NOT loading
     expect(members[2].status).toBe('loading');     // only the newly-added member is loading
+  });
+});
+
+describe('getStaleFeedMemberCacheIds', () => {
+  it('invalidates a cached list when Firestore memberCount has changed', () => {
+    const feed = makeFeed('feed-1', { memberCount: 4 });
+    const cachedMembers = [makeMember('m1'), makeMember('m2'), makeMember('m3')];
+
+    expect(getStaleFeedMemberCacheIds([feed], {
+      [feed.id]: cachedMembers,
+    })).toEqual([feed.id]);
+  });
+
+  it('keeps a complete cache and ignores caches that have not been loaded', () => {
+    const completeFeed = makeFeed('feed-1', { memberCount: 3 });
+    const unloadedFeed = makeFeed('feed-2', { memberCount: 4 });
+
+    expect(getStaleFeedMemberCacheIds([completeFeed, unloadedFeed], {
+      [completeFeed.id]: [makeMember('m1'), makeMember('m2'), makeMember('m3')],
+    })).toEqual([]);
+  });
+
+  it('does not treat the profile viewers system feed as a regular member cache', () => {
+    const feed = makeFeed('profile-viewers', {
+      memberCount: 10,
+      isSystem: true,
+      systemType: 'profileViewers',
+    });
+
+    expect(getStaleFeedMemberCacheIds([feed], {
+      [feed.id]: [makeMember('m1')],
+    })).toEqual([]);
   });
 });
