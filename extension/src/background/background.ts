@@ -49,6 +49,8 @@ import {
   getProfileViewersAuthRecoveryPlan,
   getProfileViewersRateLimitResetAt,
   getProfileViewersScheduledIntervalMs,
+  getProfileViewersSummaryMigrationDueAt,
+  PROFILE_VIEWERS_SUMMARY_COLLECTION_VERSION,
   recordProfileViewersRequest,
   startProfileViewersSyncAttempt,
   type ProfileViewersSyncErrorCode,
@@ -1658,12 +1660,14 @@ async function getProfileViewersSyncState(userId: string): Promise<ProfileViewer
   }
 
   const isCurrentSchedulePolicy = state.schedulePolicyVersion === 2;
+  const migrationDueAt = getProfileViewersSummaryMigrationDueAt(state, now);
 
   return {
     ...createProfileViewersSyncState(userId, now),
     ...state,
     schedulePolicyVersion: 2,
-    nextDueAt: isCurrentSchedulePolicy ? state.nextDueAt : now,
+    summaryCollectionVersion: PROFILE_VIEWERS_SUMMARY_COLLECTION_VERSION,
+    nextDueAt: isCurrentSchedulePolicy ? migrationDueAt : now,
     retryAt: isCurrentSchedulePolicy ? state.retryAt : undefined,
     cooldownUntil: isCurrentSchedulePolicy ? state.cooldownUntil : undefined,
     cycleStartedAt: isCurrentSchedulePolicy ? state.cycleStartedAt : undefined,

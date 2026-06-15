@@ -8,6 +8,7 @@ export const PROFILE_VIEWERS_REPEATED_FAILURE_BACKOFF_MS = 2 * 60 * 60 * 1000;
 export const PROFILE_VIEWERS_ATTEMPT_LEASE_MS = 5 * 60 * 1000;
 export const PROFILE_VIEWERS_RATE_LIMIT_WINDOW_MS = 24 * 60 * 60 * 1000;
 export const PROFILE_VIEWERS_MAX_REQUESTS_PER_WINDOW = 48;
+export const PROFILE_VIEWERS_SUMMARY_COLLECTION_VERSION = 1;
 export const PROFILE_VIEWERS_AUTH_RECOVERY_DELAYS_MS = [
   2 * 60 * 1000,
   5 * 60 * 1000,
@@ -84,6 +85,7 @@ export interface ProfileViewersSyncLog {
 export interface ProfileViewersSyncState {
   version: 1;
   schedulePolicyVersion: 2;
+  summaryCollectionVersion: 1;
   userId: string;
   lastSuccessAt?: number;
   lastAttemptAt?: number;
@@ -136,6 +138,7 @@ export function createProfileViewersSyncState(userId: string, now: number): Prof
   return {
     version: 1,
     schedulePolicyVersion: 2,
+    summaryCollectionVersion: PROFILE_VIEWERS_SUMMARY_COLLECTION_VERSION,
     userId,
     requestCountInWindow: 0,
     consecutiveFailedCycles: 0,
@@ -148,6 +151,21 @@ export function createProfileViewersSyncState(userId: string, now: number): Prof
     logs: [],
     updatedAt: now,
   };
+}
+
+export function getProfileViewersSummaryMigrationDueAt(
+  state: Partial<ProfileViewersSyncState>,
+  now: number
+): number | undefined {
+  if (
+    state.summaryCollectionVersion === PROFILE_VIEWERS_SUMMARY_COLLECTION_VERSION ||
+    state.attemptsInCycle === 1 ||
+    state.attemptsInCycle === 2
+  ) {
+    return state.nextDueAt;
+  }
+
+  return now;
 }
 
 export function getProfileViewersAuthRecoveryPlan({

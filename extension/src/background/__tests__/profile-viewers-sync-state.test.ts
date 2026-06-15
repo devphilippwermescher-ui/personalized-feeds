@@ -10,6 +10,7 @@ import {
   PROFILE_VIEWERS_REPEATED_FAILURE_BACKOFF_MS,
   PROFILE_VIEWERS_RESTRICTED_BACKOFF_MS,
   PROFILE_VIEWERS_RETRY_DELAY_MS,
+  PROFILE_VIEWERS_SUMMARY_COLLECTION_VERSION,
   PROFILE_VIEWERS_SYNC_INTERVAL_MS,
   completeProfileViewersSyncFailure,
   completeProfileViewersSyncSuccess,
@@ -18,6 +19,7 @@ import {
   getNextProfileViewersAlarmAt,
   getProfileViewersAuthRecoveryPlan,
   getProfileViewersScheduledIntervalMs,
+  getProfileViewersSummaryMigrationDueAt,
   recordProfileViewersRequest,
   startProfileViewersSyncAttempt,
   type ProfileViewersSyncTrigger,
@@ -27,10 +29,55 @@ describe('profile viewers sync state', () => {
   it('starts with a resumable profile history backfill state', () => {
     const state = createProfileViewersSyncState('user-1', 1_000);
 
+    expect(state.summaryCollectionVersion).toBe(
+      PROFILE_VIEWERS_SUMMARY_COLLECTION_VERSION
+    );
     expect(state.backfillStatus).toBe('not_started');
     expect(state.backfillPagesFetched).toBe(0);
     expect(state.backfillProfilesSaved).toBe(0);
     expect(state.recentProfileViewerUsernames).toEqual([]);
+  });
+
+  it('makes an idle legacy state due once for private viewer summary collection', () => {
+    const now = 20_000;
+    const legacyState: Partial<ReturnType<typeof createProfileViewersSyncState>> = {
+      version: 1,
+      schedulePolicyVersion: 2,
+      userId: 'user-1',
+      nextDueAt: now + PROFILE_VIEWERS_SYNC_INTERVAL_MS,
+      attemptsInCycle: 0,
+    };
+
+    expect(getProfileViewersSummaryMigrationDueAt(legacyState, now)).toBe(now);
+  });
+
+  it('preserves the regular schedule after summary collection migration', () => {
+    const now = 20_000;
+    const nextDueAt = now + PROFILE_VIEWERS_SYNC_INTERVAL_MS;
+    const currentState = {
+      ...createProfileViewersSyncState('user-1', now),
+      nextDueAt,
+    };
+
+    expect(getProfileViewersSummaryMigrationDueAt(currentState, now)).toBe(
+      nextDueAt
+    );
+  });
+
+  it('does not interrupt an active legacy sync to run the summary migration', () => {
+    const now = 20_000;
+    const nextDueAt = now + PROFILE_VIEWERS_SYNC_INTERVAL_MS;
+    const activeLegacyState: Partial<ReturnType<typeof createProfileViewersSyncState>> = {
+      version: 1,
+      schedulePolicyVersion: 2,
+      userId: 'user-1',
+      nextDueAt,
+      attemptsInCycle: 1,
+    };
+
+    expect(
+      getProfileViewersSummaryMigrationDueAt(activeLegacyState, now)
+    ).toBe(nextDueAt);
   });
 
   it('counts every pagination request inside the rolling request window', () => {
