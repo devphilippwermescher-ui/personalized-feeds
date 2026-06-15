@@ -1,4 +1,3 @@
-import type { LinkedInProfileData } from '../../../../shared/types';
 import { POST_BUTTONS_CSS } from './styles';
 import { CONTENT_COPY, getMemberCountLabel } from '../shared/copy';
 import type { FeedSummary, PostAuthorProfile } from './types';

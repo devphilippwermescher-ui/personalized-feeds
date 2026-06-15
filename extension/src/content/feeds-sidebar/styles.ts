@@ -913,6 +913,8 @@ export const FEEDS_SIDEBAR_CSS = `
   .lfa-feed-pin svg {
     width: 16px;
     height: 16px;
+    transform: rotate(45deg);
+    transform-origin: center;
   }
   .lfa-feed-pin:hover,
   .lfa-feed-pin:focus-visible {

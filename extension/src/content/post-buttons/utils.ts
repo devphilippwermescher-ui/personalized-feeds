@@ -191,6 +191,13 @@ function scoreModernAuthorLink(link: HTMLAnchorElement): number {
 }
 
 function findBestPostAuthorLink(post: HTMLElement): HTMLAnchorElement | null {
+  const hasLegacyActor = Boolean(
+    post.querySelector('.update-components-actor, .feed-shared-actor')
+  );
+  if (hasLegacyActor) {
+    return findPostAuthorLink(post);
+  }
+
   return findModernSduiAuthorLink(post) || findPostAuthorLink(post);
 }
 
@@ -283,6 +290,11 @@ export function findPostAuthorDrawerHost(post: HTMLElement): HTMLElement | null 
 }
 
 function findPostCardRoot(element: HTMLElement): HTMLElement {
+  const activityRoot = element.closest<HTMLElement>('[data-id^="urn:li:activity:"]');
+  if (activityRoot && !isPostComposer(activityRoot)) {
+    return activityRoot;
+  }
+
   let current: HTMLElement = element;
   let depth = 0;
 
@@ -309,6 +321,11 @@ function addPostCandidate(candidates: Set<HTMLElement>, candidate: HTMLElement):
   }
 
   const hasPostSignal =
+    candidate.matches('[data-id^="urn:li:activity:"]') ||
+    candidate.matches('[data-view-name="feed-full-update"]') ||
+    candidate.matches('.feed-shared-update-v2') ||
+    Boolean(candidate.querySelector('[data-view-name="feed-full-update"]')) ||
+    Boolean(candidate.querySelector('.feed-shared-update-v2')) ||
     candidate.matches('[role="listitem"][componentkey*="FeedType_"]') ||
     Boolean(candidate.querySelector('[role="listitem"][componentkey*="FeedType_"]')) ||
     Boolean(candidate.querySelector('[data-testid="expandable-text-box"]'));
@@ -320,9 +337,13 @@ function addPostCandidate(candidates: Set<HTMLElement>, candidate: HTMLElement):
 
 export function findPostCandidates(root: ParentNode = document): HTMLElement[] {
   const candidates = new Set<HTMLElement>();
+  root.querySelectorAll<HTMLElement>('[data-id^="urn:li:activity:"]').forEach((post) => {
+    addPostCandidate(candidates, post);
+  });
+
   root.querySelectorAll<HTMLElement>(
-    '.feed-shared-update-v2[role="article"], .feed-shared-update-v2[data-urn]'
-  ).forEach((post) => addPostCandidate(candidates, post));
+    '.feed-shared-update-v2, [data-view-name="feed-full-update"]'
+  ).forEach((post) => addPostCandidate(candidates, findPostCardRoot(post)));
 
   const feedRoots = Array.from(root.querySelectorAll<HTMLElement>(
     '[data-testid="mainFeed"][role="list"]'

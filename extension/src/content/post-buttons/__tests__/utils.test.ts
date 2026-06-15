@@ -44,6 +44,67 @@ describe('extractPostAuthorProfile', () => {
     });
   });
 
+  it('discovers classic LinkedIn activity cards without SDUI markers', () => {
+    document.body.innerHTML = `
+      <div data-id="urn:li:activity:7445463395065307136" class="relative">
+        <div data-view-name="feed-full-update">
+          <div class="feed-shared-update-v2">
+            <div class="update-components-actor">
+              <a class="update-components-actor__image" href="https://www.linkedin.com/in/classic-author/">
+                <img class="update-components-actor__avatar-image" src="https://media.licdn.com/classic.jpg" />
+              </a>
+              <a class="update-components-actor__meta-link" href="https://www.linkedin.com/in/classic-author/">
+                <span class="update-components-actor__title">Classic Author</span>
+              </a>
+              <span class="update-components-actor__sub-description">2h</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const candidates = findPostCandidates(document);
+
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0].getAttribute('data-id')).toBe(
+      'urn:li:activity:7445463395065307136'
+    );
+    expect(extractPostAuthorProfile(candidates[0])).toMatchObject({
+      linkedinUsername: 'classic-author',
+      displayName: 'Classic Author',
+    });
+    expect(findPostAuthorDrawerHost(candidates[0])?.textContent).toContain('2h');
+  });
+
+  it('keeps the legacy actor authoritative when a social actor appears first', () => {
+    document.body.innerHTML = `
+      <div data-id="urn:li:activity:123">
+        <div class="feed-shared-update-v2">
+          <div class="update-components-header">
+            <a href="https://www.linkedin.com/in/social-actor/">
+              <img src="https://media.licdn.com/social.jpg" />
+              Social Actor likes this
+            </a>
+          </div>
+          <div class="update-components-actor">
+            <a class="update-components-actor__image" href="https://www.linkedin.com/in/actual-author/">
+              <img class="update-components-actor__avatar-image" src="https://media.licdn.com/actual.jpg" />
+            </a>
+            <a class="update-components-actor__meta-link" href="https://www.linkedin.com/in/actual-author/">
+              <span class="update-components-actor__title">Actual Author</span>
+            </a>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const [post] = findPostCandidates(document);
+
+    expect(extractPostAuthorProfile(post)?.linkedinUsername).toBe(
+      'actual-author'
+    );
+  });
+
   it('supports generic profile links when they are scoped to the actor block', () => {
     const post = makePost(`
       <div class="update-components-header">
