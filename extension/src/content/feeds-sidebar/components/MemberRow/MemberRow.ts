@@ -19,6 +19,28 @@ function renderMemberMeta(member: FeedMemberInfo): string {
   return `<div class="lfa-member-meta">${escapeHtml(metaParts.join(' - '))}</div>`;
 }
 
+function isUrlLikeSearchDisplayName(value: string): boolean {
+  const normalized = value.trim().toLocaleLowerCase();
+  return (
+    /^https?:\/\//i.test(normalized) ||
+    normalized.includes('linkedin.com') ||
+    normalized.includes('/search/results/people') ||
+    normalized.includes('/results/people') ||
+    normalized.includes('currentcompany=') ||
+    normalized.includes('origin=who_viewed_me')
+  );
+}
+
+function getSearchDisplayName(member: FeedMemberInfo): string {
+  if (member.itemType !== 'search' || !isUrlLikeSearchDisplayName(member.displayName)) {
+    return member.displayName;
+  }
+
+  return member.searchKey
+    ? new URLSearchParams(member.searchKey).get('keywords') || 'LinkedIn search'
+    : 'LinkedIn search';
+}
+
 interface RenderMemberRowOptions {
   feedId: string;
   member: FeedMemberInfo;
@@ -37,6 +59,7 @@ export function renderMemberRow({
   showMeta = false,
 }: RenderMemberRowOptions): string {
   if (member.itemType === 'search') {
+    const displayName = getSearchDisplayName(member);
     return `
       <div class="lfa-member-row lfa-member-row--search" data-member-id="${escapeHtml(member.id)}" data-feed-id="${escapeHtml(feedId)}">
         <div class="lfa-member-main">
@@ -48,7 +71,7 @@ export function renderMemberRow({
           </div>
           <div class="lfa-member-info">
             <button class="lfa-member-name" data-member-action="open-profile" data-member-id="${escapeHtml(member.id)}" data-feed-id="${escapeHtml(feedId)}" type="button">
-              <span class="lfa-member-name-text">${escapeHtml(member.displayName)}</span>
+              <span class="lfa-member-name-text">${escapeHtml(displayName)}</span>
             </button>
           </div>
         </div>

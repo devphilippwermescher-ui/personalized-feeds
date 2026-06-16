@@ -36,4 +36,30 @@ describe('profile viewer search row', () => {
     expect(html).not.toContain('data-member-action="delete"');
     expect(html).not.toContain('Connect');
   });
+
+  it('falls back to keywords when a stored search display name is a LinkedIn URL', () => {
+    const member: FeedMemberInfo = {
+      id: 'search-url',
+      itemType: 'search',
+      searchKey:
+        'currentCompany=1053414&keywords=Software+Developer&origin=WHO_VIEWED_ME',
+      linkedinUrl:
+        'https://www.linkedin.com/search/results/people/?currentCompany=1053414&keywords=Software+Developer&origin=WHO_VIEWED_ME',
+      linkedinUsername: '',
+      displayName:
+        'https://www.linkedin.com/search/results/people/?currentCompany=1053414&keywords=Software+Developer&origin=WHO_VIEWED_ME',
+      addedAt: 1,
+    };
+
+    const html = renderMemberRow({
+      feedId: '__profile_viewers__',
+      member,
+      messageButtonHtml: '',
+      statusActionHtml: '',
+      canEdit: false,
+    });
+
+    expect(html).toContain('Software Developer');
+    expect(html).not.toContain('https://www.linkedin.com/search/results/people');
+  });
 });

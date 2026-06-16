@@ -38,6 +38,28 @@ function removeSearchUiText(value: string, viewedAgoText: string): string {
     .trim();
 }
 
+function isUrlLikeSearchDisplayName(value: string): boolean {
+  const normalized = normalizeText(value).toLocaleLowerCase();
+  return (
+    /^https?:\/\//i.test(normalized) ||
+    normalized.includes('linkedin.com') ||
+    normalized.includes('/search/results/people') ||
+    normalized.includes('/results/people') ||
+    normalized.includes('currentcompany=') ||
+    normalized.includes('origin=who_viewed_me')
+  );
+}
+
+function isSearchDisplayNameCandidate(value: string, keywords: string): boolean {
+  const normalized = normalizeText(value);
+  return (
+    normalized.length > 0 &&
+    normalized.length <= 180 &&
+    normalized.toLocaleLowerCase().includes(keywords.toLocaleLowerCase()) &&
+    !isUrlLikeSearchDisplayName(normalized)
+  );
+}
+
 function getQuotedStrings(value: string): string[] {
   const result: string[] = [];
   const pattern = /"((?:\\.|[^"\\])*)"/g;
@@ -117,10 +139,8 @@ function getDisplayName(
   if (anchorHtml) {
     const spanTexts = Array.from(anchorHtml.matchAll(/<span\b[^>]*>([\s\S]*?)<\/span>/gi))
       .map((match) => removeSearchUiText(match[1], viewedAgoText))
-      .filter(Boolean);
-    const matchingSpan = spanTexts.find((text) =>
-      text.toLocaleLowerCase().includes(keywords.toLocaleLowerCase())
-    );
+      .filter((text) => isSearchDisplayNameCandidate(text, keywords));
+    const matchingSpan = spanTexts[0];
     if (matchingSpan) {
       return { displayName: matchingSpan, viewedAgoText };
     }
@@ -131,12 +151,7 @@ function getDisplayName(
   const displayName =
     strings
       .map((text) => removeSearchUiText(text, viewedAgoText))
-      .filter(
-        (text) =>
-          text.length <= 180 &&
-          text.toLocaleLowerCase().includes(normalizedKeywords) &&
-          !text.includes('/search/results/people/')
-      )
+      .filter((text) => isSearchDisplayNameCandidate(text, normalizedKeywords))
       .sort((left, right) => {
         const leftExtra = Math.max(0, left.length - keywords.length);
         const rightExtra = Math.max(0, right.length - keywords.length);

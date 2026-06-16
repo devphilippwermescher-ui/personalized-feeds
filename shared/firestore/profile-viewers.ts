@@ -50,6 +50,36 @@ function keepExistingIfIncomingEmpty(incoming: string | undefined, existing: str
   return normalizedIncoming;
 }
 
+function isSearchUrlLikeDisplayName(value: string | undefined): boolean {
+  const normalized = (value || '').trim().toLocaleLowerCase();
+  return (
+    /^https?:\/\//i.test(normalized) ||
+    normalized.includes('linkedin.com') ||
+    normalized.includes('/search/results/people') ||
+    normalized.includes('/results/people') ||
+    normalized.includes('currentcompany=') ||
+    normalized.includes('origin=who_viewed_me')
+  );
+}
+
+function chooseSearchDisplayName(
+  incoming: ProfileViewerSearchInput,
+  existing?: ProfileViewerSearch
+): string {
+  const incomingName = incoming.displayName.trim();
+  const existingName = existing?.displayName?.trim() || '';
+
+  if (incomingName && !isSearchUrlLikeDisplayName(incomingName)) {
+    return incomingName;
+  }
+
+  if (existingName && !isSearchUrlLikeDisplayName(existingName)) {
+    return existingName;
+  }
+
+  return incoming.keywords.trim() || 'LinkedIn search';
+}
+
 export async function upsertProfileViewers(
   userId: string,
   viewers: ProfileViewerInput[],
@@ -202,7 +232,7 @@ export async function upsertProfileViewerSearches(
         itemType: 'search',
         searchKey,
         searchUrl: search.searchUrl,
-        displayName: search.displayName,
+        displayName: chooseSearchDisplayName(search, existing),
         keywords: search.keywords,
         currentCompany: search.currentCompany || '',
         viewedAgoText: keepExistingIfIncomingEmpty(

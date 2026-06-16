@@ -36,6 +36,17 @@ describe('extractProfileViewerSearches', () => {
     expect(searches[0].searchKey).not.toContain('sid');
   });
 
+  it('does not use LinkedIn search URLs as the display name', () => {
+    const payload = [
+      '"https://www.linkedin.com/search/results/people/?currentCompany=1053414&keywords=Software%20Developer&origin=WHO_VIEWED_ME"',
+      '"https://www.linkedin.com /results/people/?currentCompany=1053414&keywords=Software%20Developer&origin=WHO_VIEWED_ME"',
+    ].join(' ');
+
+    const searches = extractProfileViewerSearches(payload);
+    expect(searches).toHaveLength(1);
+    expect(searches[0].displayName).toBe('Software Developer');
+  });
+
   it('ignores ordinary LinkedIn people searches not coming from profile viewers', () => {
     expect(
       extractProfileViewerSearches(

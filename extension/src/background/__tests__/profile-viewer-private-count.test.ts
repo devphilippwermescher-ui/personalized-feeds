@@ -31,6 +31,17 @@ describe('extractPrivateProfileViewerCount', () => {
     expect(extractPrivateProfileViewerCount(payload)).toBe(4);
   });
 
+  it('extracts the nearest private count when LinkedIn splits the localized label', () => {
+    const payload = `
+      "children":["1 mutual connection"]
+      "children":["Members",["$","span",null,{"children":" "}],"\\u002858\\u0029"]
+      "children":"These people viewed your profile in private mode"
+      "url":"https:\\/\\/www.linkedin.com\\/help\\/linkedin\\/answer\\/a567226\\/"
+    `;
+
+    expect(extractPrivateProfileViewerCount(payload)).toBe(58);
+  });
+
   it('does not infer private viewers without the stable help article marker', () => {
     expect(extractPrivateProfileViewerCount('LinkedIn members (14)')).toBeNull();
   });

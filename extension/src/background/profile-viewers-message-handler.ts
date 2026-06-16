@@ -4,6 +4,7 @@ import {
   removeProfileViewer,
   updateProfileViewer,
 } from 'shared/firestore-service';
+import type { ProfileViewerSummary } from 'shared/types';
 import {
   appendProfileViewersWakeEvent,
   getProfileViewersSyncState,
@@ -12,6 +13,26 @@ import { queueProfileViewersSync } from './profile-viewers-coordinator';
 import { syncProfileViewersViaPage } from './profile-viewers-page-sync';
 import { getAuthenticatedFeedsUser } from './feeds-auth';
 import { getFeedsAuthErrorResponse, normalizeFeedsError } from './feeds-errors';
+
+function getProfileViewerSummaryFromSyncState(
+  syncState: Awaited<ReturnType<typeof getProfileViewersSyncState>>
+): ProfileViewerSummary | null {
+  const logWithPrivateCount = syncState.logs.find(
+    (log) =>
+      Number.isSafeInteger(log.privateViewerCount) &&
+      (log.privateViewerCount || 0) >= 0
+  );
+
+  if (!logWithPrivateCount) {
+    return null;
+  }
+
+  return {
+    privateViewerCount: logWithPrivateCount.privateViewerCount || 0,
+    updatedAt: logWithPrivateCount.finishedAt,
+  };
+}
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'PROFILE_VIEWERS_GET') {
     getAuthenticatedFeedsUser()
@@ -24,8 +45,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return Promise.all([
           getProfileViewerItems(user.uid),
           getProfileViewerSummary(user.uid),
-        ]).then(([viewers, summary]) => {
-          sendResponse({ success: true, viewers, summary });
+          getProfileViewersSyncState(user.uid),
+        ]).then(([viewers, summary, syncState]) => {
+          sendResponse({
+            success: true,
+            viewers,
+            summary: summary || getProfileViewerSummaryFromSyncState(syncState),
+          });
         });
       })
       .catch((error) => {
