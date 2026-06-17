@@ -19,6 +19,16 @@ describe('profile viewer data quality', () => {
     ).toBe('Mykhailo Blokhin');
   });
 
+  it('lets a name that matches the profile slug replace a polluted existing name', () => {
+    expect(
+      chooseProfileViewerDisplayName(
+        'Alia Waleczek',
+        'Dima Lavrov',
+        'alia-waleczek-806248315'
+      )
+    ).toBe('Alia Waleczek');
+  });
+
   it('rejects expired profile images and keeps a valid existing image', () => {
     const expired =
       'https://media.licdn.com/dms/image/v2/test/profile-displayphoto-shrink_100_100/a?e=1';

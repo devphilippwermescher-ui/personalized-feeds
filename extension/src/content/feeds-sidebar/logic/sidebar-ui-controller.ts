@@ -61,6 +61,9 @@ interface SidebarUiControllerDeps {
   showCreateFeedForm: () => void;
   toggleFeedExpansion: (feedId: string) => Promise<void>;
   openFeedPosts: (feedId: string) => Promise<void>;
+  requestProfileViewersRefreshConfirmation: () => void;
+  cancelProfileViewersRefreshConfirmation: () => void;
+  refreshProfileViewers: () => Promise<void>;
   moveFeed: (sourceFeedId: string, targetFeedId: string) => Promise<void>;
   showEditFeedModal: (feed: FeedInfo) => void;
   showAddPeopleModal: (feed: FeedInfo) => void;
@@ -229,6 +232,11 @@ export function createSidebarUiController(deps: SidebarUiControllerDeps): {
         filterFeeds,
         toggleFeedExpansion: deps.toggleFeedExpansion,
         openFeedPosts: deps.openFeedPosts,
+        requestProfileViewersRefreshConfirmation:
+          deps.requestProfileViewersRefreshConfirmation,
+        cancelProfileViewersRefreshConfirmation:
+          deps.cancelProfileViewersRefreshConfirmation,
+        refreshProfileViewers: deps.refreshProfileViewers,
         moveFeed: deps.moveFeed,
         showEditFeedModal: deps.showEditFeedModal,
         showAddPeopleModal: deps.showAddPeopleModal,

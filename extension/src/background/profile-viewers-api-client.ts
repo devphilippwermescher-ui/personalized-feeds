@@ -5,6 +5,10 @@ import { parseProfileViewersFromPayload } from './profile-viewers-payload-parser
 import { extractProfileViewerSearches } from './profile-viewer-searches';
 import { extractPrivateProfileViewerCount } from './profile-viewer-private-count';
 import {
+  extractRecruiterProfileViewerCount,
+  extractRecruiterProfileViewerUrl,
+} from './profile-viewer-recruiter-count';
+import {
   createProfileViewersPaginationBody,
   extractNextProfileViewersPaginationCursor,
   PROFILE_VIEWERS_PAGER_ID,
@@ -73,6 +77,8 @@ export interface ProfileViewersRscPage {
   viewers: ProfileViewerInput[];
   searches: ProfileViewerSearchInput[];
   privateViewerCount: number | null;
+  recruiterViewerCount: number | null;
+  recruiterViewerUrl: string | null;
   httpStatus: number;
   responseLength: number;
   nextCursor: ProfileViewersPaginationCursor | null;
@@ -133,6 +139,8 @@ async function fetchProfileViewersRscPage(
     const viewers = parseProfileViewersFromPayload(payload);
     const searches = extractProfileViewerSearches(payload);
     const privateViewerCount = extractPrivateProfileViewerCount(payload);
+    const recruiterViewerCount = extractRecruiterProfileViewerCount(payload);
+    const recruiterViewerUrl = extractRecruiterProfileViewerUrl(payload);
     const orderedItems = [
       ...viewers.map((viewer) => ({
         type: 'profile' as const,
@@ -154,6 +162,8 @@ async function fetchProfileViewersRscPage(
       viewers,
       searches,
       privateViewerCount,
+      recruiterViewerCount,
+      recruiterViewerUrl,
       httpStatus: response.status,
       responseLength: payload.length,
       nextCursor:

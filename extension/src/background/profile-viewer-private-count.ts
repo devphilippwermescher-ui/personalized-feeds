@@ -6,6 +6,8 @@ const PRIVATE_VIEWERS_MARKER_PATTERN =
   /(private|confidential|\u043a\u043e\u043d\u0444\u0456\u0434\u0435\u043d\u0446\u0456\u0439\u043d|\u043a\u043e\u043d\u0444\u0438\u0434\u0435\u043d\u0446\u0438\u0430\u043b)/iu;
 const LINKEDIN_MEMBER_COUNT_PATTERN =
   /LinkedIn[\s\S]{0,8000}?\(\s*(\d{1,6})\s*\)/giu;
+const PREFIXED_LINKEDIN_MEMBER_COUNT_PATTERN =
+  /\b(\d{1,6})\s+LinkedIn\s+members?\b/giu;
 
 function normalizePayload(value: string): string {
   return value
@@ -30,6 +32,16 @@ function getSafeCount(value: string | undefined): number | null {
 }
 
 function extractPrivateCountNearHelpArticle(context: string): number | null {
+  const prefixedLinkedInCountMatches = Array.from(
+    context.matchAll(PREFIXED_LINKEDIN_MEMBER_COUNT_PATTERN)
+  );
+  const prefixedLinkedInCount = getSafeCount(
+    prefixedLinkedInCountMatches[prefixedLinkedInCountMatches.length - 1]?.[1]
+  );
+  if (prefixedLinkedInCount !== null) {
+    return prefixedLinkedInCount;
+  }
+
   const linkedInCountMatches = Array.from(
     context.matchAll(LINKEDIN_MEMBER_COUNT_PATTERN)
   );

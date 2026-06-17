@@ -100,6 +100,7 @@ export const MEMBERS_CSS = `.lfa-member-row {
     transform: translateY(0);
   }
   .lfa-member-avatar--search,
+  .lfa-member-avatar--recruiters,
   .lfa-feed-preview-avatar--search {
     display: flex;
     align-items: center;
@@ -107,7 +108,12 @@ export const MEMBERS_CSS = `.lfa-member-row {
     background: #e7e5e4;
     color: #7890a5;
   }
-  .lfa-member-avatar--search svg {
+  .lfa-member-avatar--recruiters {
+    background: #e0f2fe;
+    color: #0369a1;
+  }
+  .lfa-member-avatar--search svg,
+  .lfa-member-avatar--recruiters svg {
     width: 29px;
     height: 29px;
   }

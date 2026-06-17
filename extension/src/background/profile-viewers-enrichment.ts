@@ -103,10 +103,16 @@ export function mergeProfileViewerWithPageMetadata(
   metadata: ProfileViewerPageMetadata,
   existing?: Partial<ProfileViewer>
 ): ProfileViewerInput {
+  const parsedOrMetadataDisplayName = chooseProfileViewerDisplayName(
+    viewer.displayName,
+    metadata.displayName,
+    viewer.linkedinUsername
+  );
+
   return {
     ...viewer,
     displayName: chooseProfileViewerDisplayName(
-      metadata.displayName || viewer.displayName,
+      parsedOrMetadataDisplayName,
       existing?.displayName,
       viewer.linkedinUsername
     ),

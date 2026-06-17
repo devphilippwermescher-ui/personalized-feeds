@@ -189,6 +189,12 @@ export async function setProfileViewersSyncState(state: ProfileViewersSyncState)
   });
 }
 
+export async function resetProfileViewersSyncState(userId: string): Promise<ProfileViewersSyncState> {
+  const state = createProfileViewersSyncState(userId, Date.now());
+  await setProfileViewersSyncState(state);
+  return state;
+}
+
 export async function setProfileViewersAuthRecoveryState(
   state: Partial<ProfileViewersSyncState> | null,
   authRecoveryAttempts: number,

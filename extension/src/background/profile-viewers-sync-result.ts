@@ -6,6 +6,8 @@ export interface ProfileViewersSyncResult {
   visibleCount: number;
   visibleSearchCount?: number;
   privateViewerCount?: number;
+  recruiterViewerCount?: number;
+  recruiterViewerUrl?: string;
   updatedCount: number;
   visibleProfileUsernames: string[];
   newProfileUsernames: string[];

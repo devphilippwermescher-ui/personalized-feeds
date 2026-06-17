@@ -50,18 +50,48 @@ function isUrlLikeSearchDisplayName(value: string): boolean {
   );
 }
 
-function isSearchDisplayNameCandidate(value: string, keywords: string): boolean {
+function isTechnicalSearchDisplayName(value: string): boolean {
   const normalized = normalizeText(value);
+  const lower = normalized.toLocaleLowerCase();
+  const tokenLikeMatches = normalized.match(/(?:^|\s)_[a-z0-9]{6,}|[a-f0-9]{8,}/gi) || [];
+
   return (
-    normalized.length > 0 &&
-    normalized.length <= 180 &&
-    normalized.toLocaleLowerCase().includes(keywords.toLocaleLowerCase()) &&
-    !isUrlLikeSearchDisplayName(normalized)
+    /(?:\$undefined|\$type|props:|children:|componentkey|viewtrackingspecs|classname|proto\.sdui)/i.test(
+      normalized
+    ) ||
+    /^(url|children|text|buttonprops)$/i.test(normalized) ||
+    /^[\]}),.;:'"\s]+$/.test(normalized) ||
+    /[{}[\]]/.test(normalized) ||
+    /(?:^|[^a-z])(?:false|true)(?:$|[^a-z])/i.test(normalized) ||
+    lower.startsWith('_') ||
+    tokenLikeMatches.length >= 2
   );
 }
 
-function getQuotedStrings(value: string): string[] {
-  const result: string[] = [];
+function isAnonymousSearchDisplayName(value: string): boolean {
+  const normalized = normalizeText(value);
+  return (
+    /^Someone at\s+\S.{1,120}$/iu.test(normalized) ||
+    /^[\p{L}\p{N}][^{}[\]"$]{1,120}\s+at\s+[\p{L}\p{N}][^{}[\]"$]{1,120}$/iu.test(
+      normalized
+    )
+  );
+}
+
+function isSearchDisplayNameCandidate(value: string, keywords: string): boolean {
+  const normalized = normalizeText(value);
+  const normalizedKeywords = keywords.toLocaleLowerCase();
+  return (
+    normalized.length > 0 &&
+    normalized.length <= 180 &&
+    (!normalizedKeywords || normalized.toLocaleLowerCase().includes(normalizedKeywords)) &&
+    !isUrlLikeSearchDisplayName(normalized) &&
+    !isTechnicalSearchDisplayName(normalized)
+  );
+}
+
+function getQuotedStringEntries(value: string): Array<{ text: string; index: number }> {
+  const result: Array<{ text: string; index: number }> = [];
   const pattern = /"((?:\\.|[^"\\])*)"/g;
   let match: RegExpExecArray | null;
 
@@ -71,7 +101,7 @@ function getQuotedStrings(value: string): string[] {
       if (typeof parsed === 'string') {
         const normalized = normalizeText(parsed);
         if (normalized) {
-          result.push(normalized);
+          result.push({ text: normalized, index: match.index });
         }
       }
     } catch {
@@ -95,8 +125,9 @@ function buildSearchIdentity(rawHref: string): {
     }
 
     const keywords = (url.searchParams.get('keywords') || '').trim();
+    const currentCompany = (url.searchParams.get('currentCompany') || '').trim();
     const origin = url.searchParams.get('origin');
-    if (!keywords || (origin && origin !== 'WHO_VIEWED_ME')) {
+    if ((origin && origin !== 'WHO_VIEWED_ME') || (!keywords && !currentCompany)) {
       return null;
     }
 
@@ -133,7 +164,8 @@ function getDisplayName(
   keywords: string,
   anchorHtml?: string
 ): { displayName: string; viewedAgoText: string } {
-  const context = anchorHtml || payload.slice(Math.max(0, sourceIndex - 2_500), sourceIndex + 2_500);
+  const contextStart = anchorHtml ? 0 : Math.max(0, sourceIndex - 2_500);
+  const context = anchorHtml || payload.slice(contextStart, sourceIndex + 2_500);
   const viewedAgoText = extractViewedAgoText(context);
 
   if (anchorHtml) {
@@ -146,17 +178,42 @@ function getDisplayName(
     }
   }
 
-  const strings = getQuotedStrings(context);
+  const rawAnonymousMatches = Array.from(
+    context.matchAll(/"children"\s*:\s*\[\s*"([^"{}[\]$]{2,180}\s+at\s+[^"{}[\]$]{2,180})"\s*\]/giu)
+  )
+    .map((match) => ({
+      text: removeSearchUiText(match[1] || '', viewedAgoText),
+      index: contextStart + (match.index || 0),
+    }))
+    .filter((entry) => isAnonymousSearchDisplayName(entry.text));
+  const followingRawAnonymousCandidate = rawAnonymousMatches
+    .filter((entry) => entry.index >= sourceIndex)
+    .sort((left, right) => left.index - right.index)[0];
+  if (!keywords && followingRawAnonymousCandidate) {
+    return { displayName: followingRawAnonymousCandidate.text, viewedAgoText };
+  }
+
+  const entries = getQuotedStringEntries(context);
   const normalizedKeywords = keywords.toLocaleLowerCase();
+  const candidates = entries
+    .map((entry) => ({
+      text: removeSearchUiText(entry.text, viewedAgoText),
+      index: contextStart + entry.index,
+    }))
+    .filter((entry) => isSearchDisplayNameCandidate(entry.text, normalizedKeywords));
+  const followingAnonymousCandidate = candidates
+    .filter((entry) => !normalizedKeywords && entry.index >= sourceIndex)
+    .filter((entry) => isAnonymousSearchDisplayName(entry.text))
+    .sort((left, right) => left.index - right.index)[0];
   const displayName =
-    strings
-      .map((text) => removeSearchUiText(text, viewedAgoText))
-      .filter((text) => isSearchDisplayNameCandidate(text, normalizedKeywords))
-      .sort((left, right) => {
-        const leftExtra = Math.max(0, left.length - keywords.length);
-        const rightExtra = Math.max(0, right.length - keywords.length);
-        return rightExtra - leftExtra;
-      })[0] || keywords;
+    followingAnonymousCandidate?.text ||
+    (!normalizedKeywords && candidates.find((entry) => isAnonymousSearchDisplayName(entry.text))?.text) ||
+    candidates.sort((left, right) => {
+      const leftExtra = Math.max(0, left.text.length - keywords.length);
+      const rightExtra = Math.max(0, right.text.length - keywords.length);
+      return rightExtra - leftExtra;
+    })[0]?.text ||
+    keywords;
 
   return { displayName, viewedAgoText };
 }

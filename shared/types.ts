@@ -85,6 +85,8 @@ export type ProfileViewerListItem = ProfileViewer | ProfileViewerSearch;
 
 export interface ProfileViewerSummary {
   privateViewerCount: number;
+  recruiterViewerCount?: number;
+  recruiterViewerUrl?: string;
   updatedAt: number;
 }
 

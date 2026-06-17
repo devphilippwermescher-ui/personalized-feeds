@@ -2,6 +2,8 @@ import type { FeedInfo, FeedMemberInfo, UserInfo } from '../types';
 import type { ProfileViewerListItem, ProfileViewerSummary } from 'shared/types';
 
 export const PROFILE_VIEWERS_FEED_ID = '__profile_viewers__';
+const DEFAULT_RECRUITER_VIEWERS_URL =
+  'https://www.linkedin.com/analytics/recruiter-views/?timeRange=WvmpSearchFilterTimeRange_LAST_90_DAYS';
 
 export function normalizeSharedFeed(
   feed: FeedInfo & { role?: 'reader' | 'editor' }
@@ -54,16 +56,49 @@ function profileViewerToMember(viewer: ProfileViewerListItem): FeedMemberInfo {
   };
 }
 
+export function buildRecruiterAggregateMember(
+  summary?: ProfileViewerSummary | null
+): FeedMemberInfo | null {
+  const recruiterViewerCount =
+    summary &&
+    Number.isSafeInteger(summary.recruiterViewerCount) &&
+    (summary.recruiterViewerCount || 0) > 0
+      ? summary.recruiterViewerCount
+      : undefined;
+
+  if (!recruiterViewerCount) {
+    return null;
+  }
+
+  const recruiterViewerUrl =
+    typeof summary?.recruiterViewerUrl === 'string' && summary.recruiterViewerUrl.trim()
+      ? summary.recruiterViewerUrl.trim()
+      : DEFAULT_RECRUITER_VIEWERS_URL;
+
+  return {
+    id: '__profile_viewers_recruiters__',
+    itemType: 'recruiterAggregate',
+    linkedinUrl: recruiterViewerUrl,
+    linkedinUsername: '',
+    displayName: `${recruiterViewerCount} ${
+      recruiterViewerCount === 1 ? 'recruiter' : 'recruiters'
+    } viewed your profile`,
+    addedAt: summary?.updatedAt || Date.now(),
+  };
+}
+
 export function withProfileViewersFeed(
   feeds: FeedInfo[],
   members: FeedMemberInfo[],
   privateViewerCount: number | undefined,
+  recruiterViewerCount: number | undefined,
   currentUser: UserInfo | null
 ): FeedInfo[] {
   if (!currentUser) {
     return feeds.filter((feed) => feed.id !== PROFILE_VIEWERS_FEED_ID);
   }
 
+  const existingProfileViewersFeed = feeds.find((feed) => feed.id === PROFILE_VIEWERS_FEED_ID);
   const profileViewersFeed: FeedInfo = {
     id: PROFILE_VIEWERS_FEED_ID,
     name: 'Profile Visitors',
@@ -71,10 +106,14 @@ export function withProfileViewersFeed(
     color: '#0A66C2',
     memberCount: members.length,
     privateViewerCount,
+    recruiterViewerCount,
     sortOrder: -1,
     ownerId: currentUser.userId,
     isSystem: true,
     systemType: 'profileViewers',
+    isRefreshingProfileViewers: existingProfileViewersFeed?.isRefreshingProfileViewers,
+    isConfirmingProfileViewersRefresh:
+      existingProfileViewersFeed?.isConfirmingProfileViewersRefresh,
   };
 
   return [
@@ -102,19 +141,31 @@ export function buildProfileViewersState(params: {
     params.summary.privateViewerCount >= 0
       ? params.summary.privateViewerCount
       : undefined;
+  const recruiterViewerCount =
+    params.summary &&
+    Number.isSafeInteger(params.summary.recruiterViewerCount) &&
+    (params.summary.recruiterViewerCount || 0) > 0
+      ? params.summary.recruiterViewerCount
+      : undefined;
+  const recruiterAggregateMember = buildRecruiterAggregateMember(params.summary);
+  const membersWithRecruiterAggregate =
+    recruiterAggregateMember
+      ? [recruiterAggregateMember, ...members]
+      : members;
 
   return {
-    members,
+    members: membersWithRecruiterAggregate,
     privateViewerCount,
     feeds: withProfileViewersFeed(
       params.feeds,
-      members,
+      membersWithRecruiterAggregate,
       privateViewerCount,
+      recruiterViewerCount,
       params.currentUser
     ),
     feedMembersById: {
       ...params.feedMembersById,
-      [PROFILE_VIEWERS_FEED_ID]: members,
+      [PROFILE_VIEWERS_FEED_ID]: membersWithRecruiterAggregate,
     },
   };
 }

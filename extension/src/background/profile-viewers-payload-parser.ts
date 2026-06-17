@@ -152,6 +152,33 @@ export function parseVisibleProfileViewers(html: string): ProfileViewerInput[] {
 function extractQuotedStrings(value: string): string[] {
   const strings: string[] = [];
   const seen = new Set<string>();
+  const addString = (rawValue: string): void => {
+    const normalized = normalizeText(normalizeLinkedInPayloadText(rawValue));
+    if (
+      !normalized ||
+      seen.has(normalized) ||
+      normalized.includes('[[null') ||
+      /^[\s:[\]{},$]+null[\s:[\]{},$]*$/i.test(normalized)
+    ) {
+      return;
+    }
+
+    seen.add(normalized);
+    strings.push(normalized);
+  };
+
+  const textNodePatterns = [
+    /\[null\s*,\s*"([^"\\]{2,220})"/g,
+    /"children"\s*:\s*\[\s*"([^"\\]{2,220})"\s*\]/g,
+    /"a11yText"\s*:\s*"([^"\\]{2,220})"/g,
+  ];
+  textNodePatterns.forEach((pattern) => {
+    let textMatch: RegExpExecArray | null;
+    while ((textMatch = pattern.exec(value))) {
+      addString(textMatch[1] || '');
+    }
+  });
+
   const quotedPattern = /"((?:\\.|[^"\\])*)"/g;
 
   let match: RegExpExecArray | null;
@@ -162,13 +189,7 @@ function extractQuotedStrings(value: string): string[] {
         continue;
       }
 
-      const normalized = normalizeText(normalizeLinkedInPayloadText(parsed));
-      if (!normalized || seen.has(normalized)) {
-        continue;
-      }
-
-      seen.add(normalized);
-      strings.push(normalized);
+      addString(parsed);
     } catch {
       /* Ignore non-JSON string fragments from streamed RSC payloads. */
     }
@@ -257,43 +278,47 @@ function parseProfileViewersFromRscPayload(payload: string): ProfileViewerInput[
   const normalizedPayload = normalizeLinkedInPayloadText(payload);
   const viewers: ProfileViewerInput[] = [];
   const seenUsernames = new Set<string>();
-  const globalStrings = extractQuotedStrings(normalizedPayload);
   const imageUrlsByDisplayName = extractProfileViewerImageUrls(normalizedPayload);
   const references = extractProfileViewerReferences(normalizedPayload);
 
-  for (const profile of references) {
+  for (let referenceIndex = 0; referenceIndex < references.length; referenceIndex += 1) {
+    const profile = references[referenceIndex];
     if (seenUsernames.has(profile.linkedinUsername)) {
       continue;
     }
 
-    const referenceContextStart = Math.max(0, profile.index - 12_000);
-    const referenceContextEnd = Math.min(normalizedPayload.length, profile.index + 12_000);
+    const nextProfileIndex = references[referenceIndex + 1]?.index;
+    const referenceContextStart = profile.index;
+    const referenceContextEnd = Math.min(
+      normalizedPayload.length,
+      nextProfileIndex || profile.index + 12_000,
+      profile.index + 12_000
+    );
     const referenceContext = normalizedPayload.slice(referenceContextStart, referenceContextEnd);
     const referenceStrings = extractQuotedStrings(referenceContext);
     const displayNameCandidate =
       pickDisplayNameFromStrings(referenceStrings, profile.linkedinUsername) ||
-      pickDisplayNameFromStrings(globalStrings, profile.linkedinUsername) ||
       humanizeLinkedInUsername(profile.linkedinUsername);
     const displayName = chooseProfileViewerDisplayName(
       displayNameCandidate,
       undefined,
       profile.linkedinUsername
     );
-    const displayNameIndex = normalizedPayload.toLowerCase().indexOf(displayName.toLowerCase());
-    const contextIndex = displayNameIndex >= 0 ? displayNameIndex : profile.index;
-    const contextStart = Math.max(0, contextIndex - 12_000);
-    const contextEnd = Math.min(normalizedPayload.length, contextIndex + 12_000);
-    const context = normalizedPayload.slice(contextStart, contextEnd);
-    const strings = extractQuotedStrings(context);
 
-    const viewedAgoText = normalizeText(context.match(/Viewed\s+[^"'<\\]{1,80}?\sago/i)?.[0] || '');
-    const mutualConnectionsText = normalizeText(context.match(/\d+\s+mutual\s+connections?/i)?.[0] || '');
-    const connectionDegree = normalizeText(strings.find((value) => /^(1st|2nd|3rd|\d+th)$/i.test(value)) || '');
+    const viewedAgoText = normalizeText(
+      referenceContext.match(/Viewed\s+[^"'<\\]{1,80}?\sago/i)?.[0] || ''
+    );
+    const mutualConnectionsText = normalizeText(
+      referenceContext.match(/\d+\s+mutual\s+connections?/i)?.[0] || ''
+    );
+    const connectionDegree = normalizeText(
+      referenceStrings.find((value) => /^(1st|2nd|3rd|\d+th)$/i.test(value)) || ''
+    );
     seenUsernames.add(profile.linkedinUsername);
     viewers.push({
       ...profile,
       displayName,
-      headline: pickHeadlineFromStrings(strings, displayName, profile.linkedinUsername),
+      headline: pickHeadlineFromStrings(referenceStrings, displayName, profile.linkedinUsername),
       profileImageUrl: imageUrlsByDisplayName.get(displayName.toLowerCase()) || '',
       connectionDegree,
       viewedAgoText,

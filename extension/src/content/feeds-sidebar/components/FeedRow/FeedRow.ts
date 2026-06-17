@@ -27,12 +27,28 @@ export function renderFeedRow({
     Number.isSafeInteger(feed.privateViewerCount) &&
     (feed.privateViewerCount || 0) >= 0;
   const privateViewerCount = feed.privateViewerCount || 0;
-  const viewerCountLabel = hasPrivateViewerCount
-    ? `${feed.memberCount || 0} / ${privateViewerCount}`
+  const recruiterViewerCount =
+    isProfileViewers &&
+    Number.isSafeInteger(feed.recruiterViewerCount) &&
+    (feed.recruiterViewerCount || 0) > 0
+      ? feed.recruiterViewerCount || 0
+      : 0;
+  const hiddenViewerCount = privateViewerCount + recruiterViewerCount;
+  const hasHiddenViewerCount = isProfileViewers && (hasPrivateViewerCount || recruiterViewerCount > 0);
+  const viewerCountLabel = hasHiddenViewerCount
+    ? `${feed.memberCount || 0} / ${hiddenViewerCount}`
     : `${feed.memberCount || 0}`;
   const visibleEntryCount = feed.memberCount || 0;
-  const viewerCountTooltip = hasPrivateViewerCount
-    ? `${visibleEntryCount} visible visitor ${visibleEntryCount === 1 ? 'entry' : 'entries'} saved. LinkedIn reports ${privateViewerCount} additional ${privateViewerCount === 1 ? 'visitor' : 'visitors'} using private mode.`
+  const hiddenViewerDetails = [
+    privateViewerCount > 0
+      ? `${privateViewerCount} private-mode ${privateViewerCount === 1 ? 'visitor' : 'visitors'}`
+      : '',
+    recruiterViewerCount > 0
+      ? `${recruiterViewerCount} recruiter ${recruiterViewerCount === 1 ? 'view' : 'views'}`
+      : '',
+  ].filter(Boolean).join(' and ');
+  const viewerCountTooltip = hasHiddenViewerCount
+    ? `${visibleEntryCount} visible visitor ${visibleEntryCount === 1 ? 'entry' : 'entries'} saved. LinkedIn reports ${hiddenViewerDetails || `${hiddenViewerCount} additional visitors`}.`
     : '';
   const itemClasses = [
     'lfa-feed-item',
@@ -102,7 +118,7 @@ export function renderFeedRow({
           ${isShared ? `<span class="lfa-feed-role">${feed.accessRole === 'editor' ? 'Editor' : 'Reader'}</span>` : ''}
           ${previewHtml}
           ${
-            isProfileViewers && hasPrivateViewerCount
+            isProfileViewers && hasHiddenViewerCount
               ? `
                 <span class="lfa-profile-viewer-count-wrap">
                   <span class="lfa-profile-viewer-count" tabindex="0" aria-label="${escapeHtml(viewerCountTooltip)}">${escapeHtml(viewerCountLabel)}</span>

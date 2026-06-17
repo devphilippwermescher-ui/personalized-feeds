@@ -21,6 +21,16 @@ describe('extractPrivateProfileViewerCount', () => {
     expect(extractPrivateProfileViewerCount(payload)).toBe(58);
   });
 
+  it('supports the newer prefixed LinkedIn members summary row', () => {
+    const payload = `
+      "children":["57 Linkedin members"]
+      "children":["These people viewed your profile in Private mode"]
+      "url":"https:\\/\\/www.linkedin.com\\/help\\/linkedin\\/answer\\/a567226\\/"
+    `;
+
+    expect(extractPrivateProfileViewerCount(payload)).toBe(57);
+  });
+
   it('supports LinkedIn RSC components between the label, count, and help link', () => {
     const payload = `
       "children":["LinkedIn members",["$","span",null,{"children":" "}],"\\u00284\\u0029"]

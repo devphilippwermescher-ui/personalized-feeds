@@ -1,5 +1,6 @@
 import type { User } from 'firebase/auth';
 import {
+  deleteStaleProfileViewerCache,
   getProfileViewerSearches,
   getProfileViewers,
   updateProfileViewerSummary,
@@ -35,7 +36,11 @@ import type { ProfileViewersSyncResult } from './profile-viewers-sync-result';
 export async function syncProfileViewersViaApi(
   authenticatedUser: User | undefined,
   initialSyncState: ProfileViewersSyncState,
-  persistSyncProgress: (state: ProfileViewersSyncState) => Promise<void>
+  persistSyncProgress: (state: ProfileViewersSyncState) => Promise<void>,
+  options: {
+    ignoreRequestBudget?: boolean;
+    pruneStaleAfterComplete?: boolean;
+  } = {}
 ): Promise<ProfileViewersSyncResult> {
   const user = authenticatedUser;
   if (!user) {
@@ -81,6 +86,8 @@ export async function syncProfileViewersViaApi(
   let searchSavedCount = 0;
   let newSearchCount = 0;
   let privateViewerCount: number | undefined;
+  let recruiterViewerCount: number | undefined;
+  let recruiterViewerUrl: string | undefined;
   let responseLength = 0;
   let httpStatus = 200;
   let cursor: ProfileViewersPaginationCursor | null =
@@ -144,6 +151,12 @@ export async function syncProfileViewersViaApi(
     newSearchCount += searchWriteResult.newCount;
     if (page.privateViewerCount !== null) {
       privateViewerCount = page.privateViewerCount;
+    }
+    if (page.recruiterViewerCount !== null) {
+      recruiterViewerCount = page.recruiterViewerCount;
+    }
+    if (page.recruiterViewerUrl) {
+      recruiterViewerUrl = page.recruiterViewerUrl;
     }
     page.searches.forEach((search) => {
       const existing = existingSearchesByKey.get(search.searchKey);
@@ -230,7 +243,7 @@ export async function syncProfileViewersViaApi(
     }
     visitedCursors.add(nextCursor.start);
 
-    if (!canMakeProfileViewersRequest(syncState, Date.now())) {
+    if (!options.ignoreRequestBudget && !canMakeProfileViewersRequest(syncState, Date.now())) {
       break;
     }
 
@@ -250,8 +263,20 @@ export async function syncProfileViewersViaApi(
     page = await fetchProfileViewersPaginationPage(cursor, csrfToken);
   }
 
-  if (privateViewerCount !== undefined) {
-    await updateProfileViewerSummary(user.uid, privateViewerCount, syncSeenAt);
+  if (
+    privateViewerCount !== undefined ||
+    recruiterViewerCount !== undefined ||
+    recruiterViewerUrl
+  ) {
+    await updateProfileViewerSummary(
+      user.uid,
+      {
+        privateViewerCount,
+        recruiterViewerCount,
+        recruiterViewerUrl,
+      },
+      syncSeenAt
+    );
   }
 
   if (paginationMode === 'incremental') {
@@ -266,6 +291,11 @@ export async function syncProfileViewersViaApi(
     await persistSyncProgress(syncState);
   }
 
+  if (options.pruneStaleAfterComplete && paginationComplete) {
+    const pruneResult = await deleteStaleProfileViewerCache(user.uid, syncSeenAt);
+    console.info('[profile-viewers-sync] pruned stale cache entries', pruneResult);
+  }
+
   console.info('[profile-viewers-sync] pagination', {
     mode: paginationMode,
     pagesFetched,
@@ -273,6 +303,8 @@ export async function syncProfileViewersViaApi(
     profilesCollected: collectedViewers.length,
     searchesCollected: collectedSearches.size,
     privateViewerCount,
+    recruiterViewerCount,
+    recruiterViewerUrl,
     paginationComplete,
     backfillStatus: syncState.backfillStatus,
     backfillNextStart: syncState.backfillNextStart,
@@ -287,6 +319,8 @@ export async function syncProfileViewersViaApi(
     visibleCount: collectedViewers.length,
     visibleSearchCount: collectedSearches.size,
     privateViewerCount,
+    recruiterViewerCount,
+    recruiterViewerUrl,
     updatedCount: savedCount - newCount,
     visibleProfileUsernames: collectedViewers.map((viewer) => viewer.linkedinUsername),
     httpStatus,

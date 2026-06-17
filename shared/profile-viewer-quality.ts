@@ -6,6 +6,14 @@ function normalizeComparableName(value: string): string {
     .trim();
 }
 
+function scoreProfileSlugMatch(value: string, linkedinUsername: string): number {
+  const normalizedValue = normalizeComparableName(value);
+  return linkedinUsername
+    .split(/[-_]+/)
+    .filter((part) => part.length > 2 && !/^\d+$/.test(part))
+    .reduce((score, part) => score + (normalizedValue.includes(part.toLowerCase()) ? 1 : 0), 0);
+}
+
 export function humanizeLinkedInUsername(linkedinUsername: string): string {
   return linkedinUsername
     .split(/[-_]+/)
@@ -43,6 +51,16 @@ export function chooseProfileViewerDisplayName(
 ): string {
   const normalizedIncoming = (incoming || '').trim();
   const normalizedExisting = (existing || '').trim();
+  const incomingSlugScore = scoreProfileSlugMatch(normalizedIncoming, linkedinUsername);
+  const existingSlugScore = scoreProfileSlugMatch(normalizedExisting, linkedinUsername);
+
+  if (
+    !isWeakProfileViewerDisplayName(normalizedIncoming, linkedinUsername) &&
+    incomingSlugScore > 0 &&
+    incomingSlugScore > existingSlugScore
+  ) {
+    return normalizedIncoming;
+  }
 
   if (!isWeakProfileViewerDisplayName(normalizedIncoming, linkedinUsername)) {
     return normalizedIncoming;

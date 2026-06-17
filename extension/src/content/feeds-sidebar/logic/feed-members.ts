@@ -4,6 +4,8 @@ import { renderFeedActions } from './feed-actions';
 import { renderMemberRow } from '../components/MemberRow/MemberRow';
 import { renderMemberStatusAction, renderMessageButton } from './member-actions';
 import { CONTENT_COPY } from '../../shared/copy';
+import { buildRecruiterAggregateMember } from './profile-viewers-feed';
+import type { ProfileViewerListItem, ProfileViewerSummary } from 'shared/types';
 
 interface FeedMembersDeps {
   sendMsg: (message: Record<string, unknown>) => Promise<Record<string, unknown>>;
@@ -30,8 +32,8 @@ interface FeedMembersDeps {
 }
 
 function startBackgroundStatusRefresh(feedId: string, members: FeedMemberInfo[], deps: FeedMembersDeps): void {
-  const profileMembers = members.some((member) => member.itemType === 'search')
-    ? members.filter((member) => member.itemType !== 'search')
+  const profileMembers = members.some((member) => member.itemType && member.itemType !== 'profile')
+    ? members.filter((member) => !member.itemType || member.itemType === 'profile')
     : members;
   if (profileMembers.length === 0) {
     return;
@@ -57,36 +59,42 @@ function startBackgroundStatusRefresh(feedId: string, members: FeedMemberInfo[],
   });
 }
 
-function profileViewerToMember(viewer: Partial<FeedMemberInfo>): FeedMemberInfo | null {
+function profileViewerToMember(viewer: Partial<FeedMemberInfo> | ProfileViewerListItem): FeedMemberInfo | null {
+  const itemType = 'itemType' in viewer ? viewer.itemType : undefined;
+  const isSearchItem = 'searchUrl' in viewer || itemType === 'search';
+  const linkedinUrl = isSearchItem
+    ? ('searchUrl' in viewer ? viewer.searchUrl : viewer.linkedinUrl)
+    : viewer.linkedinUrl;
+
   if (
     !viewer.id ||
-    !viewer.linkedinUrl ||
+    !linkedinUrl ||
     !viewer.displayName ||
-    (viewer.itemType !== 'search' && !viewer.linkedinUsername)
+    (!isSearchItem && !viewer.linkedinUsername)
   ) {
     return null;
   }
 
   return {
     id: viewer.id,
-    itemType: viewer.itemType || 'profile',
-    searchKey: viewer.searchKey,
-    linkedinUrl: viewer.linkedinUrl,
-    linkedinUsername: viewer.linkedinUsername || '',
+    itemType: isSearchItem ? 'search' : itemType || 'profile',
+    searchKey: 'searchKey' in viewer ? viewer.searchKey : undefined,
+    linkedinUrl,
+    linkedinUsername: isSearchItem ? '' : viewer.linkedinUsername || '',
     displayName: viewer.displayName,
-    headline: viewer.headline || '',
-    profileImageUrl: viewer.profileImageUrl || '',
-    connectionDegree: viewer.connectionDegree || '',
+    headline: 'headline' in viewer ? viewer.headline || '' : '',
+    profileImageUrl: 'profileImageUrl' in viewer ? viewer.profileImageUrl || '' : '',
+    connectionDegree: 'connectionDegree' in viewer ? viewer.connectionDegree || '' : '',
     viewedAgoText: viewer.viewedAgoText || '',
-    mutualConnectionsText: viewer.mutualConnectionsText || '',
-    profileUrn: viewer.profileUrn,
-    memberNumericId: viewer.memberNumericId,
-    canMessage: viewer.canMessage,
-    canFollow: viewer.canFollow,
-    canConnect: viewer.canConnect,
-    isFollowing: viewer.isFollowing,
-    isPremium: viewer.isPremium,
-    status: viewer.status || 'loading',
+    mutualConnectionsText: 'mutualConnectionsText' in viewer ? viewer.mutualConnectionsText || '' : '',
+    profileUrn: 'profileUrn' in viewer ? viewer.profileUrn : undefined,
+    memberNumericId: 'memberNumericId' in viewer ? viewer.memberNumericId : undefined,
+    canMessage: 'canMessage' in viewer ? viewer.canMessage : undefined,
+    canFollow: 'canFollow' in viewer ? viewer.canFollow : undefined,
+    canConnect: 'canConnect' in viewer ? viewer.canConnect : undefined,
+    isFollowing: 'isFollowing' in viewer ? viewer.isFollowing : undefined,
+    isPremium: 'isPremium' in viewer ? viewer.isPremium : undefined,
+    status: 'status' in viewer ? viewer.status || 'loading' : 'loading',
     firstSeenAt: viewer.firstSeenAt,
     lastSeenAt: viewer.lastSeenAt,
     addedAt: viewer.lastSeenAt || Date.now(),
@@ -119,15 +127,21 @@ export async function loadFeedMembers(feedId: string, deps: FeedMembersDeps): Pr
     const members = ((resp?.viewers as Partial<FeedMemberInfo>[]) || [])
       .map(profileViewerToMember)
       .filter((member): member is FeedMemberInfo => Boolean(member));
+    const recruiterAggregateMember = buildRecruiterAggregateMember(
+      (resp?.summary as ProfileViewerSummary | null | undefined) || null
+    );
+    const nextMembers = recruiterAggregateMember
+      ? [recruiterAggregateMember, ...members]
+      : members;
 
     deps.setFeedMembersById({
       ...deps.getFeedMembersById(),
-      [feedId]: members,
+      [feedId]: nextMembers,
     });
     deps.setLoadingMembersFeedId(null);
     deps.renderSidebarContent();
-    if (members.length > 0) {
-      startBackgroundStatusRefresh(feedId, members, deps);
+    if (nextMembers.length > 0) {
+      startBackgroundStatusRefresh(feedId, nextMembers, deps);
     }
     return;
   }
@@ -249,7 +263,7 @@ export function renderMembersList(
       ${members
         .map((member) => {
           const status = getMemberStatus(member);
-          if (member.itemType === 'search') {
+          if (member.itemType === 'search' || member.itemType === 'recruiterAggregate') {
             return renderMemberRow({
               feedId: feed.id,
               member,
@@ -288,7 +302,7 @@ export function renderFeedPreview(feedId: string, feedMembersById: Record<string
     <div class="lfa-feed-preview">
       ${members
         .map((member) =>
-          member.itemType === 'search'
+          member.itemType === 'search' || member.itemType === 'recruiterAggregate'
             ? `<div class="lfa-feed-preview-avatar lfa-feed-preview-avatar--search" aria-label="${escapeHtml(member.displayName)}">
                 <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
                   <circle cx="12" cy="8" r="4" fill="currentColor"></circle>

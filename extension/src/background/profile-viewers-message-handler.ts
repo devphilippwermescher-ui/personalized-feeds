@@ -1,4 +1,5 @@
 import {
+  clearProfileViewerCache,
   getProfileViewerItems,
   getProfileViewerSummary,
   removeProfileViewer,
@@ -8,6 +9,7 @@ import type { ProfileViewerSummary } from 'shared/types';
 import {
   appendProfileViewersWakeEvent,
   getProfileViewersSyncState,
+  resetProfileViewersSyncState,
 } from './profile-viewers-coordinator-storage';
 import { queueProfileViewersSync } from './profile-viewers-coordinator';
 import { syncProfileViewersViaPage } from './profile-viewers-page-sync';
@@ -17,19 +19,31 @@ import { getFeedsAuthErrorResponse, normalizeFeedsError } from './feeds-errors';
 function getProfileViewerSummaryFromSyncState(
   syncState: Awaited<ReturnType<typeof getProfileViewersSyncState>>
 ): ProfileViewerSummary | null {
-  const logWithPrivateCount = syncState.logs.find(
+  const logWithSummaryCount = syncState.logs.find(
     (log) =>
-      Number.isSafeInteger(log.privateViewerCount) &&
-      (log.privateViewerCount || 0) >= 0
+      (Number.isSafeInteger(log.privateViewerCount) &&
+        (log.privateViewerCount || 0) >= 0) ||
+      (Number.isSafeInteger(log.recruiterViewerCount) &&
+        (log.recruiterViewerCount || 0) >= 0)
   );
 
-  if (!logWithPrivateCount) {
+  if (!logWithSummaryCount) {
     return null;
   }
 
   return {
-    privateViewerCount: logWithPrivateCount.privateViewerCount || 0,
-    updatedAt: logWithPrivateCount.finishedAt,
+    privateViewerCount: logWithSummaryCount.privateViewerCount || 0,
+    recruiterViewerCount:
+      Number.isSafeInteger(logWithSummaryCount.recruiterViewerCount) &&
+      (logWithSummaryCount.recruiterViewerCount || 0) >= 0
+        ? logWithSummaryCount.recruiterViewerCount
+        : undefined,
+    recruiterViewerUrl:
+      typeof logWithSummaryCount.recruiterViewerUrl === 'string' &&
+      logWithSummaryCount.recruiterViewerUrl.trim()
+        ? logWithSummaryCount.recruiterViewerUrl.trim()
+        : undefined,
+    updatedAt: logWithSummaryCount.finishedAt,
   };
 }
 
@@ -106,8 +120,24 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.type === 'PROFILE_VIEWERS_SYNC_API_NOW' || message.type === 'PROFILE_VIEWERS_SYNC_NOW') {
-    queueProfileViewersSync('manual', true)
-      .then((coordinatorResult) => {
+    getAuthenticatedFeedsUser()
+      .then(async (user) => {
+        if (!user) {
+          sendResponse(getFeedsAuthErrorResponse({
+            savedCount: 0,
+            newCount: 0,
+            visibleCount: 0,
+            source: 'api',
+          }));
+          return;
+        }
+
+        if (message.resetProfileViewers === true) {
+          await clearProfileViewerCache(user.uid);
+          await resetProfileViewersSyncState(user.uid);
+        }
+
+        const coordinatorResult = await queueProfileViewersSync('manual', true);
         sendResponse({
           success: coordinatorResult.success,
           source: 'api',

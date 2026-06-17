@@ -62,4 +62,57 @@ describe('profile viewer search row', () => {
     expect(html).toContain('Software Developer');
     expect(html).not.toContain('https://www.linkedin.com/search/results/people');
   });
+
+  it('renders the recruiter aggregate as a view-only LinkedIn row', () => {
+    const member: FeedMemberInfo = {
+      id: '__profile_viewers_recruiters__',
+      itemType: 'recruiterAggregate',
+      linkedinUrl:
+        'https://www.linkedin.com/analytics/recruiter-views/?timeRange=WvmpSearchFilterTimeRange_LAST_90_DAYS',
+      linkedinUsername: '',
+      displayName: '32 recruiters viewed your profile',
+      addedAt: 1,
+    };
+
+    const html = renderMemberRow({
+      feedId: '__profile_viewers__',
+      member,
+      messageButtonHtml: '',
+      statusActionHtml: '',
+      canEdit: false,
+      showMeta: true,
+    });
+
+    expect(html).toContain('32 recruiters viewed your profile');
+    expect(html).not.toContain('View all recruiters on LinkedIn');
+    expect(html).toContain('lfa-member-avatar--recruiters');
+    expect(html).toMatch(/>\s*View\s*<\/button>/);
+    expect(html).not.toContain('data-member-action="edit"');
+    expect(html).not.toContain('Connect');
+  });
+
+  it('does not render streamed RSC fragments as search display names', () => {
+    const member: FeedMemberInfo = {
+      id: 'search-bad',
+      itemType: 'search',
+      searchKey: 'keywords=Recruiter&currentCompany=750470',
+      linkedinUrl:
+        'https://www.linkedin.com/search/results/people/?keywords=Recruiter&origin=WHO_VIEWED_ME&currentCompany=750470',
+      linkedinUsername: '',
+      displayName: '}}]]}]]}]}',
+      addedAt: 1,
+    };
+
+    const html = renderMemberRow({
+      feedId: '__profile_viewers__',
+      member,
+      messageButtonHtml: '',
+      statusActionHtml: '',
+      canEdit: false,
+      showMeta: true,
+    });
+
+    expect(html).toContain('Recruiter');
+    expect(html).not.toContain('}}');
+  });
 });

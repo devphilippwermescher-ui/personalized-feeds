@@ -22,13 +22,16 @@ export interface FeedInfo {
   isSystem?: boolean;
   systemType?: 'profileViewers';
   privateViewerCount?: number;
+  recruiterViewerCount?: number;
+  isRefreshingProfileViewers?: boolean;
+  isConfirmingProfileViewersRefresh?: boolean;
 }
 
 export interface FeedMemberInfo {
   id: string;
   linkedinUrl: string;
   linkedinUsername: string;
-  itemType?: 'profile' | 'search';
+  itemType?: 'profile' | 'search' | 'recruiterAggregate';
   searchKey?: string;
   profileUrn?: string;
   memberNumericId?: string;

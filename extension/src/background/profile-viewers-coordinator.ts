@@ -246,10 +246,18 @@ async function runProfileViewersSyncCoordinator(
   });
 
   try {
-    const result = await syncProfileViewersViaApi(user, state, async (progressState) => {
-      state = progressState;
-      await setProfileViewersSyncState(state);
-    });
+    const result = await syncProfileViewersViaApi(
+      user,
+      state,
+      async (progressState) => {
+        state = progressState;
+        await setProfileViewersSyncState(state);
+      },
+      {
+        ignoreRequestBudget: force,
+        pruneStaleAfterComplete: force && trigger === 'manual',
+      }
+    );
     const finishedAt = Date.now();
     const scheduledIntervalMs = getProfileViewersScheduledIntervalMs();
     state = completeProfileViewersSyncSuccess(state, finishedAt, scheduledIntervalMs);
@@ -275,6 +283,8 @@ async function runProfileViewersSyncCoordinator(
       visibleCount: result.visibleCount,
       visibleSearchCount: result.visibleSearchCount,
       privateViewerCount: result.privateViewerCount,
+      recruiterViewerCount: result.recruiterViewerCount,
+      recruiterViewerUrl: result.recruiterViewerUrl,
       savedCount: result.savedCount,
       searchSavedCount: result.searchSavedCount,
       newCount: result.newCount,

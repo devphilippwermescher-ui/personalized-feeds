@@ -56,6 +56,8 @@ let feedsList: FeedInfo[] = [];
 let sharedFeedsList: FeedInfo[] = [];
 let profileViewerMembers: FeedMemberInfo[] = [];
 let profileViewerPrivateCount: number | undefined;
+let isRefreshingProfileViewers = false;
+let isConfirmingProfileViewersRefresh = false;
 let isLoading = false;
 let isInitializing = false;
 let isPremium = false;
@@ -73,11 +75,45 @@ function renderSidebarContent(): void {
   sidebarUiController?.renderSidebarContent();
 }
 
+function setProfileViewersRefreshing(isRefreshing: boolean): void {
+  isRefreshingProfileViewers = isRefreshing;
+  if (isRefreshing) {
+    isConfirmingProfileViewersRefresh = false;
+  }
+  feedsList = feedsList.map((feed) =>
+    feed.id === PROFILE_VIEWERS_FEED_ID
+      ? {
+          ...feed,
+          isRefreshingProfileViewers: isRefreshing,
+          isConfirmingProfileViewersRefresh: isRefreshing
+            ? false
+            : feed.isConfirmingProfileViewersRefresh,
+        }
+      : feed
+  );
+  renderSidebarContent();
+}
+
+function setProfileViewersRefreshConfirmation(isConfirming: boolean): void {
+  if (isRefreshingProfileViewers) {
+    return;
+  }
+
+  isConfirmingProfileViewersRefresh = isConfirming;
+  feedsList = feedsList.map((feed) =>
+    feed.id === PROFILE_VIEWERS_FEED_ID
+      ? { ...feed, isConfirmingProfileViewersRefresh: isConfirming }
+      : feed
+  );
+  renderSidebarContent();
+}
 
 function resetSignedOutSidebarState(): void {
   sharedFeedsList = [];
   profileViewerMembers = [];
   profileViewerPrivateCount = undefined;
+  isRefreshingProfileViewers = false;
+  isConfirmingProfileViewersRefresh = false;
   const nextFeedMembersById = { ...feedMembersById };
   delete nextFeedMembersById[PROFILE_VIEWERS_FEED_ID];
   feedMembersById = nextFeedMembersById;
@@ -168,6 +204,46 @@ async function refreshProfileViewersAfterBackgroundSync(): Promise<void> {
     (response.summary as ProfileViewerSummary | null | undefined) || null
   );
   renderSidebarContent();
+}
+
+async function refreshProfileViewersNow(): Promise<void> {
+  if (isRefreshingProfileViewers) {
+    return;
+  }
+
+  setProfileViewersRefreshing(true);
+  try {
+    const response = await sendMsg({
+      type: 'PROFILE_VIEWERS_SYNC_API_NOW',
+      resetProfileViewers: true,
+    });
+    if (!response?.success) {
+      showToast(
+        (response?.error as string) || 'Failed to refresh profile visitors',
+        'error'
+      );
+      return;
+    }
+
+    await refreshProfileViewersAfterBackgroundSync();
+    if (expandedFeedId === PROFILE_VIEWERS_FEED_ID) {
+      await loadFeedMembers(PROFILE_VIEWERS_FEED_ID);
+    }
+
+    const savedCount =
+      typeof response.savedCount === 'number' ? response.savedCount : undefined;
+    showToast(
+      savedCount !== undefined
+        ? `Profile visitors refreshed (${savedCount} saved)`
+        : 'Profile visitors refreshed',
+      'success'
+    );
+  } catch (error) {
+    console.warn('[LinkedIn Feeds] Failed to refresh profile visitors', error);
+    showToast('Failed to refresh profile visitors', 'error');
+  } finally {
+    setProfileViewersRefreshing(false);
+  }
 }
 
 chrome.runtime.onMessage.addListener((message) => {
@@ -283,6 +359,7 @@ async function loadFeeds(): Promise<void> {
       feedsList,
       profileViewerMembers,
       profileViewerPrivateCount,
+      undefined,
       currentUser
     );
   }
@@ -399,6 +476,11 @@ sidebarUiController = createSidebarUiController({
     }),
   toggleFeedExpansion,
   openFeedPosts,
+  requestProfileViewersRefreshConfirmation: () =>
+    setProfileViewersRefreshConfirmation(true),
+  cancelProfileViewersRefreshConfirmation: () =>
+    setProfileViewersRefreshConfirmation(false),
+  refreshProfileViewers: refreshProfileViewersNow,
   moveFeed: (sourceFeedId, targetFeedId) =>
     moveFeed(sourceFeedId, targetFeedId, getFeedActionDeps()),
   showEditFeedModal: (feed) => showEditFeedModal(feed, getFeedActionDeps()),

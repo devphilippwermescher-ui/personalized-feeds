@@ -18,6 +18,9 @@ interface SidebarDomBindingsDeps {
   filterFeeds: (query: string) => void;
   toggleFeedExpansion: (feedId: string) => Promise<void>;
   openFeedPosts: (feedId: string) => Promise<void>;
+  requestProfileViewersRefreshConfirmation: () => void;
+  cancelProfileViewersRefreshConfirmation: () => void;
+  refreshProfileViewers: () => Promise<void>;
   moveFeed: (sourceFeedId: string, targetFeedId: string) => Promise<void>;
   showEditFeedModal: (feed: FeedInfo) => void;
   showAddPeopleModal: (feed: FeedInfo) => void;
@@ -313,6 +316,21 @@ function bindFeedActionButtons(container: HTMLElement, deps: SidebarDomBindingsD
 
       if (action === 'unfollow') {
         void deps.unfollowSharedFeed(feed);
+        return;
+      }
+
+      if (action === 'refreshProfileViewers') {
+        void deps.refreshProfileViewers();
+        return;
+      }
+
+      if (action === 'refreshProfileViewersAsk') {
+        deps.requestProfileViewersRefreshConfirmation();
+        return;
+      }
+
+      if (action === 'refreshProfileViewersCancel') {
+        deps.cancelProfileViewersRefreshConfirmation();
       }
     });
   });

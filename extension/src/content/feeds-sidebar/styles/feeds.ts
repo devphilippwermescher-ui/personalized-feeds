@@ -363,11 +363,45 @@ export const FEEDS_CSS = `.lfa-feed-list {
     display: flex;
     justify-content: flex-end;
     margin-bottom: 6px;
+    min-height: 32px;
   }
   .lfa-feed-actions {
+    position: relative;
     display: flex;
     align-items: center;
     gap: 8px;
+  }
+  .lfa-feed-actions--confirm {
+    justify-content: flex-end;
+    width: 100%;
+    min-height: 32px;
+    transform-origin: right center;
+  }
+  .lfa-feed-refresh-confirm-text {
+    position: absolute;
+    right: 72px;
+    top: 2px;
+    display: block;
+    width: calc(100% - 80px);
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    font-size: 12px;
+    line-height: 28px;
+    font-weight: 650;
+    color: #64748b;
+    transform-origin: right center;
+    animation: lfa-feed-refresh-confirm-text-enter 0.46s cubic-bezier(0.16, 1, 0.3, 1) both;
+    will-change: clip-path, opacity, transform;
+    pointer-events: none;
+  }
+  .lfa-feed-action-spinner {
+    width: 18px;
+    height: 18px;
+    border: 2px solid rgba(99, 115, 129, 0.28);
+    border-top-color: #0a66c2;
+    border-radius: 999px;
+    animation: lfa-spin 0.7s linear infinite;
   }
   .lfa-feed-members-state,
   .lfa-feed-members-empty {
@@ -406,8 +440,23 @@ export const FEEDS_CSS = `.lfa-feed-list {
       clip-path: inset(0);
     }
   }
+  @keyframes lfa-feed-refresh-confirm-text-enter {
+    from {
+      opacity: 0;
+      clip-path: inset(0 0 0 100%);
+      transform: translateX(10px);
+    }
+    to {
+      opacity: 1;
+      clip-path: inset(0 0 0 0);
+      transform: translateX(0);
+    }
+  }
   @media (prefers-reduced-motion: reduce) {
     .lfa-feed-expanded {
+      animation: none;
+    }
+    .lfa-feed-refresh-confirm-text {
       animation: none;
     }
   }

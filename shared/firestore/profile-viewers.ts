@@ -62,6 +62,20 @@ function isSearchUrlLikeDisplayName(value: string | undefined): boolean {
   );
 }
 
+function isWeakSearchDisplayName(value: string | undefined): boolean {
+  const normalized = (value || '').trim();
+  if (!normalized) {
+    return true;
+  }
+
+  return (
+    isSearchUrlLikeDisplayName(normalized) ||
+    /^[\]}),.;:'"\s]+$/.test(normalized) ||
+    /[{}[\]]/.test(normalized) ||
+    /(?:\$undefined|props:|children:|componentkey|viewtrackingspecs|:false|:true)/i.test(normalized)
+  );
+}
+
 function chooseSearchDisplayName(
   incoming: ProfileViewerSearchInput,
   existing?: ProfileViewerSearch
@@ -69,11 +83,11 @@ function chooseSearchDisplayName(
   const incomingName = incoming.displayName.trim();
   const existingName = existing?.displayName?.trim() || '';
 
-  if (incomingName && !isSearchUrlLikeDisplayName(incomingName)) {
+  if (!isWeakSearchDisplayName(incomingName)) {
     return incomingName;
   }
 
-  if (existingName && !isSearchUrlLikeDisplayName(existingName)) {
+  if (!isWeakSearchDisplayName(existingName)) {
     return existingName;
   }
 
@@ -283,15 +297,33 @@ export async function getProfileViewerItems(
 
 export async function updateProfileViewerSummary(
   userId: string,
-  privateViewerCount: number,
+  counts: {
+    privateViewerCount?: number;
+    recruiterViewerCount?: number;
+    recruiterViewerUrl?: string;
+  },
   updatedAt = Date.now()
 ): Promise<ProfileViewerSummary> {
-  const summary: ProfileViewerSummary = {
-    privateViewerCount: Math.max(0, Math.trunc(privateViewerCount)),
+  const summaryUpdate: Partial<ProfileViewerSummary> & { updatedAt: number } = {
     updatedAt,
   };
-  await setDoc(profileViewerSummaryDoc(userId), summary, { merge: true });
-  return summary;
+  if (typeof counts.privateViewerCount === 'number') {
+    summaryUpdate.privateViewerCount = Math.max(0, Math.trunc(counts.privateViewerCount));
+  }
+  if (typeof counts.recruiterViewerCount === 'number') {
+    summaryUpdate.recruiterViewerCount = Math.max(0, Math.trunc(counts.recruiterViewerCount));
+  }
+  if (typeof counts.recruiterViewerUrl === 'string' && counts.recruiterViewerUrl.trim()) {
+    summaryUpdate.recruiterViewerUrl = counts.recruiterViewerUrl.trim();
+  }
+
+  await setDoc(profileViewerSummaryDoc(userId), summaryUpdate, { merge: true });
+  return {
+    privateViewerCount: summaryUpdate.privateViewerCount || 0,
+    recruiterViewerCount: summaryUpdate.recruiterViewerCount,
+    recruiterViewerUrl: summaryUpdate.recruiterViewerUrl,
+    updatedAt,
+  };
 }
 
 export async function getProfileViewerSummary(
@@ -303,15 +335,22 @@ export async function getProfileViewerSummary(
   }
 
   const data = snapshot.data() as Partial<ProfileViewerSummary>;
-  if (
-    !Number.isSafeInteger(data.privateViewerCount) ||
-    (data.privateViewerCount || 0) < 0
-  ) {
+  const hasPrivateViewerCount =
+    Number.isSafeInteger(data.privateViewerCount) && (data.privateViewerCount || 0) >= 0;
+  const hasRecruiterViewerCount =
+    Number.isSafeInteger(data.recruiterViewerCount) && (data.recruiterViewerCount || 0) >= 0;
+
+  if (!hasPrivateViewerCount && !hasRecruiterViewerCount) {
     return null;
   }
 
   return {
-    privateViewerCount: data.privateViewerCount || 0,
+    privateViewerCount: hasPrivateViewerCount ? data.privateViewerCount || 0 : 0,
+    recruiterViewerCount: hasRecruiterViewerCount ? data.recruiterViewerCount : undefined,
+    recruiterViewerUrl:
+      typeof data.recruiterViewerUrl === 'string' && data.recruiterViewerUrl.trim()
+        ? data.recruiterViewerUrl.trim()
+        : undefined,
     updatedAt: typeof data.updatedAt === 'number' ? data.updatedAt : 0,
   };
 }
@@ -339,4 +378,78 @@ export async function removeProfileViewer(userId: string, viewerId: string): Pro
   }
 
   await deleteDoc(doc(profileViewersCollection(userId), linkedinUsername));
+}
+
+async function deleteCollectionDocuments(
+  collectionRef: ReturnType<typeof profileViewersCollection>
+): Promise<number> {
+  const snapshot = await getDocs(collectionRef);
+  if (snapshot.empty) {
+    return 0;
+  }
+
+  let deletedCount = 0;
+  for (let index = 0; index < snapshot.docs.length; index += 500) {
+    const batch = writeBatch(getFirebaseDb());
+    snapshot.docs.slice(index, index + 500).forEach((documentSnapshot) => {
+      batch.delete(documentSnapshot.ref);
+      deletedCount += 1;
+    });
+    await batch.commit();
+  }
+
+  return deletedCount;
+}
+
+async function deleteCollectionDocumentsNotSeenAt(
+  collectionRef: ReturnType<typeof profileViewersCollection>,
+  seenAt: number
+): Promise<number> {
+  const snapshot = await getDocs(collectionRef);
+  const staleDocuments = snapshot.docs.filter(
+    (documentSnapshot) => documentSnapshot.data().lastSeenAt !== seenAt
+  );
+  if (staleDocuments.length === 0) {
+    return 0;
+  }
+
+  let deletedCount = 0;
+  for (let index = 0; index < staleDocuments.length; index += 500) {
+    const batch = writeBatch(getFirebaseDb());
+    staleDocuments.slice(index, index + 500).forEach((documentSnapshot) => {
+      batch.delete(documentSnapshot.ref);
+      deletedCount += 1;
+    });
+    await batch.commit();
+  }
+
+  return deletedCount;
+}
+
+export async function deleteStaleProfileViewerCache(
+  userId: string,
+  seenAt: number
+): Promise<{
+  deletedProfileCount: number;
+  deletedSearchCount: number;
+}> {
+  const [deletedProfileCount, deletedSearchCount] = await Promise.all([
+    deleteCollectionDocumentsNotSeenAt(profileViewersCollection(userId), seenAt),
+    deleteCollectionDocumentsNotSeenAt(profileViewerSearchesCollection(userId), seenAt),
+  ]);
+
+  return { deletedProfileCount, deletedSearchCount };
+}
+
+export async function clearProfileViewerCache(userId: string): Promise<{
+  deletedProfileCount: number;
+  deletedSearchCount: number;
+}> {
+  const [deletedProfileCount, deletedSearchCount] = await Promise.all([
+    deleteCollectionDocuments(profileViewersCollection(userId)),
+    deleteCollectionDocuments(profileViewerSearchesCollection(userId)),
+  ]);
+  await deleteDoc(profileViewerSummaryDoc(userId));
+
+  return { deletedProfileCount, deletedSearchCount };
 }

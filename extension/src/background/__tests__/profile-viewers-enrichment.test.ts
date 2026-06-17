@@ -36,4 +36,19 @@ describe('profile viewer page enrichment', () => {
     expect(result.displayName).toBe('Mykhailo Blokhin');
     expect(result.profileImageUrl).toBe('');
   });
+
+  it('keeps the RSC name when page metadata belongs to a different profile', () => {
+    const result = mergeProfileViewerWithPageMetadata(
+      {
+        linkedinUrl: 'https://www.linkedin.com/in/alia-waleczek-806248315/',
+        linkedinUsername: 'alia-waleczek-806248315',
+        displayName: 'Alia Waleczek',
+        profileImageUrl: '',
+      },
+      { displayName: 'Dima Lavrov', profileImageUrl: '' },
+      undefined
+    );
+
+    expect(result.displayName).toBe('Alia Waleczek');
+  });
 });
