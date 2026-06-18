@@ -5,7 +5,8 @@ import {
   removeProfileViewer,
   updateProfileViewer,
 } from 'shared/firestore-service';
-import type { ProfileViewerSummary } from 'shared/types';
+import type { ProfileViewerListItem, ProfileViewerSummary } from 'shared/types';
+import { normalizeLinkedInUsername } from 'shared/linkedin-identity';
 import {
   appendProfileViewersWakeEvent,
   getProfileViewersSyncState,
@@ -15,6 +16,21 @@ import { queueProfileViewersSync } from './profile-viewers-coordinator';
 import { syncProfileViewersViaPage } from './profile-viewers-page-sync';
 import { getAuthenticatedFeedsUser } from './feeds-auth';
 import { getFeedsAuthErrorResponse, normalizeFeedsError } from './feeds-errors';
+
+async function notifyLinkedInTabsAboutProfileViewerUpdate(): Promise<void> {
+  const tabs = await chrome.tabs.query({ url: 'https://www.linkedin.com/*' });
+  await Promise.all(
+    tabs
+      .filter((tab): tab is chrome.tabs.Tab & { id: number } => typeof tab.id === 'number')
+      .map((tab) =>
+        chrome.tabs.sendMessage(tab.id, { type: 'PROFILE_VIEWERS_SYNC_COMPLETED' }).catch(() => {
+          /* the sidebar content script may not be ready in every LinkedIn tab */
+        })
+      )
+  );
+}
+
+type ProfileViewerProfileItem = ProfileViewerListItem & { linkedinUsername: string };
 
 function getProfileViewerSummaryFromSyncState(
   syncState: Awaited<ReturnType<typeof getProfileViewersSyncState>>
@@ -45,6 +61,91 @@ function getProfileViewerSummaryFromSyncState(
         : undefined,
     updatedAt: logWithSummaryCount.finishedAt,
   };
+}
+
+function normalizeComparableName(value: unknown): string {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
+}
+
+function isProfileViewerProfileItem(
+  viewer: ProfileViewerListItem
+): viewer is ProfileViewerProfileItem {
+  return 'linkedinUsername' in viewer && typeof viewer.linkedinUsername === 'string';
+}
+
+function findProfileViewerUpdateTargets(
+  viewers: ProfileViewerListItem[],
+  viewerId: string,
+  updates: Record<string, unknown>
+): ProfileViewerProfileItem[] {
+  const normalizedViewerId = normalizeLinkedInUsername(viewerId);
+  const normalizedUpdateUsername = normalizeLinkedInUsername(
+    String(updates.linkedinUsername || '')
+  );
+  const normalizedLinkedInUrlUsername = normalizeLinkedInUsername(
+    String(updates.linkedinUrl || '')
+  );
+  const usernameCandidates = new Set(
+    [normalizedViewerId, normalizedUpdateUsername, normalizedLinkedInUrlUsername].filter(Boolean)
+  );
+
+  const profileViewers = viewers.filter(isProfileViewerProfileItem);
+  const targets = new Map<string, ProfileViewerProfileItem>();
+  profileViewers
+    .filter((viewer) =>
+      usernameCandidates.has(normalizeLinkedInUsername(viewer.linkedinUsername || viewer.id))
+    )
+    .forEach((viewer) => {
+      targets.set(viewer.linkedinUsername || viewer.id, viewer);
+    });
+
+  const displayName = normalizeComparableName(updates.displayName);
+  if (displayName) {
+    profileViewers
+      .filter((viewer) => normalizeComparableName(viewer.displayName) === displayName)
+      .forEach((viewer) => {
+        targets.set(viewer.linkedinUsername || viewer.id, viewer);
+      });
+  }
+
+  return Array.from(targets.values());
+}
+
+async function updateProfileViewerByBestMatch(
+  userId: string,
+  viewerId: string,
+  updates: Parameters<typeof updateProfileViewer>[2]
+): Promise<void> {
+  const viewers = await getProfileViewerItems(userId);
+  const targets = findProfileViewerUpdateTargets(viewers, viewerId, updates);
+  if (targets.length > 0) {
+    await Promise.all(
+      targets.map((target) =>
+        updateProfileViewer(userId, target.linkedinUsername || target.id, updates)
+      )
+    );
+    console.info('[profile-viewers-sync] updated profile viewer status targets', {
+      viewerId,
+      status: updates.status,
+      targetCount: targets.length,
+      targets: targets.map((target) => target.linkedinUsername || target.id),
+    });
+    return;
+  }
+
+  try {
+    await updateProfileViewer(userId, viewerId, updates);
+  } catch (error) {
+    console.warn('[profile-viewers-sync] failed to update profile viewer status', {
+      viewerId,
+      status: updates.status,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    throw error;
+  }
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -188,11 +289,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           return;
         }
 
-        return updateProfileViewer(
+        return updateProfileViewerByBestMatch(
           user.uid,
           message.viewerId as string,
           (message.updates || {}) as Parameters<typeof updateProfileViewer>[2]
         ).then(() => {
+          if (message.notifyProfileViewersChanged === true) {
+            void notifyLinkedInTabsAboutProfileViewerUpdate();
+          }
           sendResponse({ success: true });
         });
       })

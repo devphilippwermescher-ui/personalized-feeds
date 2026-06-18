@@ -35,6 +35,24 @@ describe('canMemberReceiveMessage', () => {
     }))).toBe(true);
   });
 
+  it('does not allow ordinary non-connections when messaging is unresolved', () => {
+    expect(canMemberReceiveMessage(makeMember({
+      status: 'connect',
+      canMessage: false,
+    }))).toBe(false);
+  });
+
+  it('allows Profile Visitors message fallback for unresolved connect profiles', () => {
+    expect(canMemberReceiveMessage(
+      makeMember({
+        status: 'connect',
+        canMessage: false,
+      }),
+      'connect',
+      { allowUnverifiedProfileMessage: true }
+    )).toBe(true);
+  });
+
   it.each(['loading', 'pending', 'withdrawn', 'unavailable'] as const)(
     'disables messaging for %s members',
     (status) => {

@@ -133,6 +133,8 @@ export function bindMemberActionButtons(root: ParentNode, deps: MemberActionDeps
     sendLinkedInFollowState,
     invalidateCacheForUser,
     getFeedMembersById,
+    getFeeds,
+    persistResolvedMemberState,
     showToast,
     renderSidebarContent,
   } = deps;
@@ -153,7 +155,13 @@ export function bindMemberActionButtons(root: ParentNode, deps: MemberActionDeps
       if (!memberId || !feedId) return;
 
       const member = (getFeedMembersById()[feedId] || []).find((item) => item.id === memberId);
-      if (member?.linkedinUrl && canMemberReceiveMessage(member)) {
+      const feed = getFeeds().find((item) => item.id === feedId);
+      const canMessage = member
+        ? canMemberReceiveMessage(member, undefined, {
+            allowUnverifiedProfileMessage: feed?.systemType === 'profileViewers',
+          })
+        : false;
+      if (member?.linkedinUrl && canMessage) {
         openLinkedInMessage(member.linkedinUrl, member.profileUrn);
       }
     });
@@ -176,6 +184,35 @@ export function bindMemberActionButtons(root: ParentNode, deps: MemberActionDeps
       if (!member) return;
 
       try {
+        try {
+          const relationship = await fetchLinkedInRelationshipStatus(member);
+          member.profileUrn = relationship.profileUrn;
+          member.status = relationship.status;
+          member.canMessage = relationship.canMessage;
+          member.canFollow = relationship.canFollow;
+          member.canConnect = relationship.canConnect;
+          member.isFollowing = relationship.isFollowing;
+          member.memberNumericId = relationship.memberNumericId;
+          member.isPremium = relationship.isPremium;
+          member.profileImageUrl = relationship.profileImageUrl || member.profileImageUrl;
+          member.statusResolvedAt = Date.now();
+          void persistResolvedMemberState?.(feedId, member);
+          renderSidebarContent();
+
+          if (
+            relationship.status === 'connected' ||
+            relationship.status === 'pending' ||
+            relationship.status === 'withdrawn' ||
+            relationship.status === 'unavailable' ||
+            relationship.canConnect === false
+          ) {
+            showToast('Profile status updated', 'success');
+            return;
+          }
+        } catch {
+          // Status resolution failed - try to get just the profileUrn.
+        }
+
         if (!member.profileUrn) {
           try {
             const relationship = await fetchLinkedInRelationshipStatus(member);
@@ -185,6 +222,10 @@ export function bindMemberActionButtons(root: ParentNode, deps: MemberActionDeps
             member.canConnect = relationship.canConnect;
             member.isFollowing = relationship.isFollowing;
             member.memberNumericId = relationship.memberNumericId;
+            member.isPremium = relationship.isPremium;
+            member.profileImageUrl = relationship.profileImageUrl || member.profileImageUrl;
+            member.statusResolvedAt = Date.now();
+            void persistResolvedMemberState?.(feedId, member);
             renderSidebarContent();
           } catch {
             // status resolution failed — try to get just the profileUrn
@@ -219,13 +260,17 @@ export function bindMemberActionButtons(root: ParentNode, deps: MemberActionDeps
           member.isFollowing = refreshed.isFollowing;
           member.memberNumericId = refreshed.memberNumericId ?? member.memberNumericId;
           member.isPremium = refreshed.isPremium;
+          member.profileImageUrl = refreshed.profileImageUrl || member.profileImageUrl;
+          member.statusResolvedAt = Date.now();
         } catch {
           member.status = 'pending';
           member.canConnect = false;
+          member.statusResolvedAt = Date.now();
         } finally {
           member.transientAction = undefined;
         }
 
+        void persistResolvedMemberState?.(feedId, member);
         renderSidebarContent();
         showToast(connectRequestSentMessage(), 'success');
       } catch (error) {
@@ -270,6 +315,8 @@ export function bindMemberActionButtons(root: ParentNode, deps: MemberActionDeps
         member.canFollow = true;
         member.isFollowing = shouldFollow;
         member.status = shouldFollow && !member.canConnect ? 'following' : member.status === 'following' ? 'connect' : member.status;
+        member.statusResolvedAt = Date.now();
+        void persistResolvedMemberState?.(feedId, member);
         renderSidebarContent();
       } catch (error) {
         showToast(

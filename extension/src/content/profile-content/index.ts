@@ -12,7 +12,10 @@ let feedCardInjected = false;
 let currentProfileData: ProfileData | null = null;
 let lastUrl = window.location.href;
 let cardRemovalObserver: MutationObserver | null = null;
+let profileRelationshipObserver: MutationObserver | null = null;
 let pendingReinjectTimer: number | null = null;
+let pendingRelationshipSyncTimer: number | null = null;
+let lastRelationshipSignature = '';
 
 type DispatchedMember = Parameters<typeof dispatchFeedMemberAdded>[0]['member'];
 
@@ -114,6 +117,18 @@ function disconnectCardRemovalObserver(): void {
   }
 }
 
+function disconnectProfileRelationshipObserver(): void {
+  if (profileRelationshipObserver) {
+    profileRelationshipObserver.disconnect();
+    profileRelationshipObserver = null;
+  }
+
+  if (pendingRelationshipSyncTimer !== null) {
+    window.clearTimeout(pendingRelationshipSyncTimer);
+    pendingRelationshipSyncTimer = null;
+  }
+}
+
 function scheduleReinject(): void {
   clearPendingReinject();
   pendingReinjectTimer = window.setTimeout(() => {
@@ -153,8 +168,59 @@ function removeExistingCard(): void {
   }
 
   disconnectCardRemovalObserver();
+  disconnectProfileRelationshipObserver();
   unmountFeedCard(existingCard);
   existingCard.remove();
+}
+
+function getRelationshipDomSignature(root: ParentNode): string {
+  const buttons = Array.from(root.querySelectorAll<HTMLButtonElement>('button'))
+    .map((button) => {
+      const text = button.textContent?.replace(/\s+/g, ' ').trim().toLowerCase() || '';
+      const label = button.getAttribute('aria-label')?.replace(/\s+/g, ' ').trim().toLowerCase() || '';
+      return `${text}|${label}`;
+    })
+    .filter((value) =>
+      /connect|invite|pending|withdraw|message|follow|unfollow|встановити|повідомлення|розглядається|скасувати/i.test(
+        value
+      )
+    )
+    .sort();
+  const degree = root.querySelector('.dist-value')?.textContent?.replace(/\s+/g, ' ').trim().toLowerCase() || '';
+  return `${degree}::${buttons.join('::')}`;
+}
+
+function scheduleProfileRelationshipSync(root: HTMLElement): void {
+  const nextSignature = getRelationshipDomSignature(root);
+  if (!nextSignature || nextSignature === lastRelationshipSignature) {
+    return;
+  }
+
+  lastRelationshipSignature = nextSignature;
+  if (pendingRelationshipSyncTimer !== null) {
+    window.clearTimeout(pendingRelationshipSyncTimer);
+  }
+
+  pendingRelationshipSyncTimer = window.setTimeout(() => {
+    pendingRelationshipSyncTimer = null;
+    void feedActions.syncProfileViewerStatus();
+  }, 800);
+}
+
+function observeProfileRelationshipChanges(root: HTMLElement): void {
+  disconnectProfileRelationshipObserver();
+  lastRelationshipSignature = getRelationshipDomSignature(root);
+
+  profileRelationshipObserver = new MutationObserver(() => {
+    scheduleProfileRelationshipSync(root);
+  });
+
+  profileRelationshipObserver.observe(root, {
+    childList: true,
+    subtree: true,
+    attributes: true,
+    attributeFilter: ['aria-label', 'aria-expanded', 'disabled'],
+  });
 }
 
 function setupEventListeners(): void {
@@ -257,6 +323,7 @@ function injectFeedCard(): void {
   feedCardInjected = true;
   clearPendingReinject();
   observeCardRemoval(card);
+  observeProfileRelationshipChanges(topCardSection);
   setupEventListeners();
 
   void feedActions.checkAuth().then((isAuth) => {
@@ -295,6 +362,7 @@ function handleNavigation(): void {
     lastUrl = window.location.href;
     removeExistingCard();
     clearPendingReinject();
+    disconnectProfileRelationshipObserver();
     feedCardInjected = false;
     currentProfileData = null;
 

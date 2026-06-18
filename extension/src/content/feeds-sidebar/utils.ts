@@ -4,13 +4,13 @@ import { getLinkedInDomStatus } from '../linkedin-dom-status';
 export type MemberStatus = NonNullable<FeedMemberInfo['status']>;
 
 export function getMemberStatus(member: FeedMemberInfo): MemberStatus {
-  if (member.status) {
-    return member.status;
-  }
-
   const domStatus = getLinkedInDomStatus(member);
   if (domStatus) {
     return domStatus;
+  }
+
+  if (member.status) {
+    return member.status;
   }
 
   if (member.connectionDegree?.trim() === '1st') {
@@ -22,7 +22,8 @@ export function getMemberStatus(member: FeedMemberInfo): MemberStatus {
 
 export function canMemberReceiveMessage(
   member: FeedMemberInfo,
-  status: MemberStatus = getMemberStatus(member)
+  status: MemberStatus = getMemberStatus(member),
+  options: { allowUnverifiedProfileMessage?: boolean } = {}
 ): boolean {
   if (status === 'loading' || status === 'pending' || status === 'withdrawn' || status === 'unavailable') {
     return false;
@@ -32,7 +33,11 @@ export function canMemberReceiveMessage(
     return true;
   }
 
-  return member.canMessage === true;
+  if (member.canMessage === true) {
+    return true;
+  }
+
+  return Boolean(options.allowUnverifiedProfileMessage && member.linkedinUrl);
 }
 
 export function getMemberStatusTooltip(status: MemberStatus): string | null {

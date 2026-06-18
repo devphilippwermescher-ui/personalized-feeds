@@ -23,6 +23,7 @@ export interface MemberActionDeps {
   setFeedMembersById: (value: Record<string, FeedMemberInfo[]>) => void;
   getFeeds: () => FeedInfo[];
   loadFeeds: () => Promise<void>;
+  persistResolvedMemberState?: (feedId: string, member: FeedMemberInfo) => Promise<void>;
   getActiveMemberEditor: () => MemberEditorState | null;
   setActiveMemberEditor: (value: MemberEditorState | null) => void;
   setExpandedFeedId?: (feedId: string | null) => void;

@@ -51,6 +51,7 @@ export interface FeedMemberInfo {
   mutualConnectionsText?: string;
   firstSeenAt?: number;
   lastSeenAt?: number;
+  statusResolvedAt?: number;
   status?: 'connected' | 'pending' | 'connect' | 'following' | 'withdrawn' | 'unavailable' | 'loading';
   transientAction?: 'connect' | 'follow';
   addedAt: number;

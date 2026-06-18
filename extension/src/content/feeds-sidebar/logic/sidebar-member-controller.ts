@@ -15,6 +15,7 @@ import {
 import {
   loadFeedMembers as loadFeedMembersLogic,
   renderMembersList as renderMembersListMarkup,
+  startProfileViewerStatusRefreshCycle as startProfileViewerStatusRefreshCycleLogic,
   toggleFeedExpansion as toggleFeedExpansionLogic,
 } from './feed-members';
 import {
@@ -45,6 +46,7 @@ export function createSidebarMemberController(deps: SidebarMemberControllerDeps)
   renderMembersList: (feed: FeedInfo) => string;
   getMemberActionDeps: () => MemberActionDeps;
   updateRenderedMemberState: (feedId: string, member: FeedMemberInfo) => boolean;
+  startProfileViewerStatusRefreshCycle: (feedId: string) => void;
 } {
   let statusFetchController: AbortController | null = null;
   let loadingMembersFeedId: string | null = null;
@@ -105,6 +107,7 @@ export function createSidebarMemberController(deps: SidebarMemberControllerDeps)
     setFeedMembersById: deps.setFeedMembersById,
     getFeeds: deps.getFeeds,
     loadFeeds: deps.loadFeeds,
+    persistResolvedMemberState,
     getActiveMemberEditor: deps.getActiveMemberEditor,
     setActiveMemberEditor: deps.setActiveMemberEditor,
     setExpandedFeedId: deps.setExpandedFeedId,
@@ -125,6 +128,8 @@ export function createSidebarMemberController(deps: SidebarMemberControllerDeps)
 
   return {
     loadFeedMembers,
+    startProfileViewerStatusRefreshCycle: (feedId) =>
+      startProfileViewerStatusRefreshCycleLogic(feedId, sharedFeedMemberDeps()),
     getMemberActionDeps,
     updateRenderedMemberState: updateRenderedMemberStateLocal,
     renderMembersList: (feed) =>

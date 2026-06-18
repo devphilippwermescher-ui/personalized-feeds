@@ -16,8 +16,14 @@
  * passes that — not the original cachedMembers — to startBackgroundStatusRefresh.
  */
 
-import { describe, it, expect, vi } from 'vitest';
-import { getStaleFeedMemberCacheIds, toggleFeedExpansion, loadFeedMembers } from '../logic/feed-members';
+import { beforeEach, describe, it, expect, vi } from 'vitest';
+import {
+  getStaleFeedMemberCacheIds,
+  loadFeedMembers,
+  resetProfileViewerStatusRefreshStateForTests,
+  startProfileViewerStatusRefreshCycle,
+  toggleFeedExpansion,
+} from '../logic/feed-members';
 import type { FeedInfo, FeedMemberInfo } from '../types';
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -85,6 +91,10 @@ function makeDeps(overrides: Partial<FeedMembersDeps> & {
 }
 
 // ── Bug 2: toggleFeedExpansion passes new objects to background refresh ────────
+
+beforeEach(() => {
+  resetProfileViewerStatusRefreshStateForTests();
+});
 
 describe('toggleFeedExpansion — status-mutation wiring', () => {
   it('passes the freshly-created loading objects to fetchStatusesProgressively, not the old ones', async () => {
@@ -247,6 +257,98 @@ describe('toggleFeedExpansion — status-mutation wiring', () => {
       return members?.some((m) => m.status === 'loading');
     });
     expect(loadingCall).toBeUndefined();
+  });
+
+  it('does not reset resolved Profile Visitors statuses or refresh them on re-expansion', async () => {
+    const feedId = 'profile-viewers';
+    const m1 = makeMember('m1', 'connected');
+    const m2 = makeMember('m2', 'following');
+    m1.itemType = 'profile';
+    m2.itemType = 'profile';
+    m1.statusResolvedAt = Date.now();
+    m2.statusResolvedAt = Date.now();
+    const storedMembers: Record<string, FeedMemberInfo[]> = { [feedId]: [m1, m2] };
+    const setFeedMembersById = vi.fn();
+    const fetchProgressivelySpy = vi.fn().mockResolvedValue(undefined);
+
+    const deps = makeDeps({
+      feedMembersById: storedMembers,
+      feeds: [
+        makeFeed(feedId, {
+          isSystem: true,
+          systemType: 'profileViewers',
+        }),
+      ],
+      expandedFeedId: null,
+      getFeedMembersById: () => storedMembers,
+      setFeedMembersById,
+      fetchStatusesProgressively: fetchProgressivelySpy,
+    });
+
+    await toggleFeedExpansion(feedId, deps);
+
+    expect(setFeedMembersById).not.toHaveBeenCalled();
+    expect(fetchProgressivelySpy).not.toHaveBeenCalled();
+    expect(storedMembers[feedId][0].status).toBe('connected');
+    expect(storedMembers[feedId][1].status).toBe('following');
+  });
+
+  it('does not refresh unresolved Profile Visitors statuses on re-expansion', async () => {
+    const feedId = 'profile-viewers';
+    const resolved = makeMember('resolved', 'connected');
+    const unresolved = makeMember('unresolved', 'loading');
+    resolved.itemType = 'profile';
+    unresolved.itemType = 'profile';
+    resolved.statusResolvedAt = Date.now();
+    const storedMembers: Record<string, FeedMemberInfo[]> = { [feedId]: [resolved, unresolved] };
+    const fetchProgressivelySpy = vi.fn().mockResolvedValue(undefined);
+
+    const deps = makeDeps({
+      feedMembersById: storedMembers,
+      feeds: [
+        makeFeed(feedId, {
+          isSystem: true,
+          systemType: 'profileViewers',
+        }),
+      ],
+      expandedFeedId: null,
+      getFeedMembersById: () => storedMembers,
+      fetchStatusesProgressively: fetchProgressivelySpy,
+    });
+
+    await toggleFeedExpansion(feedId, deps);
+
+    expect(fetchProgressivelySpy).not.toHaveBeenCalled();
+  });
+
+  it('refreshes stale Profile Visitors statuses only from the scheduled cycle', () => {
+    const feedId = 'profile-viewers';
+    const fresh = makeMember('fresh', 'connected');
+    const stale = makeMember('stale', 'loading');
+    fresh.itemType = 'profile';
+    stale.itemType = 'profile';
+    fresh.statusResolvedAt = Date.now();
+    const storedMembers: Record<string, FeedMemberInfo[]> = { [feedId]: [fresh, stale] };
+    let capturedRefreshMembers: FeedMemberInfo[] = [];
+
+    const deps = makeDeps({
+      feedMembersById: storedMembers,
+      feeds: [
+        makeFeed(feedId, {
+          isSystem: true,
+          systemType: 'profileViewers',
+        }),
+      ],
+      getFeedMembersById: () => storedMembers,
+      fetchStatusesProgressively: vi.fn((members: FeedMemberInfo[]) => {
+        capturedRefreshMembers = members;
+        return Promise.resolve();
+      }),
+    });
+
+    startProfileViewerStatusRefreshCycle(feedId, deps);
+
+    expect(capturedRefreshMembers).toEqual([stale]);
   });
 });
 

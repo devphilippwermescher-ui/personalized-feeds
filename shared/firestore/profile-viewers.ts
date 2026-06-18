@@ -142,6 +142,18 @@ export async function upsertProfileViewers(
       ? ''
       : existingViewer.profileImageUrl;
     const firstSeenAt = existingByUsername.has(linkedinUsername) ? existingViewer.firstSeenAt || now : now;
+    const preservedRelationshipUpdates: Partial<ProfileViewer> = {};
+    if (existingViewer.profileUrn) preservedRelationshipUpdates.profileUrn = existingViewer.profileUrn;
+    if (existingViewer.memberNumericId) preservedRelationshipUpdates.memberNumericId = existingViewer.memberNumericId;
+    if (typeof existingViewer.canMessage === 'boolean') preservedRelationshipUpdates.canMessage = existingViewer.canMessage;
+    if (typeof existingViewer.canFollow === 'boolean') preservedRelationshipUpdates.canFollow = existingViewer.canFollow;
+    if (typeof existingViewer.canConnect === 'boolean') preservedRelationshipUpdates.canConnect = existingViewer.canConnect;
+    if (typeof existingViewer.isFollowing === 'boolean') preservedRelationshipUpdates.isFollowing = existingViewer.isFollowing;
+    if (typeof existingViewer.isPremium === 'boolean') preservedRelationshipUpdates.isPremium = existingViewer.isPremium;
+    if (existingViewer.status) preservedRelationshipUpdates.status = existingViewer.status;
+    if (typeof existingViewer.statusResolvedAt === 'number') {
+      preservedRelationshipUpdates.statusResolvedAt = existingViewer.statusResolvedAt;
+    }
 
     batch.set(
       viewerRef,
@@ -157,6 +169,7 @@ export async function upsertProfileViewers(
           viewer.mutualConnectionsText,
           existingViewer.mutualConnectionsText
         ),
+        ...preservedRelationshipUpdates,
         firstSeenAt,
         lastSeenAt: now,
         lastSeenPosition,
@@ -358,7 +371,7 @@ export async function getProfileViewerSummary(
 export async function updateProfileViewer(
   userId: string,
   viewerId: string,
-  updates: Partial<ProfileViewerInput & Pick<ProfileViewer, 'profileUrn' | 'memberNumericId' | 'canMessage' | 'canFollow' | 'canConnect' | 'isFollowing' | 'isPremium' | 'status'>>
+  updates: Partial<ProfileViewerInput & Pick<ProfileViewer, 'profileUrn' | 'memberNumericId' | 'canMessage' | 'canFollow' | 'canConnect' | 'isFollowing' | 'isPremium' | 'status' | 'statusResolvedAt'>>
 ): Promise<void> {
   const linkedinUsername = normalizeLinkedInUsername(viewerId || updates.linkedinUsername || getUsernameFromLinkedInUrl(updates.linkedinUrl || ''));
   if (!linkedinUsername) {

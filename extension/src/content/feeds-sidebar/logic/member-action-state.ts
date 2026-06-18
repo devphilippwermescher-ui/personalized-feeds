@@ -34,7 +34,7 @@ export function updateRenderedMemberState(
   sidebarEl: HTMLElement | null,
   feedId: string,
   member: FeedMemberInfo,
-  deps: Pick<MemberActionDeps, 'openLinkedInMessage' | 'openLinkedInProfile' | 'fetchLinkedInRelationshipStatus' | 'resolveProfileUrn' | 'sendLinkedInConnectRequest' | 'sendLinkedInFollowState' | 'invalidateCacheForUser' | 'getFeedMembersById' | 'showToast' | 'renderSidebarContent' | 'getMessagingButtonsEnabled'>
+  deps: Pick<MemberActionDeps, 'openLinkedInMessage' | 'openLinkedInProfile' | 'fetchLinkedInRelationshipStatus' | 'resolveProfileUrn' | 'sendLinkedInConnectRequest' | 'sendLinkedInFollowState' | 'invalidateCacheForUser' | 'getFeedMembersById' | 'getFeeds' | 'showToast' | 'renderSidebarContent' | 'getMessagingButtonsEnabled'>
 ): boolean {
   const row = sidebarEl?.querySelector<HTMLElement>(
     `.lfa-member-row[data-feed-id="${CSS.escape(feedId)}"][data-member-id="${CSS.escape(member.id)}"]`
@@ -45,7 +45,11 @@ export function updateRenderedMemberState(
   }
 
   const status = getMemberStatus(member);
-  const canMessage = canMemberReceiveMessage(member, status);
+  const canMessage = canMemberReceiveMessage(member, status, {
+    allowUnverifiedProfileMessage: isProfileViewersFeed(
+      deps.getFeeds().find((item) => item.id === feedId)
+    ),
+  });
   const showMessagingButtons = deps.getMessagingButtonsEnabled?.() ?? true;
   const actions = row.querySelector('.lfa-member-actions');
   const currentMessageButton = row.querySelector('[data-member-action="message"]');
@@ -169,6 +173,11 @@ export async function persistResolvedMemberState(
   }
 
   const feed = deps.getFeeds().find((item) => item.id === feedId);
+  if (isProfileViewersFeed(feed)) {
+    updates.statusResolvedAt = Date.now();
+    member.statusResolvedAt = updates.statusResolvedAt;
+  }
+
   if (isProfileViewersFeed(feed)) {
     await deps.sendMsg({
       type: 'PROFILE_VIEWERS_UPDATE',
