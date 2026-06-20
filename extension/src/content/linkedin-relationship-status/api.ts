@@ -284,7 +284,10 @@ export async function sendLinkedInConnectRequest(profileUrn: string): Promise<vo
   );
 
   if (!response.ok) {
-    throw new Error(`Failed to send connect request: ${response.status}`);
+    const body = await response.text().catch(() => '');
+    throw new Error(
+      `Failed to send connect request: ${response.status}${body ? ` ${body.slice(0, 500)}` : ''}`
+    );
   }
 }
 

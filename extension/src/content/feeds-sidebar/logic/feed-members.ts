@@ -7,14 +7,6 @@ import { CONTENT_COPY } from '../../shared/copy';
 import { buildRecruiterAggregateMember } from './profile-viewers-feed';
 import type { ProfileViewerListItem, ProfileViewerSummary } from 'shared/types';
 
-const PROFILE_VIEWER_STATUS_REFRESH_INTERVAL_MS = 60 * 60 * 1000;
-const PROFILE_VIEWER_STATUS_REFRESH_BATCH_LIMIT = 20;
-const PROFILE_VIEWER_STATUS_REFRESH_BATCH_COOLDOWN_MS = 5 * 60 * 1000;
-const profileViewerStatusRefreshInFlight = new Set<string>();
-let profileViewerStatusRefreshLastStartedAt = 0;
-let profileViewerStatusRefreshTimer: ReturnType<typeof setTimeout> | null = null;
-let profileViewerStatusRefreshCycleActive = false;
-
 interface FeedMembersDeps {
   sendMsg: (message: Record<string, unknown>) => Promise<Record<string, unknown>>;
   renderSidebarContent: () => void;
@@ -39,110 +31,17 @@ interface FeedMembersDeps {
   getFeeds: () => FeedInfo[];
 }
 
-function getProfileStatusRefreshKey(member: FeedMemberInfo): string {
-  return (member.linkedinUsername || member.id).trim().toLowerCase();
-}
-
-function shouldRefreshProfileViewerStatus(member: FeedMemberInfo, now = Date.now()): boolean {
-  if (member.itemType && member.itemType !== 'profile') {
-    return false;
-  }
-
-  const key = getProfileStatusRefreshKey(member);
-  if (!key || profileViewerStatusRefreshInFlight.has(key)) {
-    return false;
-  }
-
-  if (!member.status || member.status === 'loading') {
-    return (
-      typeof member.statusResolvedAt !== 'number' ||
-      now - member.statusResolvedAt >= PROFILE_VIEWER_STATUS_REFRESH_INTERVAL_MS
-    );
-  }
-
-  return (
-    typeof member.statusResolvedAt !== 'number' ||
-    now - member.statusResolvedAt >= PROFILE_VIEWER_STATUS_REFRESH_INTERVAL_MS
-  );
-}
-
-function getProfileViewerMembersForStatusRefresh(members: FeedMemberInfo[]): FeedMemberInfo[] {
-  const now = Date.now();
-  return members
-    .filter((member) => shouldRefreshProfileViewerStatus(member, now))
-    .slice(0, PROFILE_VIEWER_STATUS_REFRESH_BATCH_LIMIT);
-}
-
-function clearProfileViewerStatusRefreshTimer(): void {
-  if (profileViewerStatusRefreshTimer) {
-    clearTimeout(profileViewerStatusRefreshTimer);
-    profileViewerStatusRefreshTimer = null;
-  }
-}
-
-function getProfileViewerStatusRefreshCooldownMs(now = Date.now()): number {
-  if (!profileViewerStatusRefreshLastStartedAt) {
-    return 0;
-  }
-
-  return Math.max(
-    0,
-    profileViewerStatusRefreshLastStartedAt + PROFILE_VIEWER_STATUS_REFRESH_BATCH_COOLDOWN_MS - now
-  );
-}
-
-function scheduleProfileViewerStatusRefresh(
-  feedId: string,
-  deps: FeedMembersDeps,
-  delayMs = getProfileViewerStatusRefreshCooldownMs()
-): void {
-  if (profileViewerStatusRefreshTimer || delayMs <= 0) {
-    return;
-  }
-
-  profileViewerStatusRefreshTimer = setTimeout(() => {
-    profileViewerStatusRefreshTimer = null;
-    const members = deps.getFeedMembersById()[feedId] || [];
-    startBackgroundStatusRefresh(feedId, members, deps, {
-      profileViewersOnly: true,
-      continueProfileViewerCycle: true,
-    });
-  }, delayMs);
-}
-
 function startBackgroundStatusRefresh(
   feedId: string,
   members: FeedMemberInfo[],
-  deps: FeedMembersDeps,
-  options: { profileViewersOnly?: boolean; continueProfileViewerCycle?: boolean } = {}
+  deps: FeedMembersDeps
 ): void {
-  const profileMembers = options.profileViewersOnly
-    ? getProfileViewerMembersForStatusRefresh(members)
-    : members.some((member) => member.itemType && member.itemType !== 'profile')
-      ? members.filter((member) => !member.itemType || member.itemType === 'profile')
-      : members;
+  const profileMembers = members.some((member) => member.itemType && member.itemType !== 'profile')
+    ? members.filter((member) => !member.itemType || member.itemType === 'profile')
+    : members;
   if (profileMembers.length === 0) {
-    if (options.continueProfileViewerCycle) {
-      profileViewerStatusRefreshCycleActive = false;
-    }
     return;
   }
-
-  if (options.profileViewersOnly) {
-    const cooldownMs = getProfileViewerStatusRefreshCooldownMs();
-    if (cooldownMs > 0) {
-      scheduleProfileViewerStatusRefresh(feedId, deps, cooldownMs);
-      return;
-    }
-
-    profileViewerStatusRefreshLastStartedAt = Date.now();
-    clearProfileViewerStatusRefreshTimer();
-  }
-
-  const profileViewerRefreshKeys = options.profileViewersOnly
-    ? profileMembers.map(getProfileStatusRefreshKey).filter(Boolean)
-    : [];
-  profileViewerRefreshKeys.forEach((key) => profileViewerStatusRefreshInFlight.add(key));
 
   deps.getStatusFetchController()?.abort();
   const controller = new AbortController();
@@ -151,10 +50,6 @@ function startBackgroundStatusRefresh(
   void deps.fetchStatusesProgressively(
     profileMembers,
     (member) => {
-      if (options.profileViewersOnly && !member.status) {
-        member.status = 'connect';
-        member.statusResolvedAt = Date.now();
-      }
       void deps.persistResolvedMemberState(feedId, member);
       if (!deps.updateRenderedMemberState(feedId, member)) {
         deps.renderSidebarContent();
@@ -162,44 +57,10 @@ function startBackgroundStatusRefresh(
     },
     controller.signal
   ).finally(() => {
-    profileViewerRefreshKeys.forEach((key) => profileViewerStatusRefreshInFlight.delete(key));
     if (deps.getStatusFetchController() === controller) {
       deps.setStatusFetchController(null);
     }
-
-    if (options.profileViewersOnly && options.continueProfileViewerCycle) {
-      const currentMembers = deps.getFeedMembersById()[feedId] || [];
-      if (getProfileViewerMembersForStatusRefresh(currentMembers).length > 0) {
-        scheduleProfileViewerStatusRefresh(feedId, deps);
-      } else {
-        profileViewerStatusRefreshCycleActive = false;
-      }
-    }
   });
-}
-
-export function startProfileViewerStatusRefreshCycle(feedId: string, deps: FeedMembersDeps): void {
-  if (profileViewerStatusRefreshCycleActive) {
-    return;
-  }
-
-  const members = deps.getFeedMembersById()[feedId] || [];
-  if (getProfileViewerMembersForStatusRefresh(members).length === 0) {
-    return;
-  }
-
-  profileViewerStatusRefreshCycleActive = true;
-  startBackgroundStatusRefresh(feedId, members, deps, {
-    profileViewersOnly: true,
-    continueProfileViewerCycle: true,
-  });
-}
-
-export function resetProfileViewerStatusRefreshStateForTests(): void {
-  clearProfileViewerStatusRefreshTimer();
-  profileViewerStatusRefreshLastStartedAt = 0;
-  profileViewerStatusRefreshCycleActive = false;
-  profileViewerStatusRefreshInFlight.clear();
 }
 
 function profileViewerToMember(viewer: Partial<FeedMemberInfo> | ProfileViewerListItem): FeedMemberInfo | null {
@@ -360,9 +221,7 @@ export async function toggleFeedExpansion(feedId: string, deps: FeedMembersDeps)
 
   deps.renderSidebarContent();
   if (!feed?.isShared && !isProfileViewersFeed) {
-    startBackgroundStatusRefresh(feedId, membersForRefresh, deps, {
-      profileViewersOnly: false,
-    });
+    startBackgroundStatusRefresh(feedId, membersForRefresh, deps);
   }
 }
 

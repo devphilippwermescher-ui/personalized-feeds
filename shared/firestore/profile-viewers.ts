@@ -154,6 +154,12 @@ export async function upsertProfileViewers(
     if (typeof existingViewer.statusResolvedAt === 'number') {
       preservedRelationshipUpdates.statusResolvedAt = existingViewer.statusResolvedAt;
     }
+    if (typeof existingViewer.statusCheckFailedAt === 'number') {
+      preservedRelationshipUpdates.statusCheckFailedAt = existingViewer.statusCheckFailedAt;
+    }
+    if (existingViewer.statusCheckError) {
+      preservedRelationshipUpdates.statusCheckError = existingViewer.statusCheckError;
+    }
 
     batch.set(
       viewerRef,
@@ -371,7 +377,7 @@ export async function getProfileViewerSummary(
 export async function updateProfileViewer(
   userId: string,
   viewerId: string,
-  updates: Partial<ProfileViewerInput & Pick<ProfileViewer, 'profileUrn' | 'memberNumericId' | 'canMessage' | 'canFollow' | 'canConnect' | 'isFollowing' | 'isPremium' | 'status' | 'statusResolvedAt'>>
+  updates: Partial<ProfileViewerInput & Pick<ProfileViewer, 'profileUrn' | 'memberNumericId' | 'canMessage' | 'canFollow' | 'canConnect' | 'isFollowing' | 'isPremium' | 'status' | 'statusResolvedAt' | 'statusCheckFailedAt' | 'statusCheckError'>>
 ): Promise<void> {
   const linkedinUsername = normalizeLinkedInUsername(viewerId || updates.linkedinUsername || getUsernameFromLinkedInUrl(updates.linkedinUrl || ''));
   if (!linkedinUsername) {

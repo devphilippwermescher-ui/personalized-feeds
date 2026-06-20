@@ -123,6 +123,11 @@ export function renderMemberStatusAction(
   </div>`;
 }
 
+function isConnectCooldownError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error || '');
+  return /withdraw|cooldown|resend|invitation|invite|already sent|cannot send|unable to send/i.test(message);
+}
+
 export function bindMemberActionButtons(root: ParentNode, deps: MemberActionDeps): void {
   const {
     openLinkedInMessage,
@@ -274,6 +279,14 @@ export function bindMemberActionButtons(root: ParentNode, deps: MemberActionDeps
         renderSidebarContent();
         showToast(connectRequestSentMessage(), 'success');
       } catch (error) {
+        if (isConnectCooldownError(error)) {
+          member.status = 'withdrawn';
+          member.canConnect = false;
+          member.statusResolvedAt = Date.now();
+          member.transientAction = undefined;
+          void persistResolvedMemberState?.(feedId, member);
+          renderSidebarContent();
+        }
         showToast(error instanceof Error ? error.message : 'Failed to send connect request', 'error');
       }
     });

@@ -1,5 +1,4 @@
 import {
-  clearProfileViewerCache,
   getProfileViewerItems,
   getProfileViewerSummary,
   removeProfileViewer,
@@ -234,7 +233,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
 
         if (message.resetProfileViewers === true) {
-          await clearProfileViewerCache(user.uid);
           await resetProfileViewersSyncState(user.uid);
         }
 

@@ -3,6 +3,18 @@ import { getLinkedInDomStatus } from '../linkedin-dom-status';
 
 export type MemberStatus = NonNullable<FeedMemberInfo['status']>;
 
+function isFirstDegreeConnection(value?: string): boolean {
+  const normalized = (value || '').trim().toLowerCase();
+  return (
+    normalized === '1st' ||
+    normalized === '1st degree' ||
+    normalized === '1st degree connection' ||
+    normalized === '1-й' ||
+    normalized === '1-го' ||
+    normalized === '1'
+  );
+}
+
 export function getMemberStatus(member: FeedMemberInfo): MemberStatus {
   const domStatus = getLinkedInDomStatus(member);
   if (domStatus) {
@@ -13,7 +25,7 @@ export function getMemberStatus(member: FeedMemberInfo): MemberStatus {
     return member.status;
   }
 
-  if (member.connectionDegree?.trim() === '1st') {
+  if (isFirstDegreeConnection(member.connectionDegree)) {
     return 'connected';
   }
 
@@ -29,7 +41,7 @@ export function canMemberReceiveMessage(
     return false;
   }
 
-  if (status === 'connected' || member.connectionDegree?.trim().toLowerCase() === '1st') {
+  if (status === 'connected' || isFirstDegreeConnection(member.connectionDegree)) {
     return true;
   }
 

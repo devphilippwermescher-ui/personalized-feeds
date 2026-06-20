@@ -16,12 +16,10 @@
  * passes that — not the original cachedMembers — to startBackgroundStatusRefresh.
  */
 
-import { beforeEach, describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   getStaleFeedMemberCacheIds,
   loadFeedMembers,
-  resetProfileViewerStatusRefreshStateForTests,
-  startProfileViewerStatusRefreshCycle,
   toggleFeedExpansion,
 } from '../logic/feed-members';
 import type { FeedInfo, FeedMemberInfo } from '../types';
@@ -91,10 +89,6 @@ function makeDeps(overrides: Partial<FeedMembersDeps> & {
 }
 
 // ── Bug 2: toggleFeedExpansion passes new objects to background refresh ────────
-
-beforeEach(() => {
-  resetProfileViewerStatusRefreshStateForTests();
-});
 
 describe('toggleFeedExpansion — status-mutation wiring', () => {
   it('passes the freshly-created loading objects to fetchStatusesProgressively, not the old ones', async () => {
@@ -321,35 +315,6 @@ describe('toggleFeedExpansion — status-mutation wiring', () => {
     expect(fetchProgressivelySpy).not.toHaveBeenCalled();
   });
 
-  it('refreshes stale Profile Visitors statuses only from the scheduled cycle', () => {
-    const feedId = 'profile-viewers';
-    const fresh = makeMember('fresh', 'connected');
-    const stale = makeMember('stale', 'loading');
-    fresh.itemType = 'profile';
-    stale.itemType = 'profile';
-    fresh.statusResolvedAt = Date.now();
-    const storedMembers: Record<string, FeedMemberInfo[]> = { [feedId]: [fresh, stale] };
-    let capturedRefreshMembers: FeedMemberInfo[] = [];
-
-    const deps = makeDeps({
-      feedMembersById: storedMembers,
-      feeds: [
-        makeFeed(feedId, {
-          isSystem: true,
-          systemType: 'profileViewers',
-        }),
-      ],
-      getFeedMembersById: () => storedMembers,
-      fetchStatusesProgressively: vi.fn((members: FeedMemberInfo[]) => {
-        capturedRefreshMembers = members;
-        return Promise.resolve();
-      }),
-    });
-
-    startProfileViewerStatusRefreshCycle(feedId, deps);
-
-    expect(capturedRefreshMembers).toEqual([stale]);
-  });
 });
 
 // ── loadFeedMembers — parity check: members passed to refresh are the stored array ──

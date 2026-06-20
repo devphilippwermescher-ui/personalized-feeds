@@ -50,6 +50,7 @@ function profileViewerToMember(viewer: ProfileViewerListItem): FeedMemberInfo {
     viewedAgoText: viewer.viewedAgoText || '',
     mutualConnectionsText: viewer.mutualConnectionsText || '',
     status: viewer.status,
+    statusResolvedAt: viewer.statusResolvedAt,
     firstSeenAt: viewer.firstSeenAt,
     lastSeenAt: viewer.lastSeenAt,
     addedAt: viewer.lastSeenAt,

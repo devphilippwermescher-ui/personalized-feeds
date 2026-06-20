@@ -32,6 +32,7 @@ import {
   setProfileViewersSyncState,
   type ProfileViewersSyncCoordinatorResult,
 } from './profile-viewers-coordinator-storage';
+import { queueProfileViewersStatusSync } from './profile-viewers-status-sync';
 
 const PROFILE_VIEWERS_SYNC_LOG_LIMIT = 50;
 const PROFILE_VIEWERS_SYNC_LOG_USERNAME_LIMIT = 50;
@@ -308,6 +309,15 @@ async function runProfileViewersSyncCoordinator(
     state = appendProfileViewersSyncLog(state, log);
     await setProfileViewersSyncState(state);
     await scheduleNextProfileViewersAlarm(state);
+    await queueProfileViewersStatusSync({
+      trigger: 'profile_viewers_sync',
+      priorityUsernames: result.newProfileUsernames,
+      urgent:
+        trigger === 'manual' ||
+        (result.paginationMode === 'incremental' && result.newProfileUsernames.length > 0),
+    }).catch((error) => {
+      console.warn('[profile-viewers-sync] Failed to queue profile viewer status sync:', error);
+    });
     await notifyLinkedInTabsAboutProfileViewersSync().catch((error) => {
       console.warn('[profile-viewers-sync] Failed to notify LinkedIn tabs:', error);
     });

@@ -50,9 +50,6 @@ import { createSidebarMemberController } from './logic/sidebar-member-controller
 import { createSidebarUiController } from './logic/sidebar-ui-controller';
 
 const DASHBOARD_URL = 'https://linkedin-feed-sorter.web.app';
-const PROFILE_VIEWER_STATUS_SWEEP_INTERVAL_MS = 60 * 60 * 1000;
-const PROFILE_VIEWER_STATUS_SWEEP_LAST_STARTED_AT_KEY =
-  'lfs_profile_viewer_status_sweep_last_started_at';
 
 let currentUser: UserInfo | null = null;
 let feedsList: FeedInfo[] = [];
@@ -73,7 +70,6 @@ let activeMemberEditor: MemberEditorState | null = null;
 let feedActionModalEl: HTMLElement | null = null;
 let feedActionModalRoot: Root | null = null;
 let sidebarUiController: ReturnType<typeof createSidebarUiController> | null = null;
-let profileViewerStatusSweepTimer: ReturnType<typeof setTimeout> | null = null;
 
 function renderSidebarContent(): void {
   sidebarUiController?.renderSidebarContent();
@@ -113,7 +109,6 @@ function setProfileViewersRefreshConfirmation(isConfirming: boolean): void {
 }
 
 function resetSignedOutSidebarState(): void {
-  clearProfileViewerStatusSweepTimer();
   sharedFeedsList = [];
   profileViewerMembers = [];
   profileViewerPrivateCount = undefined;
@@ -123,75 +118,6 @@ function resetSignedOutSidebarState(): void {
   delete nextFeedMembersById[PROFILE_VIEWERS_FEED_ID];
   feedMembersById = nextFeedMembersById;
   activeFeedTab = 'owned';
-}
-
-function clearProfileViewerStatusSweepTimer(): void {
-  if (profileViewerStatusSweepTimer) {
-    clearTimeout(profileViewerStatusSweepTimer);
-    profileViewerStatusSweepTimer = null;
-  }
-}
-
-function getStoredProfileViewerStatusSweepLastStartedAt(): Promise<number> {
-  return new Promise((resolve) => {
-    chrome.storage.local.get(
-      PROFILE_VIEWER_STATUS_SWEEP_LAST_STARTED_AT_KEY,
-      (stored) => {
-        const value = stored[PROFILE_VIEWER_STATUS_SWEEP_LAST_STARTED_AT_KEY];
-        resolve(typeof value === 'number' ? value : 0);
-      }
-    );
-  });
-}
-
-function setStoredProfileViewerStatusSweepLastStartedAt(value: number): Promise<void> {
-  return chrome.storage.local.set({
-    [PROFILE_VIEWER_STATUS_SWEEP_LAST_STARTED_AT_KEY]: value,
-  });
-}
-
-function hasProfileViewerProfilesForStatusSweep(): boolean {
-  const members = feedMembersById[PROFILE_VIEWERS_FEED_ID] || profileViewerMembers;
-  return members.some((member) => !member.itemType || member.itemType === 'profile');
-}
-
-async function scheduleProfileViewerStatusSweep(): Promise<void> {
-  clearProfileViewerStatusSweepTimer();
-
-  if (!currentUser || !hasProfileViewerProfilesForStatusSweep()) {
-    return;
-  }
-
-  const now = Date.now();
-  const lastStartedAt = await getStoredProfileViewerStatusSweepLastStartedAt();
-  if (!lastStartedAt) {
-    await setStoredProfileViewerStatusSweepLastStartedAt(now);
-    profileViewerStatusSweepTimer = setTimeout(() => {
-      void runProfileViewerStatusSweep();
-    }, PROFILE_VIEWER_STATUS_SWEEP_INTERVAL_MS);
-    return;
-  }
-
-  const delayMs = Math.max(
-    0,
-    lastStartedAt + PROFILE_VIEWER_STATUS_SWEEP_INTERVAL_MS - now
-  );
-  profileViewerStatusSweepTimer = setTimeout(() => {
-    void runProfileViewerStatusSweep();
-  }, delayMs);
-}
-
-async function runProfileViewerStatusSweep(): Promise<void> {
-  profileViewerStatusSweepTimer = null;
-
-  try {
-    if (currentUser && hasProfileViewerProfilesForStatusSweep()) {
-      await setStoredProfileViewerStatusSweepLastStartedAt(Date.now());
-      startProfileViewerStatusRefreshCycle(PROFILE_VIEWERS_FEED_ID);
-    }
-  } finally {
-    void scheduleProfileViewerStatusSweep();
-  }
 }
 
 const { sendMsg, checkAuth, handleSignIn, handleSignOut } =
@@ -277,7 +203,6 @@ async function refreshProfileViewersAfterBackgroundSync(): Promise<void> {
     response.viewers as ProfileViewerListItem[],
     (response.summary as ProfileViewerSummary | null | undefined) || null
   );
-  void scheduleProfileViewerStatusSweep();
   renderSidebarContent();
 }
 
@@ -429,7 +354,6 @@ async function loadFeeds(): Promise<void> {
       profileViewersResp.viewers as ProfileViewerListItem[],
       (profileViewersResp.summary as ProfileViewerSummary | null | undefined) || null
     );
-    void scheduleProfileViewerStatusSweep();
   } else {
     feedsList = withProfileViewersFeed(
       feedsList,
@@ -469,7 +393,6 @@ const {
   renderMembersList,
   getMemberActionDeps,
   updateRenderedMemberState: updateRenderedMemberStateLocal,
-  startProfileViewerStatusRefreshCycle,
 } = createSidebarMemberController({
   sendMsg,
   showToast,

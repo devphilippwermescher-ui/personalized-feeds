@@ -45,6 +45,8 @@ export interface ProfileViewer {
   mutualConnectionsText?: string;
   status?: 'connected' | 'pending' | 'connect' | 'following' | 'withdrawn' | 'unavailable' | 'loading';
   statusResolvedAt?: number;
+  statusCheckFailedAt?: number;
+  statusCheckError?: string;
   firstSeenAt: number;
   lastSeenAt: number;
   lastSeenPosition?: number;
