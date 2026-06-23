@@ -1,9 +1,13 @@
 import { GRAPHQL_QUERY_IDS } from './constants';
 import { parseGraphQLRelationshipStatus, parseProfileImageUrlFromHtml, parseStatusFromCodeBlocks, parseStatusFromRegex, parseStatusFromRehydration } from './parsers';
-import { isLinkedInProfileUnavailableHtml } from './profile-page-state';
+import { isLinkedInBlockedOrChallengeHtml, isLinkedInProfileUnavailableHtml } from './profile-page-state';
 import { decodeHtmlEntities, getCsrfToken } from './utils';
 import type { RelationshipResolution } from './types';
 import { getUsernameFromLinkedInUrl, normalizeLinkedInUsername } from '../../../../shared/linkedin-identity';
+import {
+  getLinkedInStatusFetchErrorCode,
+  LinkedInStatusFetchError,
+} from './errors';
 
 /**
  * Usernames stored in Firestore may already be percent-encoded
@@ -123,7 +127,17 @@ export async function fetchStatusFromProfilePage(
     },
   });
 
-  if (!response.ok) return null;
+  if (!response.ok) {
+    const code = getLinkedInStatusFetchErrorCode(response.status);
+    if (code !== 'api_error') {
+      throw new LinkedInStatusFetchError(
+        `LinkedIn profile page request failed with ${response.status}`,
+        code,
+        response.status
+      );
+    }
+    return null;
+  }
 
   const html = await response.text();
   const decodedHtml = decodeHtmlEntities(html);
@@ -153,6 +167,14 @@ export async function fetchStatusFromProfilePage(
       /3rd degree connection/i.test(decodedHtml),
     ctaPreview,
   };
+
+  if (isLinkedInBlockedOrChallengeHtml(html)) {
+    console.warn(`[LFS] ${username}: LinkedIn profile page appears blocked/challenged`, htmlSignals);
+    throw new LinkedInStatusFetchError(
+      'LinkedIn profile page appears blocked or challenged',
+      'blocked'
+    );
+  }
 
   if (isLinkedInProfileUnavailableHtml(html)) {
     console.log(`[LFS] ${username}: profile unavailable (LinkedIn 404 page)`, htmlSignals);
@@ -231,7 +253,17 @@ export async function fetchWithGraphQL(
     },
   });
 
-  if (!response.ok) return null;
+  if (!response.ok) {
+    const code = getLinkedInStatusFetchErrorCode(response.status);
+    if (code !== 'api_error') {
+      throw new LinkedInStatusFetchError(
+        `LinkedIn GraphQL request failed with ${response.status}`,
+        code,
+        response.status
+      );
+    }
+    return null;
+  }
 
   const payload = await response.json();
   return parseGraphQLRelationshipStatus(payload);

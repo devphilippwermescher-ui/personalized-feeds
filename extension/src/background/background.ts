@@ -57,6 +57,7 @@ void queueProfileViewersStatusSync({ trigger: 'service_worker' });
 
 import './external-message-handler';
 import './auth-settings-message-handler';
+import './linkedin-relationship-status-message-handler';
 import './profile-viewers-message-handler';
 import './feeds-message-handler';
 import './feed-sharing-message-handler';

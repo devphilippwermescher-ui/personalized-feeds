@@ -5,8 +5,17 @@ import { GRAPHQL_QUERY_IDS, REQUEST_DELAY_MS, STATUS_FETCH_CONCURRENCY } from '.
 import { fetchProfileImageFromProfilePage, fetchStatusFromProfilePage, fetchWithGraphQL, isLikelyLinkedInProfileToken, resolveCanonicalLinkedInIdentity, resolveProfileUrn, sendLinkedInConnectRequest, sendLinkedInFollowState } from './api';
 import { delay, normalizeRelationshipResolution } from './utils';
 import type { RelationshipResolution } from './types';
+import {
+  isLinkedInStatusFetchBlockLikeError,
+  LinkedInStatusFetchError,
+} from './errors';
 
 type RelationshipStatusResult = RelationshipResolution;
+const BACKGROUND_STATUS_FALLBACK_WINDOW_MS = 5 * 60 * 1000;
+const BACKGROUND_STATUS_FALLBACK_MAX_PER_WINDOW = 20;
+const backgroundStatusFallbackInFlight = new Map<string, Promise<RelationshipStatusResult | null>>();
+let backgroundStatusFallbackWindowStartedAt = 0;
+let backgroundStatusFallbackRequestCount = 0;
 
 function isUsableProfileImageUrl(url?: string): url is string {
   if (!url) {
@@ -91,10 +100,111 @@ async function enrichResultWithProfileImage(
   return result;
 }
 
+function cacheResolvedStatus(username: string, result: RelationshipStatusResult): void {
+  cacheStatus(
+    username,
+    result.status,
+    result.profileUrn,
+    result.canMessage,
+    result.canFollow,
+    result.canConnect,
+    result.isFollowing,
+    result.memberNumericId,
+    result.isPremium,
+    result.profileImageUrl
+  );
+}
+
+function takeBackgroundFallbackSlot(now = Date.now()): boolean {
+  if (
+    !backgroundStatusFallbackWindowStartedAt ||
+    now - backgroundStatusFallbackWindowStartedAt >= BACKGROUND_STATUS_FALLBACK_WINDOW_MS
+  ) {
+    backgroundStatusFallbackWindowStartedAt = now;
+    backgroundStatusFallbackRequestCount = 0;
+  }
+
+  if (backgroundStatusFallbackRequestCount >= BACKGROUND_STATUS_FALLBACK_MAX_PER_WINDOW) {
+    return false;
+  }
+
+  backgroundStatusFallbackRequestCount += 1;
+  return true;
+}
+
+function sendRuntimeMessage(message: Record<string, unknown>): Promise<Record<string, unknown>> {
+  return new Promise((resolve, reject) => {
+    if (!chrome.runtime?.sendMessage) {
+      reject(new Error('Chrome runtime messaging is unavailable'));
+      return;
+    }
+
+    chrome.runtime.sendMessage(message, (response) => {
+      const runtimeError = chrome.runtime.lastError;
+      if (runtimeError) {
+        reject(new Error(runtimeError.message));
+        return;
+      }
+
+      resolve((response || {}) as Record<string, unknown>);
+    });
+  });
+}
+
+async function fetchStatusWithBackgroundFallback(
+  username: string,
+  reason: unknown
+): Promise<RelationshipStatusResult | null> {
+  if (!isLinkedInStatusFetchBlockLikeError(reason)) {
+    return null;
+  }
+
+  const normalizedUsername = username.trim().toLowerCase();
+  if (!normalizedUsername) {
+    return null;
+  }
+
+  const existingRequest = backgroundStatusFallbackInFlight.get(normalizedUsername);
+  if (existingRequest) {
+    return existingRequest;
+  }
+
+  if (!takeBackgroundFallbackSlot()) {
+    console.warn('[LFS] Background status fallback throttled', {
+      username: normalizedUsername,
+      windowMs: BACKGROUND_STATUS_FALLBACK_WINDOW_MS,
+      maxPerWindow: BACKGROUND_STATUS_FALLBACK_MAX_PER_WINDOW,
+    });
+    throw new LinkedInStatusFetchError(
+      'Background relationship status fallback is throttled',
+      'rate_limited'
+    );
+  }
+
+  const request = sendRuntimeMessage({
+    type: 'LINKEDIN_RELATIONSHIP_STATUS_RESOLVE_BACKGROUND',
+    linkedinUsername: normalizedUsername,
+  })
+    .then((response) => {
+      if (!response.success || !response.resolution) {
+        return null;
+      }
+
+      return normalizeRelationshipResolution(response.resolution as RelationshipResolution);
+    })
+    .finally(() => {
+      backgroundStatusFallbackInFlight.delete(normalizedUsername);
+    });
+
+  backgroundStatusFallbackInFlight.set(normalizedUsername, request);
+  return request;
+}
+
 async function fetchSingleStatus(
   member: FeedMemberInfo
 ): Promise<RelationshipStatusResult> {
   const username = await ensureCanonicalIdentity(member);
+  let blockLikeError: unknown = null;
 
   for (const queryId of GRAPHQL_QUERY_IDS) {
     try {
@@ -104,44 +214,55 @@ async function fetchSingleStatus(
           await enrichResultWithProfileImage(username, result, member.profileImageUrl)
         );
         console.log(`[LFS] ${username}: status=${enrichedResult.status} isPremium=${enrichedResult.isPremium ?? false} (GraphQL ${queryId.slice(-8)})`);
-        cacheStatus(
-          username,
-          enrichedResult.status,
-          enrichedResult.profileUrn,
-          enrichedResult.canMessage,
-          enrichedResult.canFollow,
-          enrichedResult.canConnect,
-          enrichedResult.isFollowing,
-          enrichedResult.memberNumericId,
-          enrichedResult.isPremium,
-          enrichedResult.profileImageUrl
-        );
+        cacheResolvedStatus(username, enrichedResult);
         return enrichedResult;
       }
-    } catch {
-      // try next queryId
+    } catch (error) {
+      if (isLinkedInStatusFetchBlockLikeError(error)) {
+        blockLikeError = error;
+        break;
+      }
+      // try next queryId for ordinary parse/network misses
     }
+  }
+
+  if (blockLikeError) {
+    const fallbackResult = await fetchStatusWithBackgroundFallback(username, blockLikeError);
+    if (fallbackResult) {
+      const enrichedFallbackResult = await enrichResultWithProfileImage(
+        username,
+        fallbackResult,
+        member.profileImageUrl
+      );
+      console.log(`[LFS] ${username}: status=${enrichedFallbackResult.status} (background fallback after content block)`);
+      cacheResolvedStatus(username, enrichedFallbackResult);
+      return enrichedFallbackResult;
+    }
+
+    throw blockLikeError;
   }
 
   try {
     const htmlResult = await fetchStatusFromProfilePage(username);
     if (htmlResult) {
       const normalizedHtmlResult = normalizeRelationshipResolution(htmlResult);
-      cacheStatus(
-        username,
-        normalizedHtmlResult.status,
-        normalizedHtmlResult.profileUrn,
-        normalizedHtmlResult.canMessage,
-        normalizedHtmlResult.canFollow,
-        normalizedHtmlResult.canConnect,
-        normalizedHtmlResult.isFollowing,
-        normalizedHtmlResult.memberNumericId,
-        normalizedHtmlResult.isPremium,
-        normalizedHtmlResult.profileImageUrl
-      );
+      cacheResolvedStatus(username, normalizedHtmlResult);
       return normalizedHtmlResult;
     }
   } catch (err) {
+    if (isLinkedInStatusFetchBlockLikeError(err)) {
+      const fallbackResult = await fetchStatusWithBackgroundFallback(username, err);
+      if (fallbackResult) {
+        const enrichedFallbackResult = await enrichResultWithProfileImage(
+          username,
+          fallbackResult,
+          member.profileImageUrl
+        );
+        console.log(`[LFS] ${username}: status=${enrichedFallbackResult.status} (background fallback after HTML block)`);
+        cacheResolvedStatus(username, enrichedFallbackResult);
+        return enrichedFallbackResult;
+      }
+    }
     console.warn(`[LFS] HTML fetch failed for ${username}:`, err);
   }
 

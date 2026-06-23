@@ -5,14 +5,9 @@ import {
 } from 'shared/firestore-service';
 import { normalizeLinkedInUsername } from 'shared/linkedin-identity';
 import type { ProfileViewer } from 'shared/types';
-import { GRAPHQL_QUERY_IDS } from '../content/linkedin-relationship-status/constants';
-import { parseGraphQLRelationshipStatus } from '../content/linkedin-relationship-status/parsers';
-import { fetchStatusFromProfilePage } from '../content/linkedin-relationship-status/api';
 import type { RelationshipResolution } from '../content/linkedin-relationship-status/types';
-import { normalizeRelationshipResolution } from '../content/linkedin-relationship-status/utils';
-import { fetchWithTimeout } from './fetch-with-timeout';
 import { getAuthenticatedFeedsUser } from './feeds-auth';
-import { getLinkedInCsrfToken } from './profile-viewers-api-client';
+import { resolveLinkedInRelationshipStatusInBackground } from './linkedin-relationship-status-resolver';
 import {
   PROFILE_VIEWERS_STATUS_BATCH_LIMIT,
   PROFILE_VIEWERS_STATUS_STALE_MS,
@@ -28,7 +23,6 @@ export {
 export const PROFILE_VIEWERS_STATUS_ALARM_NAME = 'profile-viewers-status-sync';
 export const PROFILE_VIEWERS_STATUS_BATCH_COOLDOWN_MS = 5 * 60 * 1000;
 
-const PROFILE_VIEWERS_STATUS_REQUEST_TIMEOUT_MS = 20_000;
 const PROFILE_VIEWERS_STATUS_STATE_KEY = 'lfs_profile_viewers_status_sync_state_v1';
 const PROFILE_VIEWERS_STATUS_LEASE_MS = 2 * 60 * 1000;
 const PROFILE_VIEWERS_STATUS_PRIORITY_LIMIT = 500;
@@ -122,63 +116,6 @@ function mergePriorityUsernames(
   incoming: string[] = []
 ): string[] {
   return normalizePriorityUsernames([...incoming, ...current]);
-}
-
-function safeEncodeUsername(username: string): string {
-  let decoded = username;
-  try {
-    decoded = decodeURIComponent(username);
-  } catch {
-    /* keep original */
-  }
-  return encodeURIComponent(decoded);
-}
-
-async function fetchGraphQLRelationshipStatus(
-  username: string,
-  queryId: string,
-  csrfToken: string
-): Promise<RelationshipResolution | null> {
-  const url =
-    `https://www.linkedin.com/voyager/api/graphql?includeWebMetadata=true` +
-    `&variables=(vanityName:${safeEncodeUsername(username)})` +
-    `&queryId=${queryId}`;
-
-  const response = await fetchWithTimeout(
-    url,
-    {
-      method: 'GET',
-      credentials: 'include',
-      headers: {
-        accept: '*/*',
-        'content-type': 'application/json',
-        'csrf-token': csrfToken,
-        'x-restli-protocol-version': '2.0.0',
-      },
-    },
-    PROFILE_VIEWERS_STATUS_REQUEST_TIMEOUT_MS
-  );
-
-  if (!response.ok) {
-    return null;
-  }
-
-  return parseGraphQLRelationshipStatus(await response.json());
-}
-
-async function fetchProfileViewerRelationshipStatus(
-  username: string,
-  csrfToken: string
-): Promise<RelationshipResolution | null> {
-  for (const queryId of GRAPHQL_QUERY_IDS) {
-    const graphQLResult = await fetchGraphQLRelationshipStatus(username, queryId, csrfToken);
-    if (graphQLResult) {
-      return normalizeRelationshipResolution(graphQLResult);
-    }
-  }
-
-  const htmlFallback = await fetchStatusFromProfilePage(username);
-  return htmlFallback ? normalizeRelationshipResolution(htmlFallback) : null;
 }
 
 function buildStatusUpdate(
@@ -327,11 +264,6 @@ export async function runProfileViewersStatusSync(
       return { ran: true, success: true, checkedCount: 0, updatedCount: 0, failedCount: 0, remainingCount: 0, nextDueAt };
     }
 
-    const csrfToken = await getLinkedInCsrfToken();
-    if (!csrfToken) {
-      throw new Error('LinkedIn CSRF token is unavailable. Make sure you are signed in to LinkedIn.');
-    }
-
     let updatedCount = 0;
     let failedCount = 0;
     const checkedUsernames: string[] = [];
@@ -344,7 +276,7 @@ export async function runProfileViewersStatusSync(
 
       checkedUsernames.push(username);
       try {
-        const resolution = await fetchProfileViewerRelationshipStatus(username, csrfToken);
+        const resolution = await resolveLinkedInRelationshipStatusInBackground(username);
         if (!resolution) {
           throw new Error('LinkedIn relationship status was not found in GraphQL or profile HTML.');
         }
