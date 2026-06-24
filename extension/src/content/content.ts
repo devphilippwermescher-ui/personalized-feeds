@@ -20,6 +20,7 @@ let featureSettings: UserFeatureSettings = {
   messagingButtons: true,
   postButtons: true,
   speechToComment: true,
+  hideProfileViewers: false,
 };
 
 let domReady = false;
@@ -50,9 +51,21 @@ onFeatureSettingsChange(applyFeatureSettings);
 
 // ── Bootstrap ────────────────────────────────────────────────────────
 
+let linkedinActivityTimer: number | undefined;
+
+function notifyProfileViewersLinkedInActivity(): void {
+  window.clearTimeout(linkedinActivityTimer);
+  linkedinActivityTimer = window.setTimeout(() => {
+    chrome.runtime.sendMessage({ type: 'PROFILE_VIEWERS_LINKEDIN_ACTIVITY' }).catch(() => {
+      /* background may be unavailable while the extension is reloading */
+    });
+  }, 500);
+}
+
 function onPageReady(): void {
   domReady = true;
   applyFeatureUI();
+  notifyProfileViewersLinkedInActivity();
 }
 
 if (document.readyState === 'complete') {
@@ -74,6 +87,7 @@ function onRouteChange(): void {
 
   if (domReady) {
     window.setTimeout(applyFeatureUI, 300);
+    notifyProfileViewersLinkedInActivity();
   }
 }
 

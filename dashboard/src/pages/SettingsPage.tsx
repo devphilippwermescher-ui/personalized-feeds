@@ -21,6 +21,11 @@ const FEATURE_ITEMS = [
     title: 'Speech to comment',
     description: 'Show floating mic button on LinkedIn for voice comments',
   },
+  {
+    key: 'hideProfileViewers',
+    title: 'Hide Profile Visitors',
+    description: 'Hide the Profile Visitors list in the extension sidebar while background collection continues',
+  },
 ] as const;
 
 export default function SettingsPage({ userId }: SettingsPageProps) {

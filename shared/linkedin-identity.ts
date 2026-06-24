@@ -1,5 +1,13 @@
 import type { FeedMember, LinkedInProfileData } from './types';
 
+const RESERVED_LINKEDIN_PROFILE_USERNAMES = new Set([
+  'me',
+  'null',
+  'undefined',
+  'profile',
+  'settings',
+]);
+
 export function normalizeLinkedInUsername(value: string | undefined): string {
   const raw = (value || '').trim().replace(/^\/+|\/+$/g, '').toLowerCase();
   try {
@@ -7,6 +15,15 @@ export function normalizeLinkedInUsername(value: string | undefined): string {
   } catch {
     return raw;
   }
+}
+
+export function isValidLinkedInProfileUsername(value: string | undefined): boolean {
+  const username = normalizeLinkedInUsername(value);
+  return (
+    username.length >= 3 &&
+    !RESERVED_LINKEDIN_PROFILE_USERNAMES.has(username) &&
+    /^[\p{L}\p{N}_.~-]+$/u.test(username)
+  );
 }
 
 export function getUsernameFromLinkedInUrl(urlValue: string | undefined): string {

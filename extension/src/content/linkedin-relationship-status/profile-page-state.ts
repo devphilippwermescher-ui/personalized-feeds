@@ -10,3 +10,16 @@ export function isLinkedInProfileUnavailableHtml(html: string): boolean {
     /Please check your URL or return to LinkedIn home/i.test(decodedHtml)
   );
 }
+
+export function isLinkedInBlockedOrChallengeHtml(html: string): boolean {
+  const decodedHtml = decodeHtmlEntities(html);
+
+  return (
+    /checkpoint\/challenge/i.test(decodedHtml) ||
+    /security verification/i.test(decodedHtml) ||
+    /unusual activity/i.test(decodedHtml) ||
+    /captcha/i.test(decodedHtml) ||
+    /authwall/i.test(decodedHtml) ||
+    /join-form/i.test(decodedHtml)
+  );
+}

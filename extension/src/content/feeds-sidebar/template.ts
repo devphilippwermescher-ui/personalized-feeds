@@ -102,6 +102,7 @@ export function renderSidebarHeader(params: {
           ${renderSettingsToggleRow('messagingButtons', 'Messaging buttons', featureSettings.messagingButtons, 'Show MyFeedIn buttons inside LinkedIn messaging conversations')}
           ${renderSettingsToggleRow('postButtons', 'Post buttons', featureSettings.postButtons, 'Show MyFeedIn buttons on LinkedIn feed posts')}
           ${renderSettingsToggleRow('speechToComment', 'Speech to comment', featureSettings.speechToComment, 'Show floating mic button on LinkedIn for voice comments')}
+          ${renderSettingsToggleRow('hideProfileViewers', 'Hide Profile Visitors', featureSettings.hideProfileViewers, 'Hide the Profile Visitors list in the sidebar. Background collection will continue.')}
         </div>
       </div>` : ''}
       ${avatarHtml}

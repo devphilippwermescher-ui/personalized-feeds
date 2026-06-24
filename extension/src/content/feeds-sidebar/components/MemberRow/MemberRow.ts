@@ -7,12 +7,58 @@ function escapeHtml(text: string): string {
   return div.innerHTML;
 }
 
+function renderMemberMeta(member: FeedMemberInfo): string {
+  const metaParts = [member.headline, member.viewedAgoText, member.mutualConnectionsText]
+    .map((item) => (item || '').trim())
+    .filter(Boolean);
+
+  if (metaParts.length === 0) {
+    return '';
+  }
+
+  return `<div class="lfa-member-meta">${escapeHtml(metaParts.join(' - '))}</div>`;
+}
+
+function isUrlLikeSearchDisplayName(value: string): boolean {
+  const normalized = value.trim().toLocaleLowerCase();
+  return (
+    /^https?:\/\//i.test(normalized) ||
+    normalized.includes('linkedin.com') ||
+    normalized.includes('/search/results/people') ||
+    normalized.includes('/results/people') ||
+    normalized.includes('currentcompany=') ||
+    normalized.includes('origin=who_viewed_me')
+  );
+}
+
+function isWeakSearchDisplayName(value: string): boolean {
+  const normalized = value.trim();
+  return (
+    !normalized ||
+    isUrlLikeSearchDisplayName(normalized) ||
+    /^[\]}),.;:'"\s]+$/.test(normalized) ||
+    /[{}[\]]/.test(normalized) ||
+    /(?:\$undefined|props:|children:|componentkey|viewtrackingspecs|:false|:true)/i.test(normalized)
+  );
+}
+
+function getSearchDisplayName(member: FeedMemberInfo): string {
+  if (member.itemType !== 'search' || !isWeakSearchDisplayName(member.displayName)) {
+    return member.displayName;
+  }
+
+  return member.searchKey
+    ? new URLSearchParams(member.searchKey).get('keywords') || 'LinkedIn search'
+    : 'LinkedIn search';
+}
+
 interface RenderMemberRowOptions {
   feedId: string;
   member: FeedMemberInfo;
   messageButtonHtml: string;
   statusActionHtml: string;
   canEdit?: boolean;
+  showMeta?: boolean;
 }
 
 export function renderMemberRow({
@@ -21,9 +67,66 @@ export function renderMemberRow({
   messageButtonHtml,
   statusActionHtml,
   canEdit = true,
+  showMeta = false,
 }: RenderMemberRowOptions): string {
+  if (member.itemType === 'recruiterAggregate') {
+    return `
+      <div class="lfa-member-row lfa-member-row--recruiter-aggregate" data-member-id="${escapeHtml(member.id)}" data-feed-id="${escapeHtml(feedId)}">
+        <div class="lfa-member-main">
+          <div class="lfa-member-avatar lfa-member-avatar--recruiters" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <rect x="5" y="8" width="14" height="10" rx="2.4" stroke="currentColor" stroke-width="2"></rect>
+              <path d="M9.2 8V6.7A2.7 2.7 0 0 1 11.9 4h.2a2.7 2.7 0 0 1 2.7 2.7V8" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path>
+              <path d="M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path>
+              <path d="M12 11.5v2" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path>
+            </svg>
+          </div>
+          <div class="lfa-member-info">
+            <button class="lfa-member-name" data-member-action="open-profile" data-member-id="${escapeHtml(member.id)}" data-feed-id="${escapeHtml(feedId)}" type="button">
+              <span class="lfa-member-name-text">${escapeHtml(member.displayName)}</span>
+            </button>
+            ${member.headline ? `<div class="lfa-member-meta">${escapeHtml(member.headline)}</div>` : ''}
+          </div>
+        </div>
+        <div class="lfa-member-actions lfa-member-actions--search">
+          <button class="lfa-member-search-btn" data-member-action="open-profile" data-member-id="${escapeHtml(member.id)}" data-feed-id="${escapeHtml(feedId)}" type="button">
+            View
+          </button>
+        </div>
+      </div>
+    `;
+  }
+
+  if (member.itemType === 'search') {
+    const displayName = getSearchDisplayName(member);
+    return `
+      <div class="lfa-member-row lfa-member-row--search" data-member-id="${escapeHtml(member.id)}" data-feed-id="${escapeHtml(feedId)}">
+        <div class="lfa-member-main">
+          <div class="lfa-member-avatar lfa-member-avatar--search" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none">
+              <circle cx="12" cy="8" r="4" fill="currentColor"></circle>
+              <path d="M4.5 21a7.5 7.5 0 0 1 15 0" fill="currentColor"></path>
+            </svg>
+          </div>
+          <div class="lfa-member-info">
+            <button class="lfa-member-name" data-member-action="open-profile" data-member-id="${escapeHtml(member.id)}" data-feed-id="${escapeHtml(feedId)}" type="button">
+              <span class="lfa-member-name-text">${escapeHtml(displayName)}</span>
+            </button>
+          </div>
+        </div>
+        <div class="lfa-member-actions lfa-member-actions--search">
+          <button class="lfa-member-search-btn" data-member-action="open-profile" data-member-id="${escapeHtml(member.id)}" data-feed-id="${escapeHtml(feedId)}" type="button">
+            Search
+          </button>
+        </div>
+      </div>
+    `;
+  }
+
+  const hasActions = Boolean(messageButtonHtml || statusActionHtml || canEdit);
+
   return `
-    <div class="lfa-member-row" data-member-id="${escapeHtml(member.id)}" data-feed-id="${escapeHtml(feedId)}">
+    <div class="lfa-member-row${showMeta ? ' lfa-member-row--with-meta' : ''}" data-member-id="${escapeHtml(member.id)}" data-feed-id="${escapeHtml(feedId)}">
       <div class="lfa-member-main">
         ${
           member.profileImageUrl
@@ -34,9 +137,10 @@ export function renderMemberRow({
           <button class="lfa-member-name" data-member-action="open-profile" data-member-id="${escapeHtml(member.id)}" data-feed-id="${escapeHtml(feedId)}" type="button">
             <span class="lfa-member-name-text">${escapeHtml(member.displayName)}</span>${member.isPremium ? ' <span class="lfa-member-premium-icon" title="LinkedIn Premium" aria-label="LinkedIn Premium">✦</span>' : ''}
           </button>
+          ${showMeta ? renderMemberMeta(member) : ''}
         </div>
       </div>
-      <div class="lfa-member-actions">
+      <div class="lfa-member-actions${hasActions ? '' : ' lfa-member-actions--empty'}">
         ${messageButtonHtml}
         ${canEdit ? `
         <button class="lfa-member-icon-btn" data-member-action="edit" data-member-id="${escapeHtml(member.id)}" data-feed-id="${escapeHtml(feedId)}" title="Edit profile">

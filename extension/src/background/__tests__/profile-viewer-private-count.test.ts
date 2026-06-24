@@ -1,0 +1,58 @@
+import { describe, expect, it } from 'vitest';
+import { extractPrivateProfileViewerCount } from '../profile-viewer-private-count';
+
+describe('extractPrivateProfileViewerCount', () => {
+  it('extracts the private viewer count from localized LinkedIn HTML', () => {
+    const payload = `
+      <div>
+        <p>Учасники LinkedIn (4)</p>
+        <p>Ці люди переглядали профіль у конфіденційному режимі</p>
+        <a href="https://www.linkedin.com/help/linkedin/answer/a567226/">Дізнатися більше</a>
+      </div>
+    `;
+
+    expect(extractPrivateProfileViewerCount(payload)).toBe(4);
+  });
+
+  it('supports escaped RSC payload links and English labels', () => {
+    const payload =
+      '"LinkedIn members (58)" "https:\\/\\/www.linkedin.com\\/help\\/linkedin\\/answer\\/a567226\\/"';
+
+    expect(extractPrivateProfileViewerCount(payload)).toBe(58);
+  });
+
+  it('supports the newer prefixed LinkedIn members summary row', () => {
+    const payload = `
+      "children":["57 Linkedin members"]
+      "children":["These people viewed your profile in Private mode"]
+      "url":"https:\\/\\/www.linkedin.com\\/help\\/linkedin\\/answer\\/a567226\\/"
+    `;
+
+    expect(extractPrivateProfileViewerCount(payload)).toBe(57);
+  });
+
+  it('supports LinkedIn RSC components between the label, count, and help link', () => {
+    const payload = `
+      "children":["LinkedIn members",["$","span",null,{"children":" "}],"\\u00284\\u0029"]
+      ${'{"componentKey":"viewer-list-item","props":{"children":[]}},'.repeat(40)}
+      "url":"https:\\/\\/www.linkedin.com\\/help\\/linkedin\\/answer\\/a567226\\/"
+    `;
+
+    expect(extractPrivateProfileViewerCount(payload)).toBe(4);
+  });
+
+  it('extracts the nearest private count when LinkedIn splits the localized label', () => {
+    const payload = `
+      "children":["1 mutual connection"]
+      "children":["Members",["$","span",null,{"children":" "}],"\\u002858\\u0029"]
+      "children":"These people viewed your profile in private mode"
+      "url":"https:\\/\\/www.linkedin.com\\/help\\/linkedin\\/answer\\/a567226\\/"
+    `;
+
+    expect(extractPrivateProfileViewerCount(payload)).toBe(58);
+  });
+
+  it('does not infer private viewers without the stable help article marker', () => {
+    expect(extractPrivateProfileViewerCount('LinkedIn members (14)')).toBeNull();
+  });
+});

@@ -18,6 +18,9 @@ interface SidebarDomBindingsDeps {
   filterFeeds: (query: string) => void;
   toggleFeedExpansion: (feedId: string) => Promise<void>;
   openFeedPosts: (feedId: string) => Promise<void>;
+  requestProfileViewersRefreshConfirmation: () => void;
+  cancelProfileViewersRefreshConfirmation: () => void;
+  refreshProfileViewers: () => Promise<void>;
   moveFeed: (sourceFeedId: string, targetFeedId: string) => Promise<void>;
   showEditFeedModal: (feed: FeedInfo) => void;
   showAddPeopleModal: (feed: FeedInfo) => void;
@@ -207,7 +210,7 @@ function bindFeedInteractions(container: HTMLElement, deps: SidebarDomBindingsDe
     item.addEventListener('click', (event) => {
       // Clicks on the feed-name button are handled by the feedList delegation above
       // (openFeedPosts). Skip expand/collapse so both don't fire.
-      if ((event.target as HTMLElement | null)?.closest('.lfa-feed-name')) {
+      if ((event.target as HTMLElement | null)?.closest('.lfa-feed-name, .lfa-feed-info, .lfa-feed-pin')) {
         return;
       }
       const feedId = item.getAttribute('data-feed-id');
@@ -313,6 +316,21 @@ function bindFeedActionButtons(container: HTMLElement, deps: SidebarDomBindingsD
 
       if (action === 'unfollow') {
         void deps.unfollowSharedFeed(feed);
+        return;
+      }
+
+      if (action === 'refreshProfileViewers') {
+        void deps.refreshProfileViewers();
+        return;
+      }
+
+      if (action === 'refreshProfileViewersAsk') {
+        deps.requestProfileViewersRefreshConfirmation();
+        return;
+      }
+
+      if (action === 'refreshProfileViewersCancel') {
+        deps.cancelProfileViewersRefreshConfirmation();
       }
     });
   });

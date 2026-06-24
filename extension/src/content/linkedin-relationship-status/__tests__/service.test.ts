@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FeedMemberInfo } from '../../feeds-sidebar/types';
+import { LinkedInStatusFetchError } from '../errors';
 
 const fetchWithGraphQL = vi.fn();
 const fetchStatusFromProfilePage = vi.fn();
@@ -25,6 +26,7 @@ describe('fetchLinkedInRelationshipStatus', () => {
     fetchStatusFromProfilePage.mockReset();
     fetchProfileImageFromProfilePage.mockReset();
     resolveCanonicalLinkedInIdentity.mockReset();
+    delete (globalThis as { chrome?: unknown }).chrome;
   });
 
   it('resolves token-style usernames to vanity slug before GraphQL', async () => {
@@ -88,5 +90,118 @@ describe('fetchLinkedInRelationshipStatus', () => {
       'urn:li:fsd_profile:ACoAADXvS4cBAw9b0BPD1e_I1i9GQUdEnOB99Tc'
     );
     expect(result.profileImageUrl).toContain('e=1782345600');
+  });
+
+  it('normalizes connected GraphQL results to allow messaging', async () => {
+    fetchWithGraphQL.mockResolvedValue({
+      status: 'connected',
+      canMessage: false,
+    });
+
+    const { fetchLinkedInRelationshipStatus } = await import('../service');
+    const member: FeedMemberInfo = {
+      id: 'connected-member',
+      linkedinUrl: 'https://www.linkedin.com/in/connected-member/',
+      linkedinUsername: 'connected-member',
+      displayName: 'Connected Member',
+      profileImageUrl: 'https://media.licdn.com/profile.jpg',
+      addedAt: Date.now(),
+    };
+
+    const firstResult = await fetchLinkedInRelationshipStatus(member);
+    const cachedResult = await fetchLinkedInRelationshipStatus(member);
+
+    expect(firstResult.canMessage).toBe(true);
+    expect(cachedResult.canMessage).toBe(true);
+    expect(fetchWithGraphQL).toHaveBeenCalledTimes(1);
+  });
+
+  it('falls back to background status resolution when content GraphQL is blocked', async () => {
+    fetchWithGraphQL.mockRejectedValue(
+      new LinkedInStatusFetchError('blocked', 'auth_blocked', 403)
+    );
+    fetchProfileImageFromProfilePage.mockResolvedValue('');
+
+    const sendMessage = vi.fn((_message, callback) => {
+      callback({
+        success: true,
+        resolution: {
+          status: 'connected',
+          canMessage: true,
+          profileUrn: 'urn:li:fsd_profile:abc',
+        },
+      });
+    });
+    (globalThis as { chrome?: unknown }).chrome = {
+      runtime: {
+        sendMessage,
+        lastError: null,
+      },
+    };
+
+    const { fetchLinkedInRelationshipStatus } = await import('../service');
+    const member: FeedMemberInfo = {
+      id: 'blocked-member',
+      linkedinUrl: 'https://www.linkedin.com/in/blocked-member/',
+      linkedinUsername: 'blocked-member',
+      displayName: 'Blocked Member',
+      profileImageUrl: 'https://media.licdn.com/profile.jpg',
+      addedAt: Date.now(),
+    };
+
+    const result = await fetchLinkedInRelationshipStatus(member);
+    const cachedResult = await fetchLinkedInRelationshipStatus(member);
+
+    expect(sendMessage).toHaveBeenCalledWith(
+      {
+        type: 'LINKEDIN_RELATIONSHIP_STATUS_RESOLVE_BACKGROUND',
+        linkedinUsername: 'blocked-member',
+      },
+      expect.any(Function)
+    );
+    expect(result.status).toBe('connected');
+    expect(result.canMessage).toBe(true);
+    expect(cachedResult.status).toBe('connected');
+    expect(sendMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it('throttles emergency background fallback requests for large blocked batches', async () => {
+    fetchWithGraphQL.mockRejectedValue(
+      new LinkedInStatusFetchError('blocked', 'auth_blocked', 403)
+    );
+    fetchProfileImageFromProfilePage.mockResolvedValue('');
+
+    const sendMessage = vi.fn((message, callback) => {
+      callback({
+        success: true,
+        resolution: {
+          status: 'connected',
+          canMessage: true,
+          profileUrn: `urn:li:fsd_profile:${message.linkedinUsername}`,
+        },
+      });
+    });
+    (globalThis as { chrome?: unknown }).chrome = {
+      runtime: {
+        sendMessage,
+        lastError: null,
+      },
+    };
+
+    const { fetchStatusesProgressively } = await import('../service');
+    const members: FeedMemberInfo[] = Array.from({ length: 21 }, (_, index) => ({
+      id: `blocked-member-${index}`,
+      linkedinUrl: `https://www.linkedin.com/in/blocked-member-${index}/`,
+      linkedinUsername: `blocked-member-${index}`,
+      displayName: `Blocked Member ${index}`,
+      profileImageUrl: 'https://media.licdn.com/profile.jpg',
+      addedAt: Date.now(),
+    }));
+
+    await fetchStatusesProgressively(members, () => undefined);
+
+    expect(sendMessage).toHaveBeenCalledTimes(20);
+    expect(members.filter((member) => member.status === 'connected')).toHaveLength(20);
+    expect(members.filter((member) => !member.status)).toHaveLength(1);
   });
 });

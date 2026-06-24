@@ -17,7 +17,11 @@
  */
 
 import { describe, it, expect, vi } from 'vitest';
-import { toggleFeedExpansion, loadFeedMembers } from '../logic/feed-members';
+import {
+  getStaleFeedMemberCacheIds,
+  loadFeedMembers,
+  toggleFeedExpansion,
+} from '../logic/feed-members';
 import type { FeedInfo, FeedMemberInfo } from '../types';
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -248,6 +252,69 @@ describe('toggleFeedExpansion — status-mutation wiring', () => {
     });
     expect(loadingCall).toBeUndefined();
   });
+
+  it('does not reset resolved Profile Visitors statuses or refresh them on re-expansion', async () => {
+    const feedId = 'profile-viewers';
+    const m1 = makeMember('m1', 'connected');
+    const m2 = makeMember('m2', 'following');
+    m1.itemType = 'profile';
+    m2.itemType = 'profile';
+    m1.statusResolvedAt = Date.now();
+    m2.statusResolvedAt = Date.now();
+    const storedMembers: Record<string, FeedMemberInfo[]> = { [feedId]: [m1, m2] };
+    const setFeedMembersById = vi.fn();
+    const fetchProgressivelySpy = vi.fn().mockResolvedValue(undefined);
+
+    const deps = makeDeps({
+      feedMembersById: storedMembers,
+      feeds: [
+        makeFeed(feedId, {
+          isSystem: true,
+          systemType: 'profileViewers',
+        }),
+      ],
+      expandedFeedId: null,
+      getFeedMembersById: () => storedMembers,
+      setFeedMembersById,
+      fetchStatusesProgressively: fetchProgressivelySpy,
+    });
+
+    await toggleFeedExpansion(feedId, deps);
+
+    expect(setFeedMembersById).not.toHaveBeenCalled();
+    expect(fetchProgressivelySpy).not.toHaveBeenCalled();
+    expect(storedMembers[feedId][0].status).toBe('connected');
+    expect(storedMembers[feedId][1].status).toBe('following');
+  });
+
+  it('does not refresh unresolved Profile Visitors statuses on re-expansion', async () => {
+    const feedId = 'profile-viewers';
+    const resolved = makeMember('resolved', 'connected');
+    const unresolved = makeMember('unresolved', 'loading');
+    resolved.itemType = 'profile';
+    unresolved.itemType = 'profile';
+    resolved.statusResolvedAt = Date.now();
+    const storedMembers: Record<string, FeedMemberInfo[]> = { [feedId]: [resolved, unresolved] };
+    const fetchProgressivelySpy = vi.fn().mockResolvedValue(undefined);
+
+    const deps = makeDeps({
+      feedMembersById: storedMembers,
+      feeds: [
+        makeFeed(feedId, {
+          isSystem: true,
+          systemType: 'profileViewers',
+        }),
+      ],
+      expandedFeedId: null,
+      getFeedMembersById: () => storedMembers,
+      fetchStatusesProgressively: fetchProgressivelySpy,
+    });
+
+    await toggleFeedExpansion(feedId, deps);
+
+    expect(fetchProgressivelySpy).not.toHaveBeenCalled();
+  });
+
 });
 
 // ── loadFeedMembers — parity check: members passed to refresh are the stored array ──
@@ -337,5 +404,37 @@ describe('adding a new member does not reset existing member statuses', () => {
     expect(members[0].status).toBe('connected');   // existing member — NOT loading
     expect(members[1].status).toBe('following');   // existing member — NOT loading
     expect(members[2].status).toBe('loading');     // only the newly-added member is loading
+  });
+});
+
+describe('getStaleFeedMemberCacheIds', () => {
+  it('invalidates a cached list when Firestore memberCount has changed', () => {
+    const feed = makeFeed('feed-1', { memberCount: 4 });
+    const cachedMembers = [makeMember('m1'), makeMember('m2'), makeMember('m3')];
+
+    expect(getStaleFeedMemberCacheIds([feed], {
+      [feed.id]: cachedMembers,
+    })).toEqual([feed.id]);
+  });
+
+  it('keeps a complete cache and ignores caches that have not been loaded', () => {
+    const completeFeed = makeFeed('feed-1', { memberCount: 3 });
+    const unloadedFeed = makeFeed('feed-2', { memberCount: 4 });
+
+    expect(getStaleFeedMemberCacheIds([completeFeed, unloadedFeed], {
+      [completeFeed.id]: [makeMember('m1'), makeMember('m2'), makeMember('m3')],
+    })).toEqual([]);
+  });
+
+  it('does not treat the profile viewers system feed as a regular member cache', () => {
+    const feed = makeFeed('profile-viewers', {
+      memberCount: 10,
+      isSystem: true,
+      systemType: 'profileViewers',
+    });
+
+    expect(getStaleFeedMemberCacheIds([feed], {
+      [feed.id]: [makeMember('m1')],
+    })).toEqual([]);
   });
 });

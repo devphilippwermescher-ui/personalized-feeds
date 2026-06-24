@@ -1,9 +1,11 @@
 import type { FeedInfo, FeedMemberInfo, MemberEditorState } from '../types';
-import { getMemberInitials, getMemberStatus } from '../utils';
+import { canMemberReceiveMessage, getMemberInitials, getMemberStatus } from '../utils';
 import { renderFeedActions } from './feed-actions';
 import { renderMemberRow } from '../components/MemberRow/MemberRow';
 import { renderMemberStatusAction, renderMessageButton } from './member-actions';
 import { CONTENT_COPY } from '../../shared/copy';
+import { buildRecruiterAggregateMember } from './profile-viewers-feed';
+import type { ProfileViewerListItem, ProfileViewerSummary } from 'shared/types';
 
 interface FeedMembersDeps {
   sendMsg: (message: Record<string, unknown>) => Promise<Record<string, unknown>>;
@@ -29,13 +31,24 @@ interface FeedMembersDeps {
   getFeeds: () => FeedInfo[];
 }
 
-function startBackgroundStatusRefresh(feedId: string, members: FeedMemberInfo[], deps: FeedMembersDeps): void {
+function startBackgroundStatusRefresh(
+  feedId: string,
+  members: FeedMemberInfo[],
+  deps: FeedMembersDeps
+): void {
+  const profileMembers = members.some((member) => member.itemType && member.itemType !== 'profile')
+    ? members.filter((member) => !member.itemType || member.itemType === 'profile')
+    : members;
+  if (profileMembers.length === 0) {
+    return;
+  }
+
   deps.getStatusFetchController()?.abort();
   const controller = new AbortController();
   deps.setStatusFetchController(controller);
 
   void deps.fetchStatusesProgressively(
-    members,
+    profileMembers,
     (member) => {
       void deps.persistResolvedMemberState(feedId, member);
       if (!deps.updateRenderedMemberState(feedId, member)) {
@@ -50,11 +63,91 @@ function startBackgroundStatusRefresh(feedId: string, members: FeedMemberInfo[],
   });
 }
 
+function profileViewerToMember(viewer: Partial<FeedMemberInfo> | ProfileViewerListItem): FeedMemberInfo | null {
+  const itemType = 'itemType' in viewer ? viewer.itemType : undefined;
+  const isSearchItem = 'searchUrl' in viewer || itemType === 'search';
+  const linkedinUrl = isSearchItem
+    ? ('searchUrl' in viewer ? viewer.searchUrl : viewer.linkedinUrl)
+    : viewer.linkedinUrl;
+
+  if (
+    !viewer.id ||
+    !linkedinUrl ||
+    !viewer.displayName ||
+    (!isSearchItem && !viewer.linkedinUsername)
+  ) {
+    return null;
+  }
+
+  return {
+    id: viewer.id,
+    itemType: isSearchItem ? 'search' : itemType || 'profile',
+    searchKey: 'searchKey' in viewer ? viewer.searchKey : undefined,
+    linkedinUrl,
+    linkedinUsername: isSearchItem ? '' : viewer.linkedinUsername || '',
+    displayName: viewer.displayName,
+    headline: 'headline' in viewer ? viewer.headline || '' : '',
+    profileImageUrl: 'profileImageUrl' in viewer ? viewer.profileImageUrl || '' : '',
+    connectionDegree: 'connectionDegree' in viewer ? viewer.connectionDegree || '' : '',
+    viewedAgoText: viewer.viewedAgoText || '',
+    mutualConnectionsText: 'mutualConnectionsText' in viewer ? viewer.mutualConnectionsText || '' : '',
+    profileUrn: 'profileUrn' in viewer ? viewer.profileUrn : undefined,
+    memberNumericId: 'memberNumericId' in viewer ? viewer.memberNumericId : undefined,
+    canMessage: 'canMessage' in viewer ? viewer.canMessage : undefined,
+    canFollow: 'canFollow' in viewer ? viewer.canFollow : undefined,
+    canConnect: 'canConnect' in viewer ? viewer.canConnect : undefined,
+    isFollowing: 'isFollowing' in viewer ? viewer.isFollowing : undefined,
+    isPremium: 'isPremium' in viewer ? viewer.isPremium : undefined,
+    status: 'status' in viewer ? viewer.status : undefined,
+    statusResolvedAt: 'statusResolvedAt' in viewer ? viewer.statusResolvedAt : undefined,
+    firstSeenAt: viewer.firstSeenAt,
+    lastSeenAt: viewer.lastSeenAt,
+    addedAt: viewer.lastSeenAt || Date.now(),
+  };
+}
+
+export function getStaleFeedMemberCacheIds(
+  feeds: FeedInfo[],
+  feedMembersById: Record<string, FeedMemberInfo[]>
+): string[] {
+  return feeds
+    .filter((feed) => {
+      if (feed.systemType === 'profileViewers') {
+        return false;
+      }
+
+      const cachedMembers = feedMembersById[feed.id];
+      return Array.isArray(cachedMembers) && cachedMembers.length !== (feed.memberCount || 0);
+    })
+    .map((feed) => feed.id);
+}
+
 export async function loadFeedMembers(feedId: string, deps: FeedMembersDeps): Promise<void> {
   deps.setLoadingMembersFeedId(feedId);
   deps.renderSidebarContent();
 
   const feed = deps.getFeeds().find((item) => item.id === feedId);
+  if (feed?.systemType === 'profileViewers') {
+    const resp = await deps.sendMsg({ type: 'PROFILE_VIEWERS_GET' });
+    const members = ((resp?.viewers as Partial<FeedMemberInfo>[]) || [])
+      .map(profileViewerToMember)
+      .filter((member): member is FeedMemberInfo => Boolean(member));
+    const recruiterAggregateMember = buildRecruiterAggregateMember(
+      (resp?.summary as ProfileViewerSummary | null | undefined) || null
+    );
+    const nextMembers = recruiterAggregateMember
+      ? [recruiterAggregateMember, ...members]
+      : members;
+
+    deps.setFeedMembersById({
+      ...deps.getFeedMembersById(),
+      [feedId]: nextMembers,
+    });
+    deps.setLoadingMembersFeedId(null);
+    deps.renderSidebarContent();
+    return;
+  }
+
   const resp = await deps.sendMsg({ type: 'FEEDS_GET_MEMBERS', ownerId: feed?.ownerId, feedId });
   const members = ((resp?.members as FeedMemberInfo[]) || []).map((member) => ({
     ...member,
@@ -99,8 +192,9 @@ export async function toggleFeedExpansion(feedId: string, deps: FeedMembersDeps)
 
   const feed = deps.getFeeds().find((item) => item.id === feedId);
   const cachedMembers = deps.getFeedMembersById()[feedId] || [];
+  const isProfileViewersFeed = feed?.systemType === 'profileViewers';
   let membersForRefresh = cachedMembers;
-  if (!feed?.isShared && cachedMembers.length > 0) {
+  if (!feed?.isShared && !isProfileViewersFeed && cachedMembers.length > 0) {
     membersForRefresh = cachedMembers.map((member) => ({
       ...member,
       status: 'loading' as const,
@@ -126,7 +220,7 @@ export async function toggleFeedExpansion(feedId: string, deps: FeedMembersDeps)
   }
 
   deps.renderSidebarContent();
-  if (!feed?.isShared) {
+  if (!feed?.isShared && !isProfileViewersFeed) {
     startBackgroundStatusRefresh(feedId, membersForRefresh, deps);
   }
 }
@@ -151,7 +245,7 @@ export function renderMembersList(
 
   const members = deps.getFeedMembersById()[feed.id] || [];
   const canEditMembers = !feed.isShared || feed.accessRole === 'editor';
-  const showMessagingButtons = deps.getMessagingButtonsEnabled();
+  const showMessagingButtons = !feed.isShared && deps.getMessagingButtonsEnabled();
 
   if (members.length === 0) {
     return `
@@ -172,7 +266,20 @@ export function renderMembersList(
       ${members
         .map((member) => {
           const status = getMemberStatus(member);
-          const canMessage = status === 'loading' ? false : (member.canMessage ?? status === 'connected');
+          if (member.itemType === 'search' || member.itemType === 'recruiterAggregate') {
+            return renderMemberRow({
+              feedId: feed.id,
+              member,
+              messageButtonHtml: '',
+              statusActionHtml: '',
+              canEdit: false,
+              showMeta: true,
+            });
+          }
+
+          const canMessage = canMemberReceiveMessage(member, status, {
+            allowUnverifiedProfileMessage: feed.systemType === 'profileViewers',
+          });
           // Relationship badges reflect the owner's connection context.
           // In shared feeds the recipient's relationship is unknown, so hide them entirely.
           const showStatusAction = !feed.isShared && canEditMembers;
@@ -182,6 +289,7 @@ export function renderMembersList(
             messageButtonHtml: showMessagingButtons ? renderMessageButton(feed.id, member, canMessage) : '',
             statusActionHtml: showStatusAction ? renderMemberStatusAction(feed.id, member, status) : '',
             canEdit: canEditMembers,
+            showMeta: false,
           });
         })
         .join('')}
@@ -199,7 +307,14 @@ export function renderFeedPreview(feedId: string, feedMembersById: Record<string
     <div class="lfa-feed-preview">
       ${members
         .map((member) =>
-          member.profileImageUrl
+          member.itemType === 'search' || member.itemType === 'recruiterAggregate'
+            ? `<div class="lfa-feed-preview-avatar lfa-feed-preview-avatar--search" aria-label="${escapeHtml(member.displayName)}">
+                <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <circle cx="12" cy="8" r="4" fill="currentColor"></circle>
+                  <path d="M4.5 21a7.5 7.5 0 0 1 15 0" fill="currentColor"></path>
+                </svg>
+              </div>`
+            : member.profileImageUrl
             ? `<img class="lfa-feed-preview-avatar" src="${escapeHtml(member.profileImageUrl)}" alt="${escapeHtml(member.displayName)}" data-lfa-avatar-img="true" /><div class="lfa-feed-preview-avatar lfa-feed-preview-avatar--fallback" style="display:none;">${escapeHtml(getMemberInitials(member.displayName))}</div>`
             : `<div class="lfa-feed-preview-avatar lfa-feed-preview-avatar--fallback">${escapeHtml(getMemberInitials(member.displayName))}</div>`
         )

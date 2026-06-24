@@ -34,7 +34,7 @@ export function cacheStatus(
   statusCache.set(username.toLowerCase(), {
     status,
     profileUrn,
-    canMessage,
+    canMessage: status === 'connected' ? true : canMessage,
     canFollow,
     canConnect,
     isFollowing,

@@ -91,6 +91,29 @@ export function renderEditorOverlay(activeMemberEditor: MemberEditorState | null
   return renderMemberEditorOverlay(activeMemberEditor, feedsList);
 }
 
+export function getDisplaySidebarFeeds(
+  feeds: FeedInfo[],
+  featureSettings: UserFeatureSettings
+): FeedInfo[] {
+  return featureSettings.hideProfileViewers
+    ? feeds.filter((feed) => feed.systemType !== 'profileViewers')
+    : feeds;
+}
+
+export function getVisibleSidebarFeeds(
+  feeds: FeedInfo[],
+  featureSettings: UserFeatureSettings,
+  searchQuery: string
+): FeedInfo[] {
+  const displayFeeds = getDisplaySidebarFeeds(feeds, featureSettings);
+  if (!searchQuery) {
+    return displayFeeds;
+  }
+
+  const normalizedQuery = searchQuery.toLowerCase();
+  return displayFeeds.filter((feed) => feed.name.toLowerCase().includes(normalizedQuery));
+}
+
 export function renderSidebarInnerMarkup(params: RenderSidebarInnerParams): void {
   const {
     container,
@@ -128,9 +151,8 @@ export function renderSidebarInnerMarkup(params: RenderSidebarInnerParams): void
   const content = document.createElement('div');
   content.className = 'lfa-sidebar-content';
   const sourceFeeds = activeFeedTab === 'owned' ? feedsList : sharedFeedsList;
-  const visibleFeeds = sidebarSearchQuery
-    ? sourceFeeds.filter((feed) => feed.name.toLowerCase().includes(sidebarSearchQuery.toLowerCase()))
-    : sourceFeeds;
+  const displayFeeds = getDisplaySidebarFeeds(sourceFeeds, featureSettings);
+  const visibleFeeds = getVisibleSidebarFeeds(sourceFeeds, featureSettings, sidebarSearchQuery);
 
   const feedsHtml = visibleFeeds
     .map((feed) =>
@@ -151,9 +173,12 @@ export function renderSidebarInnerMarkup(params: RenderSidebarInnerParams): void
     authErrorMessage,
     sidebarSearchQuery,
     activeFeedTab,
-    feedsListCount: sourceFeeds.length,
+    feedsListCount: displayFeeds.length,
     feedsHtml,
-    editorOverlayHtml: renderEditorOverlay(activeMemberEditor, [...feedsList, ...sharedFeedsList]),
+    editorOverlayHtml: renderEditorOverlay(
+      activeMemberEditor,
+      [...feedsList, ...sharedFeedsList].filter((feed) => !feed.isSystem || feed.id === activeMemberEditor?.feedId)
+    ),
   });
 
   container.appendChild(content);

@@ -76,7 +76,11 @@ export const POST_BUTTONS_CSS = `
   .lfa-post-drawer-btn-wrapper {
     display: inline-flex;
     margin-left: 6px;
+    align-items: center;
     vertical-align: middle;
+    position: relative;
+    z-index: 100;
+    pointer-events: auto;
   }
 
   .lfa-post-drawer-btn {
@@ -95,6 +99,9 @@ export const POST_BUTTONS_CSS = `
     transition: all 0.2s ease;
     color: #615DEC;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+    position: relative;
+    z-index: 101;
+    pointer-events: auto;
   }
 
   .lfa-post-drawer-btn:hover,

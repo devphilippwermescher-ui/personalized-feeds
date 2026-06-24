@@ -3,21 +3,53 @@ import { getLinkedInDomStatus } from '../linkedin-dom-status';
 
 export type MemberStatus = NonNullable<FeedMemberInfo['status']>;
 
-export function getMemberStatus(member: FeedMemberInfo): MemberStatus {
-  if (member.status) {
-    return member.status;
-  }
+function isFirstDegreeConnection(value?: string): boolean {
+  const normalized = (value || '').trim().toLowerCase();
+  return (
+    normalized === '1st' ||
+    normalized === '1st degree' ||
+    normalized === '1st degree connection' ||
+    normalized === '1-й' ||
+    normalized === '1-го' ||
+    normalized === '1'
+  );
+}
 
+export function getMemberStatus(member: FeedMemberInfo): MemberStatus {
   const domStatus = getLinkedInDomStatus(member);
   if (domStatus) {
     return domStatus;
   }
 
-  if (member.connectionDegree?.trim() === '1st') {
+  if (member.status) {
+    return member.status;
+  }
+
+  if (isFirstDegreeConnection(member.connectionDegree)) {
     return 'connected';
   }
 
   return 'connect';
+}
+
+export function canMemberReceiveMessage(
+  member: FeedMemberInfo,
+  status: MemberStatus = getMemberStatus(member),
+  options: { allowUnverifiedProfileMessage?: boolean } = {}
+): boolean {
+  if (status === 'loading' || status === 'pending' || status === 'withdrawn' || status === 'unavailable') {
+    return false;
+  }
+
+  if (status === 'connected' || isFirstDegreeConnection(member.connectionDegree)) {
+    return true;
+  }
+
+  if (member.canMessage === true) {
+    return true;
+  }
+
+  return Boolean(options.allowUnverifiedProfileMessage && member.linkedinUrl);
 }
 
 export function getMemberStatusTooltip(status: MemberStatus): string | null {

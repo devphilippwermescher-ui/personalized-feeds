@@ -10,6 +10,7 @@ export interface UserFeatureSettings {
   messagingButtons: boolean;
   postButtons: boolean;
   speechToComment: boolean;
+  hideProfileViewers: boolean;
 }
 
 export interface Feed {
@@ -23,6 +24,73 @@ export interface Feed {
   memberCount: number;
   ownerId: string;
   shareToken?: string;
+}
+
+export interface ProfileViewer {
+  id: string;
+  linkedinUrl: string;
+  linkedinUsername: string;
+  profileUrn?: string;
+  memberNumericId?: string;
+  canMessage?: boolean;
+  canFollow?: boolean;
+  canConnect?: boolean;
+  isFollowing?: boolean;
+  isPremium?: boolean;
+  displayName: string;
+  headline?: string;
+  profileImageUrl?: string;
+  connectionDegree?: string;
+  viewedAgoText?: string;
+  mutualConnectionsText?: string;
+  status?: 'connected' | 'pending' | 'connect' | 'following' | 'withdrawn' | 'unavailable' | 'loading';
+  statusResolvedAt?: number;
+  statusCheckFailedAt?: number;
+  statusCheckError?: string;
+  firstSeenAt: number;
+  lastSeenAt: number;
+  lastSeenPosition?: number;
+  source: 'linkedin_profile_views';
+}
+
+export type ProfileViewerInput = Omit<
+  ProfileViewer,
+  'id' | 'firstSeenAt' | 'lastSeenAt' | 'lastSeenPosition' | 'source'
+> & {
+  sourceIndex?: number;
+  listPosition?: number;
+};
+
+export interface ProfileViewerSearch {
+  id: string;
+  itemType: 'search';
+  searchKey: string;
+  searchUrl: string;
+  displayName: string;
+  keywords: string;
+  currentCompany?: string;
+  viewedAgoText?: string;
+  firstSeenAt: number;
+  lastSeenAt: number;
+  lastSeenPosition?: number;
+  source: 'linkedin_profile_views';
+}
+
+export type ProfileViewerSearchInput = Omit<
+  ProfileViewerSearch,
+  'id' | 'firstSeenAt' | 'lastSeenAt' | 'lastSeenPosition' | 'source'
+> & {
+  sourceIndex?: number;
+  listPosition?: number;
+};
+
+export type ProfileViewerListItem = ProfileViewer | ProfileViewerSearch;
+
+export interface ProfileViewerSummary {
+  privateViewerCount: number;
+  recruiterViewerCount?: number;
+  recruiterViewerUrl?: string;
+  updatedAt: number;
 }
 
 export type FeedShareRole = 'reader' | 'editor';
