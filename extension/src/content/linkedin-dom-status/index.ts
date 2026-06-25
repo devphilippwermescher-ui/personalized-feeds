@@ -1,4 +1,10 @@
 import type { FeedMemberInfo } from '../feeds-sidebar/types';
+import {
+  getRelationshipButtonSignal,
+  hasFollowSignal,
+  hasFollowingSignal,
+  hasRelationshipSignal,
+} from '../shared/relationship-dom-signals';
 
 function getCurrentProfileUsername(): string | null {
   const match = window.location.pathname.match(/^\/in\/([^/]+)/);
@@ -51,14 +57,8 @@ function getTopCardCandidates(): HTMLElement[] {
       let current: HTMLElement | null = heading;
       let depth = 0;
       while (current && depth < 8) {
-        const hasActionButton = Array.from(current.querySelectorAll<HTMLButtonElement>('button')).some(
-          (button) => {
-            const text = button.textContent?.trim().toLowerCase() || '';
-            const label = button.getAttribute('aria-label')?.trim().toLowerCase() || '';
-            return /connect|invite|pending|message|follow|unfollow|встановити|повідомлення|розгляда|підпис|відстеж/i.test(
-              `${text} ${label}`
-            );
-          }
+        const hasActionButton = Array.from(current.querySelectorAll<HTMLButtonElement>('button')).some((button) =>
+          hasRelationshipSignal(getRelationshipButtonSignal(button))
         );
         if (hasActionButton) {
           return current;
@@ -100,12 +100,35 @@ function isCurrentProfileMember(member: FeedMemberInfo): boolean {
 
 function getProfileActionButtons(): HTMLButtonElement[] {
   const topCard = getTopCardCandidates()[0];
+  const menuButtons = Array.from(
+    document.querySelectorAll<HTMLButtonElement>(
+      '[role="menu"] button, [role="menuitem"], .artdeco-dropdown__content button'
+    )
+  );
 
   if (!topCard) {
-    return [];
+    return menuButtons;
   }
 
-  return Array.from(topCard.querySelectorAll('button')) as HTMLButtonElement[];
+  return Array.from(new Set([
+    ...Array.from(topCard.querySelectorAll('button')) as HTMLButtonElement[],
+    ...menuButtons,
+  ]));
+}
+
+export function getLinkedInDomFollowState(member: FeedMemberInfo): boolean | null {
+  if (!isCurrentProfileMember(member)) {
+    return null;
+  }
+
+  const buttons = getProfileActionButtons();
+  if (buttons.some((button) => hasFollowingSignal(getRelationshipButtonSignal(button)))) {
+    return true;
+  }
+  if (buttons.some((button) => hasFollowSignal(getRelationshipButtonSignal(button)))) {
+    return false;
+  }
+  return null;
 }
 
 export function getLinkedInDomStatus(member: FeedMemberInfo): 'connected' | 'pending' | 'connect' | 'following' | null {
@@ -130,8 +153,7 @@ export function getLinkedInDomStatus(member: FeedMemberInfo): 'connected' | 'pen
     /\b3-й\b/.test(topCardText);
 
   const pendingButton = buttons.find((button) => {
-    const text = button.textContent?.trim().toLowerCase() || '';
-    const label = button.getAttribute('aria-label')?.trim().toLowerCase() || '';
+    const { text, label } = getRelationshipButtonSignal(button);
     return (
       text.includes('pending') ||
       text.includes('розгляда') ||
@@ -146,8 +168,7 @@ export function getLinkedInDomStatus(member: FeedMemberInfo): 'connected' | 'pen
   }
 
   const connectButton = buttons.find((button) => {
-    const text = button.textContent?.trim().toLowerCase() || '';
-    const label = button.getAttribute('aria-label')?.trim().toLowerCase() || '';
+    const { text, label } = getRelationshipButtonSignal(button);
     return (
       text === 'connect' ||
       text.includes('встановити контакт') ||
@@ -158,13 +179,19 @@ export function getLinkedInDomStatus(member: FeedMemberInfo): 'connected' | 'pen
     );
   });
 
+  if (
+    buttons.some((button) => hasFollowingSignal(getRelationshipButtonSignal(button))) &&
+    !hasFirstDegree
+  ) {
+    return 'following';
+  }
+
   if (connectButton) {
     return 'connect';
   }
 
   const messageButton = buttons.find((button) => {
-    const text = button.textContent?.trim().toLowerCase() || '';
-    const label = button.getAttribute('aria-label')?.trim().toLowerCase() || '';
+    const { text, label } = getRelationshipButtonSignal(button);
     return (
       text === 'message' ||
       text.includes('повідомлення') ||
@@ -173,17 +200,7 @@ export function getLinkedInDomStatus(member: FeedMemberInfo): 'connected' | 'pen
     );
   });
 
-  const followButton = buttons.find((button) => {
-    const text = button.textContent?.trim().toLowerCase() || '';
-    const label = button.getAttribute('aria-label')?.trim().toLowerCase() || '';
-    return (
-      text === 'follow' ||
-      text === '+ follow' ||
-      text.includes('підпис') ||
-      label.startsWith('follow') ||
-      label.includes('підпис')
-    );
-  });
+  const followButton = buttons.find((button) => hasFollowSignal(getRelationshipButtonSignal(button)));
 
   if (followButton && hasSecondOrThirdDegree && !hasFirstDegree) {
     return 'connect';
@@ -193,19 +210,7 @@ export function getLinkedInDomStatus(member: FeedMemberInfo): 'connected' | 'pen
     return 'connected';
   }
 
-  const followingButton = buttons.find((button) => {
-    const text = button.textContent?.trim().toLowerCase() || '';
-    const label = button.getAttribute('aria-label')?.trim().toLowerCase() || '';
-    return (
-      text === 'following' ||
-      text.includes('відстеж') ||
-      label.startsWith('following') ||
-      label.includes('unfollow') ||
-      label.includes('відстеж')
-    );
-  });
-
-  if (followingButton) {
+  if (buttons.some((button) => hasFollowingSignal(getRelationshipButtonSignal(button)))) {
     return 'following';
   }
 

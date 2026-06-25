@@ -204,4 +204,110 @@ describe('fetchLinkedInRelationshipStatus', () => {
     expect(members.filter((member) => member.status === 'connected')).toHaveLength(20);
     expect(members.filter((member) => !member.status)).toHaveLength(1);
   });
+
+  it('preserves withdrawn connect cooldown when refresh resolves the profile as connect', async () => {
+    fetchWithGraphQL.mockResolvedValue({
+      status: 'connect',
+      canConnect: true,
+      canFollow: true,
+      isFollowing: true,
+      profileUrn: 'urn:li:fsd_profile:withdrawn-member',
+      memberNumericId: '123',
+    });
+
+    const { fetchStatusesProgressively } = await import('../service');
+    const member: FeedMemberInfo = {
+      id: 'withdrawn-member',
+      linkedinUrl: 'https://www.linkedin.com/in/withdrawn-member/',
+      linkedinUsername: 'withdrawn-member',
+      displayName: 'Withdrawn Member',
+      status: 'withdrawn',
+      canConnect: false,
+      profileImageUrl: 'https://media.licdn.com/profile.jpg',
+      addedAt: Date.now(),
+    };
+
+    await fetchStatusesProgressively([member], () => undefined);
+
+    expect(member.status).toBe('withdrawn');
+    expect(member.canConnect).toBe(false);
+    expect(member.canFollow).toBe(true);
+    expect(member.isFollowing).toBe(true);
+    expect(member.profileUrn).toBe('urn:li:fsd_profile:withdrawn-member');
+  });
+
+  it('bypasses cached status when follow actions require missing LinkedIn identifiers', async () => {
+    fetchWithGraphQL
+      .mockResolvedValueOnce({
+        status: 'withdrawn',
+        canConnect: false,
+      })
+      .mockResolvedValueOnce({
+        status: 'withdrawn',
+        canConnect: false,
+        canFollow: true,
+        isFollowing: false,
+        profileUrn: 'urn:li:fsd_profile:cached-without-ids',
+        memberNumericId: '456',
+      });
+
+    const { fetchLinkedInRelationshipStatus } = await import('../service');
+    const member: FeedMemberInfo = {
+      id: 'cached-without-ids',
+      linkedinUrl: 'https://www.linkedin.com/in/cached-without-ids/',
+      linkedinUsername: 'cached-without-ids',
+      displayName: 'Cached Without IDs',
+      profileImageUrl: 'https://media.licdn.com/profile.jpg',
+      addedAt: Date.now(),
+    };
+
+    const cachedResult = await fetchLinkedInRelationshipStatus(member);
+    const actionResult = await fetchLinkedInRelationshipStatus(member, {
+      requireActionIdentifiers: true,
+    });
+
+    expect(cachedResult.profileUrn).toBeUndefined();
+    expect(cachedResult.memberNumericId).toBeUndefined();
+    expect(actionResult.profileUrn).toBe('urn:li:fsd_profile:cached-without-ids');
+    expect(actionResult.memberNumericId).toBe('456');
+    expect(fetchWithGraphQL).toHaveBeenCalledTimes(2);
+  });
+
+  it('continues to profile HTML when action identifiers are missing from GraphQL', async () => {
+    fetchWithGraphQL.mockResolvedValue({
+      status: 'withdrawn',
+      canConnect: false,
+      canFollow: true,
+      isFollowing: true,
+    });
+    fetchStatusFromProfilePage.mockResolvedValue({
+      status: 'connect',
+      canConnect: true,
+      canFollow: true,
+      isFollowing: false,
+      profileUrn: 'urn:li:fsd_profile:action-ids-from-html',
+      memberNumericId: '789',
+    });
+
+    const { fetchLinkedInRelationshipStatus } = await import('../service');
+    const member: FeedMemberInfo = {
+      id: 'action-ids-from-html',
+      linkedinUrl: 'https://www.linkedin.com/in/action-ids-from-html/',
+      linkedinUsername: 'action-ids-from-html',
+      displayName: 'Action IDs From HTML',
+      profileImageUrl: 'https://media.licdn.com/profile.jpg',
+      addedAt: Date.now(),
+    };
+
+    const result = await fetchLinkedInRelationshipStatus(member, {
+      requireActionIdentifiers: true,
+    });
+
+    expect(fetchStatusFromProfilePage).toHaveBeenCalledWith('action-ids-from-html');
+    expect(result.status).toBe('withdrawn');
+    expect(result.canConnect).toBe(false);
+    expect(result.isFollowing).toBe(false);
+    expect(result.profileUrn).toBe('urn:li:fsd_profile:action-ids-from-html');
+    expect(result.memberNumericId).toBe('789');
+  });
 });

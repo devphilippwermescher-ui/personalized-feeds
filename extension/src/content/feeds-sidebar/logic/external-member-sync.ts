@@ -22,6 +22,26 @@ interface ExternalMemberSyncDeps {
 
 let listenerAttached = false;
 
+export function insertAddedMemberIntoCache(
+  existingMembers: FeedMemberInfo[],
+  incomingMember: FeedMemberInfo
+): FeedMemberInfo[] {
+  const incomingUsername = getCanonicalLinkedInUsername(incomingMember);
+  const exists = existingMembers.some(
+    (member) =>
+      member.id === incomingMember.id ||
+      getCanonicalLinkedInUsername(member) === incomingUsername
+  );
+
+  if (exists) {
+    return existingMembers;
+  }
+
+  return [incomingMember, ...existingMembers].sort(
+    (left, right) => (right.addedAt || 0) - (left.addedAt || 0)
+  );
+}
+
 async function handleExternalMemberAdded(
   detail: { feedId: string; feedName: string; member: FeedMemberInfo },
   deps: ExternalMemberSyncDeps
@@ -34,12 +54,8 @@ async function handleExternalMemberAdded(
     linkedinUsername: getCanonicalLinkedInUsername(detail.member),
     status: 'loading',
   };
-  const incomingUsername = getCanonicalLinkedInUsername(memberWithLoadingState);
-  const exists = existingMembers.some(
-    (member) =>
-      member.id === detail.member.id ||
-      getCanonicalLinkedInUsername(member) === incomingUsername
-  );
+  const nextMembers = insertAddedMemberIntoCache(existingMembers, memberWithLoadingState);
+  const exists = nextMembers === existingMembers;
 
   if (!exists) {
     if (!hasCompleteLocalCache) {
@@ -62,7 +78,7 @@ async function handleExternalMemberAdded(
     deps.setSharedFeeds(deps.getSharedFeeds().map(incrementMemberCount));
     deps.setFeedMembersById({
       ...deps.getFeedMembersById(),
-      [detail.feedId]: [...existingMembers, memberWithLoadingState],
+      [detail.feedId]: nextMembers,
     });
   }
   deps.renderSidebarContent();

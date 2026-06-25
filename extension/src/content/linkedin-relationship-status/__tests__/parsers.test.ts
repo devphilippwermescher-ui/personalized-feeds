@@ -271,6 +271,47 @@ describe('parseGraphQLRelationshipStatus profile image', () => {
     expect(result?.status).toBe('connect');
     expect(result?.profileImageUrl).toBe('');
   });
+
+  it('resolves LinkedIn GraphQL data.data *elements through included entities', () => {
+    const result = parseGraphQLRelationshipStatus({
+      data: {
+        data: {
+          identityDashProfilesByMemberIdentity: {
+            '*elements': [PROFILE_URN],
+          },
+        },
+      },
+      included: [
+        {
+          entityUrn: PROFILE_URN,
+          profileStatefulProfileActions: {
+            primaryActionResolutionResult: {
+              statefulAction: {
+                actionDataModel: {
+                  targetUrn: `urn:li:member:${MEMBER_ID}`,
+                  relationshipActionData: {
+                    relationshipData: {
+                      connectionOrInvitation: {
+                        memberRelationship: {
+                          noConnection: { noInvitation: {} },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          followingState: { following: false },
+        },
+      ],
+    });
+
+    expect(result?.status).toBe('connect');
+    expect(result?.profileUrn).toBe(PROFILE_URN);
+    expect(result?.memberNumericId).toBe(MEMBER_ID);
+    expect(result?.isFollowing).toBe(false);
+  });
 });
 
 describe('parseProfileImageUrlFromHtml', () => {

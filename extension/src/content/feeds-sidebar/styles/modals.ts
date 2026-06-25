@@ -434,12 +434,15 @@ export const MODALS_CSS = `.lfa-share-modal {
     animation: lfa-spin 0.7s linear infinite;
   }
   .lfa-member-status--split {
-    width: 140px;
+    position: relative;
     padding: 0;
     gap: 0;
-    overflow: hidden;
+    overflow: visible;
     background: #e8eefc;
     border: 1px solid #d7e2fb;
+  }
+  .lfa-member-status--split-state {
+    width: 112px;
   }
   .lfa-member-status-split-btn {
     appearance: none;
@@ -449,7 +452,7 @@ export const MODALS_CSS = `.lfa-share-modal {
     flex: 1 1 50%;
     height: 100%;
     min-height: 25px;
-    padding: 0 4px;
+    padding: 0 5px;
     margin: 0;
     font: inherit;
     font-size: 10px;
@@ -469,11 +472,16 @@ export const MODALS_CSS = `.lfa-share-modal {
   .lfa-member-status-split-btn--follow {
     color: #0369a1;
     background: rgba(224, 242, 254, 0.9);
+    border-radius: 999px 0 0 999px;
+  }
+  .lfa-member-status--split-state .lfa-member-status-split-btn--follow {
+    flex: 0 0 49px;
   }
   .lfa-member-status-split-btn--connect {
     color: #2563eb;
     background: rgba(219, 234, 254, 0.9);
     border-left: 1px solid #d7e2fb;
+    border-radius: 0 999px 999px 0;
   }
   .lfa-member-status-split-btn--connected {
     color: #059669;
@@ -489,9 +497,14 @@ export const MODALS_CSS = `.lfa-share-modal {
     color: #b45309;
     background: #fef3c7;
     border-left: 1px solid #d7e2fb;
+    border-radius: 0 999px 999px 0;
   }
   .lfa-member-status-split-btn--state {
+    flex: 1 1 auto;
     cursor: default;
+    padding-left: 7px;
+    padding-right: 8px;
+    border-radius: 0 999px 999px 0;
   }
   .lfa-member-status-split-btn--state:disabled {
     opacity: 1;
@@ -501,6 +514,47 @@ export const MODALS_CSS = `.lfa-share-modal {
   }
   .lfa-member-status-split-btn--state:hover {
     filter: none;
+  }
+  .lfa-member-status-tooltip {
+    position: absolute;
+    top: calc(100% + 9px);
+    right: -2px;
+    width: 218px;
+    max-width: min(218px, calc(100vw - 32px));
+    padding: 8px 10px;
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    border-radius: 7px;
+    background: #172033;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1.35;
+    letter-spacing: 0;
+    white-space: normal;
+    text-align: left;
+    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.20);
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(-4px);
+    transition: opacity 0.14s ease, transform 0.14s ease;
+    z-index: 20;
+  }
+  .lfa-member-status-tooltip::before {
+    content: '';
+    position: absolute;
+    right: 26px;
+    bottom: 100%;
+    width: 8px;
+    height: 8px;
+    background: #172033;
+    border-left: 1px solid rgba(148, 163, 184, 0.22);
+    border-top: 1px solid rgba(148, 163, 184, 0.22);
+    transform: translateY(50%) rotate(45deg);
+  }
+  .lfa-member-status-split-btn--state:hover + .lfa-member-status-tooltip,
+  .lfa-member-status-split-btn--state:focus-visible + .lfa-member-status-tooltip {
+    opacity: 1;
+    transform: translateY(0);
   }
   .lfa-member-status--follow:hover,
   .lfa-member-status--connect:hover,

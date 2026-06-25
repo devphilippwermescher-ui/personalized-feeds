@@ -1,8 +1,21 @@
 import type { FeedMembership, ProfileData, RelationshipState } from '../types';
+import {
+  getRelationshipButtonSignal,
+  hasFollowSignal,
+  hasFollowingSignal,
+} from '../../shared/relationship-dom-signals';
 
 interface RelationshipDeps {
   getCurrentProfileData: () => ProfileData | null;
   sendMessageToBackground: (message: Record<string, unknown>) => Promise<unknown>;
+}
+
+function isFirstDegreeConnection(value?: string): boolean {
+  return /^(1st|1st degree|1-й|1-го)$/i.test((value || '').trim());
+}
+
+function isNonFirstDegreeConnection(value?: string): boolean {
+  return /^(2nd|3rd\+?|3rd|2-й|3-й|2-го|3-го)$/i.test((value || '').trim());
 }
 
 function buildCurrentProfileRelationshipUpdates(
@@ -22,6 +35,19 @@ function buildCurrentProfileRelationshipUpdates(
 
   if (typeof relationship.canMessage === 'boolean') {
     updates.canMessage = relationship.canMessage;
+  }
+
+  if (typeof relationship.canFollow === 'boolean') {
+    updates.canFollow = relationship.canFollow;
+  }
+
+  if (typeof relationship.canConnect === 'boolean') {
+    updates.canConnect = relationship.canConnect;
+  }
+
+  if (typeof relationship.isFollowing === 'boolean') {
+    updates.isFollowing = relationship.isFollowing;
+    currentProfileData.isFollowing = relationship.isFollowing;
   }
 
   // Write isPremium only when DOM detection has a definitive signal.
@@ -45,11 +71,15 @@ export function detectCurrentProfileRelationship(currentProfileData: ProfileData
   const connectionDegree =
     (scope.querySelector('.dist-value')?.textContent?.trim() || currentProfileData?.connectionDegree || '').trim();
 
-  const buttons = Array.from(scope.querySelectorAll('button')) as HTMLButtonElement[];
-  const buttonText = buttons.map((button) => ({
-    text: button.textContent?.trim().toLowerCase() || '',
-    label: button.getAttribute('aria-label')?.trim().toLowerCase() || '',
-  }));
+  const buttons = Array.from(new Set([
+    ...Array.from(scope.querySelectorAll('button')) as HTMLButtonElement[],
+    ...Array.from(
+      document.querySelectorAll<HTMLButtonElement>(
+        '[role="menu"] button, [role="menuitem"], .artdeco-dropdown__content button'
+      )
+    ),
+  ]));
+  const buttonText = buttons.map(getRelationshipButtonSignal);
 
   const hasPending = buttonText.some(
     ({ text, label }) =>
@@ -76,29 +106,41 @@ export function detectCurrentProfileRelationship(currentProfileData: ProfileData
       label.startsWith('message') ||
       label.includes('повідомлення')
   );
-  const hasFollowing = buttonText.some(
-    ({ text, label }) =>
-      text === 'following' ||
-      text.includes('відстеж') ||
-      text.includes('підпис') ||
-      label.startsWith('following') ||
-      label.includes('unfollow') ||
-      label.includes('відстеж') ||
-      label.includes('підпис')
-  );
+  const hasFollow = buttonText.some(hasFollowSignal);
+  const hasExplicitFollowing = buttonText.some(hasFollowingSignal);
+  const hasAuthoritativeFollowing = hasExplicitFollowing;
   const hasPremiumMessage = buttonText.some(({ label }) => label.includes('premium'));
+  const hasFirstDegree = isFirstDegreeConnection(connectionDegree);
+  const hasNonFirstDegree = isNonFirstDegreeConnection(connectionDegree);
 
   if (hasPending) {
     return {
       status: 'pending',
       connectionDegree,
       canMessage: hasMessage,
+      canConnect: false,
+      canFollow: hasAuthoritativeFollowing || hasFollow ? true : undefined,
+      isFollowing: hasAuthoritativeFollowing ? true : hasFollow ? false : undefined,
       isPremium: hasMessage && hasPremiumMessage ? true : undefined,
     };
   }
 
-  if (connectionDegree === '1st' || (hasMessage && !hasConnect && !hasPremiumMessage)) {
-    return { status: 'connected', connectionDegree: '1st', canMessage: true };
+  if (
+    hasFirstDegree ||
+    (hasMessage && !hasConnect && !hasPremiumMessage && !hasFollow && !hasAuthoritativeFollowing && !hasNonFirstDegree)
+  ) {
+    return { status: 'connected', connectionDegree: '1st', canMessage: true, canConnect: false };
+  }
+
+  if (hasConnect && hasAuthoritativeFollowing) {
+    return {
+      connectionDegree,
+      canMessage: hasMessage,
+      canFollow: true,
+      canConnect: true,
+      isFollowing: true,
+      isPremium: hasMessage && hasPremiumMessage ? true : undefined,
+    };
   }
 
   if (hasConnect) {
@@ -106,15 +148,33 @@ export function detectCurrentProfileRelationship(currentProfileData: ProfileData
       status: 'connect',
       connectionDegree,
       canMessage: hasMessage,
+      canConnect: true,
+      canFollow: hasFollow ? true : undefined,
+      isFollowing: hasFollow ? false : undefined,
       isPremium: hasMessage && hasPremiumMessage ? true : undefined,
     };
   }
 
-  if (hasFollowing) {
+  if (hasFollow && hasNonFirstDegree) {
+    return {
+      status: 'connect',
+      connectionDegree,
+      canMessage: hasMessage,
+      canConnect: true,
+      canFollow: true,
+      isFollowing: false,
+      isPremium: hasMessage && hasPremiumMessage ? true : undefined,
+    };
+  }
+
+  if (hasAuthoritativeFollowing) {
     return {
       status: 'following',
       connectionDegree,
       canMessage: hasMessage,
+      canFollow: true,
+      canConnect: false,
+      isFollowing: true,
       isPremium: hasMessage && hasPremiumMessage ? true : undefined,
     };
   }

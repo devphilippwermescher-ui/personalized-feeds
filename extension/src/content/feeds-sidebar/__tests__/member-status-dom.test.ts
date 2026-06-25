@@ -52,6 +52,75 @@ describe('getMemberStatus', () => {
       )
     ).toBe('connect');
   });
+
+  it('does not let a profile DOM Connect button override a stored resend-later cooldown', () => {
+    document.body.innerHTML = `
+      <section class="pv-top-card">
+        <h1>Yuliia Biliavtseva</h1>
+        <button aria-label="Invite Yuliia to connect">Connect</button>
+      </section>
+    `;
+
+    expect(getMemberStatus(member({ status: 'withdrawn', canConnect: false }))).toBe('withdrawn');
+  });
+
+  it('keeps resend-later cooldown while taking Following from the profile DOM', () => {
+    document.body.innerHTML = `
+      <section class="pv-top-card">
+        <h1>Yuliia Biliavtseva</h1>
+        <button aria-label="Following Yuliia">Following</button>
+      </section>
+    `;
+    const testMember = member({ status: 'withdrawn', canConnect: false, isFollowing: false });
+
+    expect(getMemberStatus(testMember)).toBe('withdrawn');
+    expect(testMember.isFollowing).toBe(true);
+  });
+
+  it('prefers an open profile menu Following signal over the top-card Connect button without dropping resend-later', () => {
+    document.body.innerHTML = `
+      <section class="pv-top-card">
+        <h1>Yuliia Biliavtseva</h1>
+        <button aria-label="Invite Yuliia to connect">Connect</button>
+      </section>
+      <div role="menu">
+        <button aria-label="Following Yuliia">Following</button>
+      </div>
+    `;
+    const testMember = member({ status: 'withdrawn', canConnect: false, isFollowing: false });
+
+    expect(getMemberStatus(testMember)).toBe('withdrawn');
+    expect(testMember.isFollowing).toBe(true);
+  });
+
+  it('clears stale following state when an open profile menu shows Follow', () => {
+    document.body.innerHTML = `
+      <section class="pv-top-card">
+        <h1>Yuliia Biliavtseva</h1>
+        <button aria-label="Invite Yuliia to connect">Connect</button>
+      </section>
+      <div role="menu">
+        <button aria-label="Follow Yuliia">Follow</button>
+      </div>
+    `;
+    const testMember = member({ status: 'withdrawn', canConnect: false, isFollowing: true });
+
+    expect(getMemberStatus(testMember)).toBe('withdrawn');
+    expect(testMember.isFollowing).toBe(false);
+  });
+
+  it('uses first-degree connection as Connected when stored status is stale connect', () => {
+    document.body.innerHTML = '';
+
+    expect(
+      getMemberStatus(
+        member({
+          status: 'connect',
+          connectionDegree: '1st',
+        })
+      )
+    ).toBe('connected');
+  });
 });
 
 describe('renderMemberStatusAction', () => {
@@ -78,13 +147,28 @@ describe('renderMemberStatusAction', () => {
     expect(element.querySelector('[data-member-action="connect"]')).toBeTruthy();
   });
 
-  it('keeps Follow visible when the connection state is already connected', () => {
+  it('shows only Connected when the profile is already connected', () => {
     const element = renderStatus({ status: 'connected', canConnect: false });
 
-    expect(element.textContent).toContain('Follow');
     expect(element.textContent).toContain('Connected');
-    expect(element.querySelector('[data-member-action="follow-toggle"]')).toBeTruthy();
+    expect(element.textContent).not.toContain('Follow');
+    expect(element.textContent).not.toContain('Unfollow');
+    expect(element.querySelector('[data-member-action="follow-toggle"]')).toBeFalsy();
     expect(element.querySelector('[data-member-action="connect"]')).toBeFalsy();
+  });
+
+  it('shows Unfollow and Connect when the profile is followed but not connected', () => {
+    const element = renderStatus({
+      status: 'following',
+      canFollow: true,
+      canConnect: true,
+      isFollowing: true,
+    });
+
+    expect(element.textContent).toContain('Unfollow');
+    expect(element.textContent).toContain('Connect');
+    expect(element.querySelector('[data-member-action="follow-toggle"]')).toBeTruthy();
+    expect(element.querySelector('[data-member-action="connect"]')).toBeTruthy();
   });
 
   it('keeps Follow visible next to pending and resend-later states', () => {
@@ -94,7 +178,40 @@ describe('renderMemberStatusAction', () => {
     expect(pending.textContent).toContain('Follow');
     expect(pending.textContent).toContain('Pending');
     expect(withdrawn.textContent).toContain('Follow');
-    expect(withdrawn.textContent).toContain('Resend later');
+    expect(withdrawn.textContent).toContain('Resend');
+    expect(withdrawn.textContent).not.toContain('Resend later');
+  });
+
+  it('shows Unfollow next to compact Resend when a withdrawn profile is already followed', () => {
+    const element = renderStatus({
+      status: 'withdrawn',
+      canFollow: true,
+      canConnect: false,
+      isFollowing: true,
+    });
+
+    expect(element.textContent).toContain('Unfollow');
+    expect(element.textContent).toContain('Resend');
+    expect(element.textContent).not.toContain('Resend later');
+    expect(element.querySelector('[data-member-action="follow-toggle"]')).toBeTruthy();
+    expect(element.querySelector('[data-member-action="connect"]')).toBeFalsy();
+  });
+
+  it('puts the resend tooltip only on the compact resend segment', () => {
+    const element = renderStatus({
+      status: 'withdrawn',
+      canFollow: true,
+      canConnect: false,
+    });
+
+    const followButton = element.querySelector<HTMLElement>('[data-member-action="follow-toggle"]');
+    const resendSegment = element.querySelector<HTMLElement>('.lfa-member-status-split-btn--withdrawn');
+    const customTooltip = element.querySelector<HTMLElement>('.lfa-member-status-tooltip');
+
+    expect(followButton?.getAttribute('title')).toBeNull();
+    expect(resendSegment?.getAttribute('title')).toBeNull();
+    expect(customTooltip?.getAttribute('role')).toBe('tooltip');
+    expect(customTooltip?.textContent).toContain('Invitation was withdrawn earlier');
   });
 
   it('does not show profile actions for unavailable profiles', () => {

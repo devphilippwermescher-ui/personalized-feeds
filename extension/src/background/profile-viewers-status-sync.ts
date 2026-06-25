@@ -63,6 +63,10 @@ export interface ProfileViewersStatusSyncResult {
   error?: string;
 }
 
+export interface ProfileViewersStatusSyncRunOptions {
+  forceStale?: boolean;
+}
+
 function getStoredStatusSyncState(): Promise<ProfileViewersStatusSyncState | null> {
   return new Promise((resolve) => {
     chrome.storage.local.get(PROFILE_VIEWERS_STATUS_STATE_KEY, (stored) => {
@@ -123,8 +127,11 @@ function buildStatusUpdate(
   resolution: RelationshipResolution,
   resolvedAt: number
 ): Parameters<typeof updateProfileViewer>[2] {
+  const preserveWithdrawn =
+    viewer.status === 'withdrawn' &&
+    (resolution.status === 'connect' || resolution.status === 'following');
   const update: Parameters<typeof updateProfileViewer>[2] = {
-    status: resolution.status,
+    status: preserveWithdrawn ? 'withdrawn' : resolution.status,
     statusResolvedAt: resolvedAt,
     statusCheckFailedAt: 0,
     statusCheckError: '',
@@ -139,7 +146,11 @@ function buildStatusUpdate(
   if (profileImageUrl) update.profileImageUrl = profileImageUrl;
   if (typeof resolution.canMessage === 'boolean') update.canMessage = resolution.canMessage;
   if (typeof resolution.canFollow === 'boolean') update.canFollow = resolution.canFollow;
-  if (typeof resolution.canConnect === 'boolean') update.canConnect = resolution.canConnect;
+  if (preserveWithdrawn) {
+    update.canConnect = false;
+  } else if (typeof resolution.canConnect === 'boolean') {
+    update.canConnect = resolution.canConnect;
+  }
   if (typeof resolution.isFollowing === 'boolean') update.isFollowing = resolution.isFollowing;
   if (typeof resolution.isPremium === 'boolean') update.isPremium = resolution.isPremium;
 
@@ -208,7 +219,8 @@ export async function queueProfileViewersStatusSync(
 
 export async function runProfileViewersStatusSync(
   trigger: ProfileViewersStatusSyncTrigger = 'alarm',
-  explicitUser?: User
+  explicitUser?: User,
+  options: ProfileViewersStatusSyncRunOptions = {}
 ): Promise<ProfileViewersStatusSyncResult> {
   const user = await getStatusSyncUser(explicitUser);
   if (!user) {
@@ -244,10 +256,11 @@ export async function runProfileViewersStatusSync(
 
   try {
     const viewers = await getProfileViewers(user.uid);
+    const selectionNow = options.forceStale ? Number.POSITIVE_INFINITY : startedAt;
     const candidates = selectProfileViewersForStatusSync(
       viewers,
       state.priorityUsernames,
-      startedAt
+      selectionNow
     );
 
     if (candidates.length === 0) {
@@ -298,7 +311,7 @@ export async function runProfileViewersStatusSync(
     const remainingCount = Math.max(0, selectProfileViewersForStatusSync(
       viewers,
       state.priorityUsernames,
-      startedAt,
+      selectionNow,
       Number.MAX_SAFE_INTEGER
     ).length - candidates.length);
     const nextDueAt = remainingCount > 0

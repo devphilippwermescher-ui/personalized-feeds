@@ -4,14 +4,18 @@ import {
   removeProfileViewer,
   updateProfileViewer,
 } from 'shared/firestore-service';
-import type { ProfileViewerListItem, ProfileViewerSummary } from 'shared/types';
-import { normalizeLinkedInUsername } from 'shared/linkedin-identity';
+import type { ProfileViewer, ProfileViewerListItem, ProfileViewerSummary } from 'shared/types';
+import { getUsernameFromLinkedInUrl, normalizeLinkedInUsername } from 'shared/linkedin-identity';
 import {
   appendProfileViewersWakeEvent,
   getProfileViewersSyncState,
   resetProfileViewersSyncState,
 } from './profile-viewers-coordinator-storage';
 import { queueProfileViewersSync } from './profile-viewers-coordinator';
+import {
+  queueProfileViewersStatusSync,
+  runProfileViewersStatusSync,
+} from './profile-viewers-status-sync';
 import { syncProfileViewersViaPage } from './profile-viewers-page-sync';
 import { getAuthenticatedFeedsUser } from './feeds-auth';
 import { getFeedsAuthErrorResponse, normalizeFeedsError } from './feeds-errors';
@@ -29,7 +33,7 @@ async function notifyLinkedInTabsAboutProfileViewerUpdate(): Promise<void> {
   );
 }
 
-type ProfileViewerProfileItem = ProfileViewerListItem & { linkedinUsername: string };
+type ProfileViewerProfileItem = ProfileViewer;
 
 function getProfileViewerSummaryFromSyncState(
   syncState: Awaited<ReturnType<typeof getProfileViewersSyncState>>
@@ -85,8 +89,10 @@ function findProfileViewerUpdateTargets(
     String(updates.linkedinUsername || '')
   );
   const normalizedLinkedInUrlUsername = normalizeLinkedInUsername(
-    String(updates.linkedinUrl || '')
+    getUsernameFromLinkedInUrl(String(updates.linkedinUrl || ''))
   );
+  const updateProfileUrn = String(updates.profileUrn || '').trim();
+  const updateMemberNumericId = String(updates.memberNumericId || '').trim();
   const usernameCandidates = new Set(
     [normalizedViewerId, normalizedUpdateUsername, normalizedLinkedInUrlUsername].filter(Boolean)
   );
@@ -94,9 +100,16 @@ function findProfileViewerUpdateTargets(
   const profileViewers = viewers.filter(isProfileViewerProfileItem);
   const targets = new Map<string, ProfileViewerProfileItem>();
   profileViewers
-    .filter((viewer) =>
-      usernameCandidates.has(normalizeLinkedInUsername(viewer.linkedinUsername || viewer.id))
-    )
+    .filter((viewer) => {
+      const viewerUsername = normalizeLinkedInUsername(viewer.linkedinUsername || viewer.id);
+      const viewerUrlUsername = normalizeLinkedInUsername(getUsernameFromLinkedInUrl(viewer.linkedinUrl));
+      return (
+        usernameCandidates.has(viewerUsername) ||
+        usernameCandidates.has(viewerUrlUsername) ||
+        Boolean(updateProfileUrn && viewer.profileUrn === updateProfileUrn) ||
+        Boolean(updateMemberNumericId && viewer.memberNumericId === updateMemberNumericId)
+      );
+    })
     .forEach((viewer) => {
       targets.set(viewer.linkedinUsername || viewer.id, viewer);
     });
@@ -214,6 +227,40 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           success: false,
           syncState: null,
           error: normalizeFeedsError(error, 'Failed to load profile visitors sync status'),
+        });
+      });
+    return true;
+  }
+
+  if (message.type === 'PROFILE_VIEWERS_STATUS_SYNC_NOW') {
+    getAuthenticatedFeedsUser()
+      .then(async (user) => {
+        if (!user) {
+          sendResponse(getFeedsAuthErrorResponse({ result: null }));
+          return;
+        }
+
+        const priorityUsernames = Array.isArray(message.priorityUsernames)
+          ? (message.priorityUsernames as unknown[]).filter((value): value is string => typeof value === 'string')
+          : [];
+        if (priorityUsernames.length > 0) {
+          await queueProfileViewersStatusSync({
+            trigger: 'manual',
+            priorityUsernames,
+            urgent: true,
+          });
+        }
+
+        const result = await runProfileViewersStatusSync('manual', user, {
+          forceStale: message.forceStale === true,
+        });
+        sendResponse({ success: result.success, result });
+      })
+      .catch((error) => {
+        sendResponse({
+          success: false,
+          result: null,
+          error: normalizeFeedsError(error, 'Failed to sync profile visitor statuses'),
         });
       });
     return true;

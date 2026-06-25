@@ -11,6 +11,11 @@ import {
 } from './errors';
 
 type RelationshipStatusResult = RelationshipResolution;
+interface FetchRelationshipStatusOptions {
+  requireActionIdentifiers?: boolean;
+}
+
+type FetchSingleStatusOptions = FetchRelationshipStatusOptions;
 const BACKGROUND_STATUS_FALLBACK_WINDOW_MS = 5 * 60 * 1000;
 const BACKGROUND_STATUS_FALLBACK_MAX_PER_WINDOW = 20;
 const backgroundStatusFallbackInFlight = new Map<string, Promise<RelationshipStatusResult | null>>();
@@ -115,6 +120,60 @@ function cacheResolvedStatus(username: string, result: RelationshipStatusResult)
   );
 }
 
+function shouldPreserveWithdrawnStatus(
+  currentStatus: FeedMemberInfo['status'],
+  nextStatus?: RelationshipResolution['status']
+): boolean {
+  return currentStatus === 'withdrawn' && (nextStatus === 'connect' || nextStatus === 'following');
+}
+
+function hasActionIdentifiers(result: RelationshipStatusResult): boolean {
+  return Boolean(result.profileUrn && result.memberNumericId);
+}
+
+function canUseStatusResult(
+  result: RelationshipStatusResult,
+  options: FetchSingleStatusOptions = {}
+): boolean {
+  return !options.requireActionIdentifiers || hasActionIdentifiers(result);
+}
+
+function mergeActionIdentifierResult(
+  primary: RelationshipStatusResult,
+  source: RelationshipStatusResult
+): RelationshipStatusResult {
+  const preserveWithdrawn = primary.status === 'withdrawn' && (source.status === 'connect' || source.status === 'following');
+
+  return normalizeRelationshipResolution({
+    status: primary.status,
+    profileUrn: primary.profileUrn || source.profileUrn,
+    canMessage: primary.canMessage ?? source.canMessage,
+    canFollow: source.canFollow ?? primary.canFollow,
+    canConnect: preserveWithdrawn ? false : primary.canConnect ?? source.canConnect,
+    isFollowing: source.isFollowing ?? primary.isFollowing,
+    memberNumericId: primary.memberNumericId || source.memberNumericId,
+    isPremium: primary.isPremium ?? source.isPremium,
+    profileImageUrl: primary.profileImageUrl || source.profileImageUrl,
+  });
+}
+
+function applyRelationshipResultToMember(
+  member: FeedMemberInfo,
+  result: RelationshipResolution
+): void {
+  const preserveWithdrawn = shouldPreserveWithdrawnStatus(member.status, result.status);
+
+  member.status = preserveWithdrawn ? 'withdrawn' : result.status;
+  member.profileUrn = result.profileUrn;
+  member.canMessage = result.status === 'connected' ? true : result.canMessage;
+  member.canFollow = result.canFollow;
+  member.canConnect = preserveWithdrawn ? false : result.canConnect;
+  member.isFollowing = result.isFollowing;
+  member.memberNumericId = result.memberNumericId;
+  member.isPremium = result.isPremium;
+  member.profileImageUrl = result.profileImageUrl || member.profileImageUrl;
+}
+
 function takeBackgroundFallbackSlot(now = Date.now()): boolean {
   if (
     !backgroundStatusFallbackWindowStartedAt ||
@@ -201,10 +260,12 @@ async function fetchStatusWithBackgroundFallback(
 }
 
 async function fetchSingleStatus(
-  member: FeedMemberInfo
+  member: FeedMemberInfo,
+  options: FetchSingleStatusOptions = {}
 ): Promise<RelationshipStatusResult> {
   const username = await ensureCanonicalIdentity(member);
   let blockLikeError: unknown = null;
+  let partialResult: RelationshipStatusResult | null = null;
 
   for (const queryId of GRAPHQL_QUERY_IDS) {
     try {
@@ -214,6 +275,12 @@ async function fetchSingleStatus(
           await enrichResultWithProfileImage(username, result, member.profileImageUrl)
         );
         console.log(`[LFS] ${username}: status=${enrichedResult.status} isPremium=${enrichedResult.isPremium ?? false} (GraphQL ${queryId.slice(-8)})`);
+        if (!canUseStatusResult(enrichedResult, options)) {
+          partialResult = partialResult
+            ? mergeActionIdentifierResult(partialResult, enrichedResult)
+            : enrichedResult;
+          continue;
+        }
         cacheResolvedStatus(username, enrichedResult);
         return enrichedResult;
       }
@@ -235,19 +302,33 @@ async function fetchSingleStatus(
         member.profileImageUrl
       );
       console.log(`[LFS] ${username}: status=${enrichedFallbackResult.status} (background fallback after content block)`);
-      cacheResolvedStatus(username, enrichedFallbackResult);
-      return enrichedFallbackResult;
+      if (!canUseStatusResult(enrichedFallbackResult, options)) {
+        partialResult = partialResult
+          ? mergeActionIdentifierResult(partialResult, enrichedFallbackResult)
+          : enrichedFallbackResult;
+      } else {
+        cacheResolvedStatus(username, enrichedFallbackResult);
+        return enrichedFallbackResult;
+      }
     }
 
-    throw blockLikeError;
+    if (!partialResult) {
+      throw blockLikeError;
+    }
   }
 
   try {
     const htmlResult = await fetchStatusFromProfilePage(username);
     if (htmlResult) {
-      const normalizedHtmlResult = normalizeRelationshipResolution(htmlResult);
-      cacheResolvedStatus(username, normalizedHtmlResult);
-      return normalizedHtmlResult;
+      const normalizedHtmlResult = partialResult
+        ? mergeActionIdentifierResult(partialResult, normalizeRelationshipResolution(htmlResult))
+        : normalizeRelationshipResolution(htmlResult);
+      if (!canUseStatusResult(normalizedHtmlResult, options)) {
+        partialResult = normalizedHtmlResult;
+      } else {
+        cacheResolvedStatus(username, normalizedHtmlResult);
+        return normalizedHtmlResult;
+      }
     }
   } catch (err) {
     if (isLinkedInStatusFetchBlockLikeError(err)) {
@@ -259,11 +340,25 @@ async function fetchSingleStatus(
           member.profileImageUrl
         );
         console.log(`[LFS] ${username}: status=${enrichedFallbackResult.status} (background fallback after HTML block)`);
-        cacheResolvedStatus(username, enrichedFallbackResult);
-        return enrichedFallbackResult;
+        if (!canUseStatusResult(enrichedFallbackResult, options)) {
+          partialResult = partialResult
+            ? mergeActionIdentifierResult(partialResult, enrichedFallbackResult)
+            : enrichedFallbackResult;
+        } else {
+          cacheResolvedStatus(username, enrichedFallbackResult);
+          return enrichedFallbackResult;
+        }
       }
     }
     console.warn(`[LFS] HTML fetch failed for ${username}:`, err);
+  }
+
+  if (partialResult) {
+    cacheResolvedStatus(username, partialResult);
+    if (options.requireActionIdentifiers) {
+      throw new Error('Could not resolve LinkedIn relationship action identifiers');
+    }
+    return partialResult;
   }
 
   console.log(`[LFS] ${username}: unresolved after all sources`);
@@ -271,12 +366,19 @@ async function fetchSingleStatus(
 }
 
 export async function fetchLinkedInRelationshipStatus(
-  member: FeedMemberInfo
+  member: FeedMemberInfo,
+  options: FetchRelationshipStatusOptions = {}
 ): Promise<RelationshipStatusResult> {
   const username = await ensureCanonicalIdentity(member);
 
   const cached = getCachedStatus(username);
-  if (cached && (isUsableProfileImageUrl(cached.profileImageUrl) || isUsableProfileImageUrl(member.profileImageUrl))) {
+  const cachedHasRequiredIdentifiers =
+    !options.requireActionIdentifiers || Boolean(cached?.profileUrn && cached.memberNumericId);
+  if (
+    cached &&
+    cachedHasRequiredIdentifiers &&
+    (isUsableProfileImageUrl(cached.profileImageUrl) || isUsableProfileImageUrl(member.profileImageUrl))
+  ) {
     return normalizeRelationshipResolution({
       status: cached.status,
       profileUrn: cached.profileUrn,
@@ -290,7 +392,7 @@ export async function fetchLinkedInRelationshipStatus(
     });
   }
 
-  return fetchSingleStatus(member);
+  return fetchSingleStatus(member, options);
 }
 
 export async function fetchStatusesProgressively(
@@ -314,30 +416,24 @@ export async function fetchStatusesProgressively(
 
     const cached = getCachedStatus(canonicalUsername);
     if (cached && (isUsableProfileImageUrl(cached.profileImageUrl) || isUsableProfileImageUrl(member.profileImageUrl))) {
-      member.status = cached.status;
-      member.profileUrn = cached.profileUrn;
-      member.canMessage = cached.status === 'connected' ? true : cached.canMessage;
-      member.canFollow = cached.canFollow;
-      member.canConnect = cached.canConnect;
-      member.isFollowing = cached.isFollowing;
-      member.memberNumericId = cached.memberNumericId;
-      member.isPremium = cached.isPremium;
-      member.profileImageUrl = isUsableProfileImageUrl(cached.profileImageUrl) ? cached.profileImageUrl : member.profileImageUrl;
+      applyRelationshipResultToMember(member, {
+        status: cached.status,
+        profileUrn: cached.profileUrn,
+        canMessage: cached.canMessage,
+        canFollow: cached.canFollow,
+        canConnect: cached.canConnect,
+        isFollowing: cached.isFollowing,
+        memberNumericId: cached.memberNumericId,
+        isPremium: cached.isPremium,
+        profileImageUrl: isUsableProfileImageUrl(cached.profileImageUrl) ? cached.profileImageUrl : member.profileImageUrl,
+      });
       onUpdate(member);
       return;
     }
 
     try {
       const result = await fetchSingleStatus(member);
-      member.status = result.status;
-      member.profileUrn = result.profileUrn;
-      member.canMessage = result.canMessage;
-      member.canFollow = result.canFollow;
-      member.canConnect = result.canConnect;
-      member.isFollowing = result.isFollowing;
-      member.memberNumericId = result.memberNumericId;
-      member.isPremium = result.isPremium;
-      member.profileImageUrl = result.profileImageUrl || member.profileImageUrl;
+      applyRelationshipResultToMember(member, result);
     } catch {
       member.status = undefined;
       member.canMessage = undefined;
