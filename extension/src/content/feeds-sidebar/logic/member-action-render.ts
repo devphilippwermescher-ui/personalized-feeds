@@ -53,7 +53,7 @@ export function renderMemberStatusAction(
     </div>`;
   }
 
-  if (status === 'pending' || status === 'connected' || status === 'withdrawn' || status === 'unavailable' || status === 'loading') {
+  if (status === 'unavailable' || status === 'loading') {
     const tooltip = getMemberStatusTooltip(status);
     const tooltipAttr = tooltip ? ` title="${escapeHtml(tooltip)}"` : '';
 
@@ -68,59 +68,45 @@ export function renderMemberStatusAction(
     </div>`;
   }
 
-  if (member.canFollow && member.canConnect) {
-    return `
-      <div class="lfa-member-status lfa-member-status--split" aria-label="Profile actions">
-        <button
-          class="lfa-member-status-split-btn lfa-member-status-split-btn--follow"
-          data-member-action="follow-toggle"
-          data-member-id="${escapeHtml(member.id)}"
-          data-feed-id="${escapeHtml(feedId)}"
-          data-follow-state="${member.isFollowing ? 'inactive' : 'active'}"
-          type="button"
-        >
-          ${member.isFollowing ? 'Unfollow' : 'Follow'}
-        </button>
-        <button
-          class="lfa-member-status-split-btn lfa-member-status-split-btn--connect"
-          data-member-action="connect"
-          data-member-id="${escapeHtml(member.id)}"
-          data-feed-id="${escapeHtml(feedId)}"
-          type="button"
-        >
-          Connect
-        </button>
-      </div>
-    `;
-  }
+  const isConnectActionAvailable = status === 'connect' || status === 'following';
+  const connectTooltip = isConnectActionAvailable ? getMemberStatusTooltip('connect') : getMemberStatusTooltip(status);
+  const connectTooltipAttr = connectTooltip ? ` title="${escapeHtml(connectTooltip)}"` : '';
+  const followLabel = member.isFollowing ? 'Unfollow' : 'Follow';
+  const connectArea = isConnectActionAvailable
+    ? `<button
+        class="lfa-member-status-split-btn lfa-member-status-split-btn--connect"
+        data-member-action="connect"
+        data-member-id="${escapeHtml(member.id)}"
+        data-feed-id="${escapeHtml(feedId)}"
+        type="button"
+        aria-label="Send connect request"${connectTooltipAttr}
+      >
+        Connect
+      </button>`
+    : `<button
+        class="lfa-member-status-split-btn lfa-member-status-split-btn--${status} lfa-member-status-split-btn--state"
+        type="button"
+        disabled
+        aria-disabled="true"${connectTooltipAttr}
+      >
+        ${getMemberStatusMarkup(status)}
+      </button>`;
 
-  if (member.canFollow && !member.canConnect) {
-    return `
+  return `
+    <div class="lfa-member-status lfa-member-status--split" aria-label="Profile actions">
       <button
-        class="lfa-member-status lfa-member-status--${member.isFollowing ? 'following' : 'follow'}"
+        class="lfa-member-status-split-btn lfa-member-status-split-btn--follow"
         data-member-action="follow-toggle"
         data-member-id="${escapeHtml(member.id)}"
         data-feed-id="${escapeHtml(feedId)}"
         data-follow-state="${member.isFollowing ? 'inactive' : 'active'}"
         type="button"
       >
-        <span>${member.isFollowing ? 'Unfollow' : 'Follow'}</span>
+        ${followLabel}
       </button>
-    `;
-  }
-
-  const tooltip = getMemberStatusTooltip(status);
-  const tooltipAttr = tooltip ? ` title="${escapeHtml(tooltip)}"` : '';
-
-  if (status === 'connect') {
-    return `<button class="lfa-member-status lfa-member-status--${status}" data-member-action="connect" data-member-id="${escapeHtml(member.id)}" data-feed-id="${escapeHtml(feedId)}" type="button" aria-label="Send connect request"${tooltipAttr}>
-      ${getMemberStatusMarkup(status)}
-    </button>`;
-  }
-
-  return `<div class="lfa-member-status lfa-member-status--${status}" aria-label="Connection status"${tooltipAttr}>
-    ${getMemberStatusMarkup(status)}
-  </div>`;
+      ${connectArea}
+    </div>
+  `;
 }
 
 function isConnectCooldownError(error: unknown): boolean {
@@ -309,6 +295,30 @@ export function bindMemberActionButtons(root: ParentNode, deps: MemberActionDeps
       if (!memberId || !feedId) return;
 
       const member = (getFeedMembersById()[feedId] || []).find((item) => item.id === memberId);
+      if (
+        member &&
+        member.linkedinUsername &&
+        (!member.memberNumericId || !member.profileUrn)
+      ) {
+        try {
+          const relationship = await fetchLinkedInRelationshipStatus(member);
+          member.profileUrn = relationship.profileUrn;
+          member.status = relationship.status;
+          member.canMessage = relationship.canMessage;
+          member.canFollow = relationship.canFollow;
+          member.canConnect = relationship.canConnect;
+          member.isFollowing = relationship.isFollowing;
+          member.memberNumericId = relationship.memberNumericId;
+          member.isPremium = relationship.isPremium;
+          member.profileImageUrl = relationship.profileImageUrl || member.profileImageUrl;
+          member.statusResolvedAt = Date.now();
+          void persistResolvedMemberState?.(feedId, member);
+          renderSidebarContent();
+        } catch {
+          // Follow can proceed only after resolving the LinkedIn member identifiers.
+        }
+      }
+
       if (!member?.memberNumericId || !member.profileUrn || !member.linkedinUsername) {
         showToast(`Couldn't resolve LinkedIn follow data for ${member?.displayName || 'this profile'}`, 'error');
         return;
