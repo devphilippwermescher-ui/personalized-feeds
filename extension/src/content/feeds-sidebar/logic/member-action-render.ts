@@ -17,18 +17,29 @@ function shouldPreserveWithdrawnStatus(
   return currentStatus === 'withdrawn' && (nextStatus === 'connect' || nextStatus === 'following');
 }
 
+function shouldPreserveUnavailableStatus(
+  currentStatus: FeedMemberInfo['status'],
+  nextStatus?: FeedMemberInfo['status']
+): boolean {
+  return (
+    currentStatus === 'unavailable' &&
+    (nextStatus === 'connect' || nextStatus === 'following' || nextStatus === 'pending')
+  );
+}
+
 function applyResolvedRelationshipToMember(
   member: FeedMemberInfo,
   relationship: Awaited<ReturnType<MemberActionDeps['fetchLinkedInRelationshipStatus']>>
 ): void {
   const preserveWithdrawn = shouldPreserveWithdrawnStatus(member.status, relationship.status);
+  const preserveUnavailable = shouldPreserveUnavailableStatus(member.status, relationship.status);
 
   member.profileUrn = relationship.profileUrn;
-  member.status = preserveWithdrawn ? 'withdrawn' : relationship.status;
-  member.canMessage = relationship.canMessage;
-  member.canFollow = relationship.canFollow;
-  member.canConnect = preserveWithdrawn ? false : relationship.canConnect;
-  member.isFollowing = relationship.isFollowing;
+  member.status = preserveUnavailable ? 'unavailable' : preserveWithdrawn ? 'withdrawn' : relationship.status;
+  member.canMessage = preserveUnavailable ? false : relationship.canMessage;
+  member.canFollow = preserveUnavailable ? false : relationship.canFollow;
+  member.canConnect = preserveWithdrawn || preserveUnavailable ? false : relationship.canConnect;
+  member.isFollowing = preserveUnavailable ? false : relationship.isFollowing;
   member.memberNumericId = relationship.memberNumericId;
   member.isPremium = relationship.isPremium;
   member.profileImageUrl = relationship.profileImageUrl || member.profileImageUrl;
@@ -160,6 +171,17 @@ function isConnectCooldownError(error: unknown): boolean {
   return /withdraw|cooldown|resend|invitation|invite|already sent|cannot send|unable to send/i.test(message);
 }
 
+function shouldSkipConnectRequest(
+  relationship: Awaited<ReturnType<MemberActionDeps['fetchLinkedInRelationshipStatus']>>
+): boolean {
+  return (
+    relationship.status === 'connected' ||
+    relationship.status === 'pending' ||
+    relationship.status === 'withdrawn' ||
+    relationship.status === 'unavailable'
+  );
+}
+
 export function bindMemberActionButtons(root: ParentNode, deps: MemberActionDeps): void {
   const {
     openLinkedInMessage,
@@ -227,13 +249,7 @@ export function bindMemberActionButtons(root: ParentNode, deps: MemberActionDeps
           void persistResolvedMemberState?.(feedId, member);
           renderSidebarContent();
 
-          if (
-            relationship.status === 'connected' ||
-            relationship.status === 'pending' ||
-            relationship.status === 'withdrawn' ||
-            relationship.status === 'unavailable' ||
-            relationship.canConnect === false
-          ) {
+          if (shouldSkipConnectRequest(relationship)) {
             showToast('Profile status updated', 'success');
             return;
           }
@@ -260,7 +276,7 @@ export function bindMemberActionButtons(root: ParentNode, deps: MemberActionDeps
           throw new Error('Could not resolve LinkedIn profile URN');
         }
 
-        await sendLinkedInConnectRequest(member.profileUrn);
+        await sendLinkedInConnectRequest(member.profileUrn, member.linkedinUrl);
         invalidateCacheForUser(member.linkedinUsername);
         member.transientAction = 'connect';
         member.canConnect = false;

@@ -27,6 +27,16 @@ function buildLinkedInProfileUrl(username: string): string {
   return `https://www.linkedin.com/in/${safeEncodeUsername(username)}/`;
 }
 
+function getUnavailableRelationshipResolution(): RelationshipResolution {
+  return {
+    status: 'unavailable',
+    canMessage: false,
+    canFollow: false,
+    canConnect: false,
+    isFollowing: false,
+  };
+}
+
 function matchGroup(text: string, regex: RegExp): string {
   const match = text.match(regex);
   return match?.[1] || '';
@@ -128,6 +138,10 @@ export async function fetchStatusFromProfilePage(
   });
 
   if (!response.ok) {
+    if (response.status === 404 || response.status === 410) {
+      return getUnavailableRelationshipResolution();
+    }
+
     const code = getLinkedInStatusFetchErrorCode(response.status);
     if (code !== 'api_error') {
       throw new LinkedInStatusFetchError(
@@ -177,14 +191,7 @@ export async function fetchStatusFromProfilePage(
   }
 
   if (isLinkedInProfileUnavailableHtml(html)) {
-    console.log(`[LFS] ${username}: profile unavailable (LinkedIn 404 page)`, htmlSignals);
-    return {
-      status: 'unavailable',
-      canMessage: false,
-      canFollow: false,
-      canConnect: false,
-      isFollowing: false,
-    };
+    return getUnavailableRelationshipResolution();
   }
 
   const rehydrationResult = parseStatusFromRehydration(html);
@@ -206,6 +213,50 @@ export async function fetchStatusFromProfilePage(
   }
 
   console.log(`[LFS] ${username}: no status found in HTML`, htmlSignals);
+  return null;
+}
+
+export async function fetchUnavailableStatusFromProfilePage(
+  username: string
+): Promise<RelationshipResolution | null> {
+  const url = buildLinkedInProfileUrl(username);
+
+  const response = await fetch(url, {
+    method: 'GET',
+    credentials: 'include',
+    headers: {
+      accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    },
+  });
+
+  if (!response.ok) {
+    if (response.status === 404 || response.status === 410) {
+      return getUnavailableRelationshipResolution();
+    }
+
+    const code = getLinkedInStatusFetchErrorCode(response.status);
+    if (code !== 'api_error') {
+      throw new LinkedInStatusFetchError(
+        `LinkedIn profile availability request failed with ${response.status}`,
+        code,
+        response.status
+      );
+    }
+    return null;
+  }
+
+  const html = await response.text();
+  if (isLinkedInBlockedOrChallengeHtml(html)) {
+    throw new LinkedInStatusFetchError(
+      'LinkedIn profile page appears blocked or challenged',
+      'blocked'
+    );
+  }
+
+  if (isLinkedInProfileUnavailableHtml(html)) {
+    return getUnavailableRelationshipResolution();
+  }
+
   return null;
 }
 
@@ -293,16 +344,57 @@ function extractProfileToken(profileUrn: string): string | null {
   return match?.[1] || null;
 }
 
-export async function sendLinkedInConnectRequest(profileUrn: string): Promise<void> {
+function sendConnectRequestInBackground(
+  profileUrn: string,
+  referrerUrl?: string
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (typeof chrome === 'undefined' || !chrome.runtime?.sendMessage) {
+      reject(new Error('Chrome runtime messaging is unavailable'));
+      return;
+    }
+
+    chrome.runtime.sendMessage(
+      {
+        type: 'LINKEDIN_CONNECT_REQUEST_BACKGROUND',
+        profileUrn,
+        referrerUrl,
+      },
+      (response) => {
+        const runtimeError = chrome.runtime.lastError;
+        if (runtimeError) {
+          reject(new Error(runtimeError.message));
+          return;
+        }
+
+        if (!response?.success) {
+          reject(new Error(response?.error || 'Background connect request failed'));
+          return;
+        }
+
+        resolve();
+      }
+    );
+  });
+}
+
+async function sendLinkedInConnectRequestFromContent(
+  profileUrn: string,
+  referrerUrl?: string
+): Promise<void> {
   const response = await fetch(
     'https://www.linkedin.com/voyager/api/voyagerRelationshipsDashMemberRelationships?action=verifyQuotaAndCreateV2&decorationId=com.linkedin.voyager.dash.deco.relationships.InvitationCreationResultWithInvitee-2',
     {
       method: 'POST',
       credentials: 'include',
+      referrer: referrerUrl?.startsWith('https://www.linkedin.com/') ? referrerUrl : undefined,
       headers: {
         accept: 'application/vnd.linkedin.normalized+json+2.1',
         'content-type': 'application/json; charset=UTF-8',
         'csrf-token': getCsrfToken(),
+        'x-li-deco-include-micro-schema': 'true',
+        'x-li-lang': 'en_US',
+        'x-li-pem-metadata': 'Voyager - Profile Actions=topcard-primary-connect-action-click,Voyager - Invitations - Actions=invite-send',
         'x-restli-protocol-version': '2.0.0',
       },
       body: JSON.stringify({
@@ -320,6 +412,23 @@ export async function sendLinkedInConnectRequest(profileUrn: string): Promise<vo
     throw new Error(
       `Failed to send connect request: ${response.status}${body ? ` ${body.slice(0, 500)}` : ''}`
     );
+  }
+}
+
+export async function sendLinkedInConnectRequest(
+  profileUrn: string,
+  referrerUrl?: string
+): Promise<void> {
+  try {
+    await sendLinkedInConnectRequestFromContent(profileUrn, referrerUrl);
+  } catch (contentError) {
+    try {
+      await sendConnectRequestInBackground(profileUrn, referrerUrl);
+    } catch (backgroundError) {
+      const contentMessage = contentError instanceof Error ? contentError.message : String(contentError);
+      const backgroundMessage = backgroundError instanceof Error ? backgroundError.message : String(backgroundError);
+      throw new Error(`${contentMessage}; background retry failed: ${backgroundMessage}`);
+    }
   }
 }
 

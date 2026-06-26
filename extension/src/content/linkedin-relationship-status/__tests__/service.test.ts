@@ -310,4 +310,75 @@ describe('fetchLinkedInRelationshipStatus', () => {
     expect(result.profileUrn).toBe('urn:li:fsd_profile:action-ids-from-html');
     expect(result.memberNumericId).toBe('789');
   });
+
+  it('keeps unavailable when an existing deleted profile refresh resolves as connect', async () => {
+    fetchWithGraphQL.mockResolvedValue({
+      status: 'connect',
+      canConnect: true,
+      canFollow: true,
+      isFollowing: true,
+      profileUrn: 'urn:li:fsd_profile:deleted-member',
+      memberNumericId: '404',
+    });
+
+    const { fetchStatusesProgressively } = await import('../service');
+    const member: FeedMemberInfo = {
+      id: 'deleted-member',
+      linkedinUrl: 'https://www.linkedin.com/in/deleted-member/',
+      linkedinUsername: 'deleted-member',
+      displayName: 'Deleted Member',
+      status: 'unavailable',
+      canConnect: false,
+      canFollow: false,
+      canMessage: false,
+      isFollowing: false,
+      profileImageUrl: 'https://media.licdn.com/profile.jpg',
+      addedAt: Date.now(),
+    };
+
+    await fetchStatusesProgressively([member], () => undefined);
+
+    expect(member.status).toBe('unavailable');
+    expect(member.canConnect).toBe(false);
+    expect(member.canFollow).toBe(false);
+    expect(member.canMessage).toBe(false);
+    expect(member.isFollowing).toBe(false);
+  });
+
+  it('lets profile HTML unavailable override partial GraphQL action results', async () => {
+    fetchWithGraphQL.mockResolvedValue({
+      status: 'connect',
+      canConnect: true,
+      canFollow: true,
+      isFollowing: true,
+    });
+    fetchStatusFromProfilePage.mockResolvedValue({
+      status: 'unavailable',
+      canConnect: false,
+      canFollow: false,
+      canMessage: false,
+      isFollowing: false,
+    });
+
+    const { fetchLinkedInRelationshipStatus } = await import('../service');
+    const member: FeedMemberInfo = {
+      id: 'deleted-action-member',
+      linkedinUrl: 'https://www.linkedin.com/in/deleted-action-member/',
+      linkedinUsername: 'deleted-action-member',
+      displayName: 'Deleted Action Member',
+      profileImageUrl: 'https://media.licdn.com/profile.jpg',
+      addedAt: Date.now(),
+    };
+
+    const result = await fetchLinkedInRelationshipStatus(member, {
+      requireActionIdentifiers: true,
+    });
+
+    expect(fetchStatusFromProfilePage).toHaveBeenCalledWith('deleted-action-member');
+    expect(result.status).toBe('unavailable');
+    expect(result.canConnect).toBe(false);
+    expect(result.canFollow).toBe(false);
+    expect(result.canMessage).toBe(false);
+    expect(result.isFollowing).toBe(false);
+  });
 });

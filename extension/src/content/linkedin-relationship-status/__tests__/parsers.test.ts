@@ -117,6 +117,34 @@ describe('parseStatusFromRehydration', () => {
 // ── GraphQL profile image ─────────────────────────────────────────────────
 
 describe('parseGraphQLRelationshipStatus profile image', () => {
+  it('returns unavailable for LinkedIn GraphQL profile access denied errors', () => {
+    const result = parseGraphQLRelationshipStatus({
+      data: {
+        identityDashProfilesByMemberIdentity: null,
+      },
+      errors: [
+        {
+          path: ['identityDashProfilesByMemberIdentity'],
+          locations: [],
+          extensions: {
+            classification: 'DataFetchingException',
+            exceptionClass: 'com.linkedin.voyager.common.VoyagerUserVisibleException',
+            status: 403,
+          },
+          message: "This profile can't be accessed",
+        },
+      ],
+    });
+
+    expect(result).toMatchObject({
+      status: 'unavailable',
+      canMessage: false,
+      canFollow: false,
+      canConnect: false,
+      isFollowing: false,
+    });
+  });
+
   it('extracts a refreshed profileImageUrl from LinkedIn vector image data', () => {
     const rootUrl = 'https://media.licdn.com/dms/image/v2/D4E03AQGUtBZh5nnOEQ/profile-displayphoto-';
     const path100 = 'scale_100_100/B4EZgS1szcGoAg-/0/1752662724807?e=1782345600&v=beta&t=small';

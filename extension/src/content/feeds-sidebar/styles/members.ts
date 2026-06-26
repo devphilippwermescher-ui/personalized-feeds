@@ -16,7 +16,8 @@ export const MEMBERS_CSS = `.lfa-member-row {
     align-items: center;
     gap: 10px;
     min-width: 0;
-    flex: 1;
+    flex: 1 1 auto;
+    width: 0;
     padding-right: 10px;
   }
   .lfa-member-avatar {
@@ -123,8 +124,10 @@ export const MEMBERS_CSS = `.lfa-member-row {
   }
   .lfa-member-info {
     min-width: 0;
+    flex: 1 1 auto;
     display: flex;
     align-items: center;
+    overflow: hidden;
   }
   .lfa-member-row--with-meta .lfa-member-info {
     flex-direction: column;
@@ -144,6 +147,7 @@ export const MEMBERS_CSS = `.lfa-member-row {
     align-items: center;
     gap: 2px;
     min-width: 0;
+    width: 100%;
     max-width: 100%;
   }
   .lfa-member-name-text {
@@ -177,9 +181,9 @@ export const MEMBERS_CSS = `.lfa-member-row {
     display: flex;
     align-items: center;
     gap: 4px;
-    flex-shrink: 0;
+    flex: 0 0 auto;
     justify-content: flex-end;
-    min-width: 278px;
+    min-width: 0;
   }
   .lfa-member-actions--empty {
     display: none;
@@ -188,7 +192,8 @@ export const MEMBERS_CSS = `.lfa-member-row {
     min-width: auto;
   }
   .lfa-member-search-btn {
-    width: 112px;
+    box-sizing: border-box;
+    width: 128px;
     height: 25px;
     min-height: 25px;
     padding: 0 8px;

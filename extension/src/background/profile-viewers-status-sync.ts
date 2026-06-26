@@ -130,8 +130,11 @@ function buildStatusUpdate(
   const preserveWithdrawn =
     viewer.status === 'withdrawn' &&
     (resolution.status === 'connect' || resolution.status === 'following');
+  const preserveUnavailable =
+    viewer.status === 'unavailable' &&
+    (resolution.status === 'connect' || resolution.status === 'following' || resolution.status === 'pending');
   const update: Parameters<typeof updateProfileViewer>[2] = {
-    status: preserveWithdrawn ? 'withdrawn' : resolution.status,
+    status: preserveUnavailable ? 'unavailable' : preserveWithdrawn ? 'withdrawn' : resolution.status,
     statusResolvedAt: resolvedAt,
     statusCheckFailedAt: 0,
     statusCheckError: '',
@@ -144,14 +147,25 @@ function buildStatusUpdate(
   if (profileUrn) update.profileUrn = profileUrn;
   if (memberNumericId) update.memberNumericId = memberNumericId;
   if (profileImageUrl) update.profileImageUrl = profileImageUrl;
-  if (typeof resolution.canMessage === 'boolean') update.canMessage = resolution.canMessage;
-  if (typeof resolution.canFollow === 'boolean') update.canFollow = resolution.canFollow;
+  if (preserveUnavailable) {
+    update.canMessage = false;
+    update.canFollow = false;
+  } else {
+    if (typeof resolution.canMessage === 'boolean') update.canMessage = resolution.canMessage;
+    if (typeof resolution.canFollow === 'boolean') update.canFollow = resolution.canFollow;
+  }
   if (preserveWithdrawn) {
+    update.canConnect = false;
+  } else if (preserveUnavailable) {
     update.canConnect = false;
   } else if (typeof resolution.canConnect === 'boolean') {
     update.canConnect = resolution.canConnect;
   }
-  if (typeof resolution.isFollowing === 'boolean') update.isFollowing = resolution.isFollowing;
+  if (preserveUnavailable) {
+    update.isFollowing = false;
+  } else if (typeof resolution.isFollowing === 'boolean') {
+    update.isFollowing = resolution.isFollowing;
+  }
   if (typeof resolution.isPremium === 'boolean') update.isPremium = resolution.isPremium;
 
   return update;

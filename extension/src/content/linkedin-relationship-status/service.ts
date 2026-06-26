@@ -127,6 +127,16 @@ function shouldPreserveWithdrawnStatus(
   return currentStatus === 'withdrawn' && (nextStatus === 'connect' || nextStatus === 'following');
 }
 
+function shouldPreserveUnavailableStatus(
+  currentStatus: FeedMemberInfo['status'],
+  nextStatus?: RelationshipResolution['status']
+): boolean {
+  return (
+    currentStatus === 'unavailable' &&
+    (nextStatus === 'connect' || nextStatus === 'following' || nextStatus === 'pending')
+  );
+}
+
 function hasActionIdentifiers(result: RelationshipStatusResult): boolean {
   return Boolean(result.profileUrn && result.memberNumericId);
 }
@@ -135,6 +145,10 @@ function canUseStatusResult(
   result: RelationshipStatusResult,
   options: FetchSingleStatusOptions = {}
 ): boolean {
+  if (result.status === 'unavailable') {
+    return true;
+  }
+
   return !options.requireActionIdentifiers || hasActionIdentifiers(result);
 }
 
@@ -143,14 +157,19 @@ function mergeActionIdentifierResult(
   source: RelationshipStatusResult
 ): RelationshipStatusResult {
   const preserveWithdrawn = primary.status === 'withdrawn' && (source.status === 'connect' || source.status === 'following');
+  const sourceUnavailable = source.status === 'unavailable';
+  const preserveUnavailable =
+    sourceUnavailable ||
+    primary.status === 'unavailable' &&
+    (source.status === 'connect' || source.status === 'following' || source.status === 'pending');
 
   return normalizeRelationshipResolution({
-    status: primary.status,
+    status: preserveUnavailable ? 'unavailable' : primary.status,
     profileUrn: primary.profileUrn || source.profileUrn,
-    canMessage: primary.canMessage ?? source.canMessage,
-    canFollow: source.canFollow ?? primary.canFollow,
-    canConnect: preserveWithdrawn ? false : primary.canConnect ?? source.canConnect,
-    isFollowing: source.isFollowing ?? primary.isFollowing,
+    canMessage: preserveUnavailable ? false : primary.canMessage ?? source.canMessage,
+    canFollow: preserveUnavailable ? false : source.canFollow ?? primary.canFollow,
+    canConnect: preserveWithdrawn || preserveUnavailable ? false : primary.canConnect ?? source.canConnect,
+    isFollowing: preserveUnavailable ? false : source.isFollowing ?? primary.isFollowing,
     memberNumericId: primary.memberNumericId || source.memberNumericId,
     isPremium: primary.isPremium ?? source.isPremium,
     profileImageUrl: primary.profileImageUrl || source.profileImageUrl,
@@ -162,13 +181,14 @@ function applyRelationshipResultToMember(
   result: RelationshipResolution
 ): void {
   const preserveWithdrawn = shouldPreserveWithdrawnStatus(member.status, result.status);
+  const preserveUnavailable = shouldPreserveUnavailableStatus(member.status, result.status);
 
-  member.status = preserveWithdrawn ? 'withdrawn' : result.status;
+  member.status = preserveUnavailable ? 'unavailable' : preserveWithdrawn ? 'withdrawn' : result.status;
   member.profileUrn = result.profileUrn;
-  member.canMessage = result.status === 'connected' ? true : result.canMessage;
-  member.canFollow = result.canFollow;
-  member.canConnect = preserveWithdrawn ? false : result.canConnect;
-  member.isFollowing = result.isFollowing;
+  member.canMessage = preserveUnavailable ? false : result.status === 'connected' ? true : result.canMessage;
+  member.canFollow = preserveUnavailable ? false : result.canFollow;
+  member.canConnect = preserveWithdrawn || preserveUnavailable ? false : result.canConnect;
+  member.isFollowing = preserveUnavailable ? false : result.isFollowing;
   member.memberNumericId = result.memberNumericId;
   member.isPremium = result.isPremium;
   member.profileImageUrl = result.profileImageUrl || member.profileImageUrl;
@@ -355,7 +375,7 @@ async function fetchSingleStatus(
 
   if (partialResult) {
     cacheResolvedStatus(username, partialResult);
-    if (options.requireActionIdentifiers) {
+    if (options.requireActionIdentifiers && partialResult.status !== 'unavailable') {
       throw new Error('Could not resolve LinkedIn relationship action identifiers');
     }
     return partialResult;

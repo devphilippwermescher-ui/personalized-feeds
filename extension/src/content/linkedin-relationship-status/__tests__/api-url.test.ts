@@ -97,6 +97,27 @@ describe('fetchStatusFromProfilePage — URL construction', () => {
     expect(url).toBe('https://www.linkedin.com/in/karen-w%C3%BCst/');
     expect(url).not.toContain('%25');
   });
+
+  it('returns unavailable for HTTP 404 profile pages', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      capturedUrls.push(url);
+      return {
+        ok: false,
+        status: 404,
+      } as Response;
+    }));
+
+    const { fetchStatusFromProfilePage } = await import('../api');
+    const result = await fetchStatusFromProfilePage('deleted-profile');
+
+    expect(result).toMatchObject({
+      status: 'unavailable',
+      canMessage: false,
+      canFollow: false,
+      canConnect: false,
+      isFollowing: false,
+    });
+  });
 });
 
 describe('resolveCanonicalLinkedInIdentity', () => {
@@ -151,5 +172,80 @@ describe('resolveCanonicalLinkedInIdentity', () => {
     );
 
     expect(result?.username).toBe('alina-oharova-a7b718259');
+  });
+});
+
+describe('sendLinkedInConnectRequest', () => {
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true,
+    }) as Response));
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('sends the Voyager invitation request with current relationship headers', async () => {
+    const { sendLinkedInConnectRequest } = await import('../api');
+    await sendLinkedInConnectRequest(
+      'urn:li:fsd_profile:ACoAAConnectTest',
+      'https://www.linkedin.com/in/connect-test/'
+    );
+
+    expect(fetch).toHaveBeenCalledWith(
+      'https://www.linkedin.com/voyager/api/voyagerRelationshipsDashMemberRelationships?action=verifyQuotaAndCreateV2&decorationId=com.linkedin.voyager.dash.deco.relationships.InvitationCreationResultWithInvitee-2',
+      expect.objectContaining({
+        method: 'POST',
+        credentials: 'include',
+        referrer: 'https://www.linkedin.com/in/connect-test/',
+        headers: expect.objectContaining({
+          accept: 'application/vnd.linkedin.normalized+json+2.1',
+          'content-type': 'application/json; charset=UTF-8',
+          'x-li-deco-include-micro-schema': 'true',
+          'x-li-lang': 'en_US',
+          'x-li-pem-metadata': 'Voyager - Profile Actions=topcard-primary-connect-action-click,Voyager - Invitations - Actions=invite-send',
+          'x-restli-protocol-version': '2.0.0',
+        }),
+        body: JSON.stringify({
+          invitee: {
+            inviteeUnion: {
+              memberProfile: 'urn:li:fsd_profile:ACoAAConnectTest',
+            },
+          },
+        }),
+      })
+    );
+  });
+
+  it('retries the connect request in the background when the content request fails', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      throw new Error('content fetch failed');
+    }));
+
+    const sendMessage = vi.fn((message, callback) => {
+      callback({ success: true });
+    });
+    vi.stubGlobal('chrome', {
+      runtime: {
+        sendMessage,
+        lastError: null,
+      },
+    });
+
+    const { sendLinkedInConnectRequest } = await import('../api');
+    await sendLinkedInConnectRequest(
+      'urn:li:fsd_profile:ACoAAConnectFallback',
+      'https://www.linkedin.com/in/connect-fallback/'
+    );
+
+    expect(sendMessage).toHaveBeenCalledWith(
+      {
+        type: 'LINKEDIN_CONNECT_REQUEST_BACKGROUND',
+        profileUrn: 'urn:li:fsd_profile:ACoAAConnectFallback',
+        referrerUrl: 'https://www.linkedin.com/in/connect-fallback/',
+      },
+      expect.any(Function)
+    );
   });
 });

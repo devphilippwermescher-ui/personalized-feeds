@@ -29,6 +29,14 @@ export function getMemberStatus(member: FeedMemberInfo): MemberStatus {
     return 'withdrawn';
   }
 
+  if (
+    member.status === 'unavailable' &&
+    (domStatus === 'connect' || domStatus === 'following' || domStatus === 'pending')
+  ) {
+    member.isFollowing = false;
+    return 'unavailable';
+  }
+
   if (domStatus) {
     if (domStatus === 'following') {
       member.isFollowing = true;

@@ -375,7 +375,8 @@ export const MODALS_CSS = `.lfa-share-modal {
   .lfa-member-status {
     border: none;
     border-radius: 999px;
-    width: 112px;
+    box-sizing: border-box;
+    width: 128px;
     height: 25px;
     min-height: 25px;
     padding: 0 8px;
@@ -442,14 +443,15 @@ export const MODALS_CSS = `.lfa-share-modal {
     border: 1px solid #d7e2fb;
   }
   .lfa-member-status--split-state {
-    width: 112px;
+    width: 128px;
   }
   .lfa-member-status-split-btn {
     appearance: none;
     -webkit-appearance: none;
     border: none;
     background: transparent;
-    flex: 1 1 50%;
+    flex: 0 0 50%;
+    min-width: 0;
     height: 100%;
     min-height: 25px;
     padding: 0 5px;
@@ -475,7 +477,7 @@ export const MODALS_CSS = `.lfa-share-modal {
     border-radius: 999px 0 0 999px;
   }
   .lfa-member-status--split-state .lfa-member-status-split-btn--follow {
-    flex: 0 0 49px;
+    flex-basis: 50%;
   }
   .lfa-member-status-split-btn--connect {
     color: #2563eb;
@@ -500,10 +502,10 @@ export const MODALS_CSS = `.lfa-share-modal {
     border-radius: 0 999px 999px 0;
   }
   .lfa-member-status-split-btn--state {
-    flex: 1 1 auto;
+    flex: 0 0 50%;
     cursor: default;
-    padding-left: 7px;
-    padding-right: 8px;
+    padding-left: 5px;
+    padding-right: 5px;
     border-radius: 0 999px 999px 0;
   }
   .lfa-member-status-split-btn--state:disabled {

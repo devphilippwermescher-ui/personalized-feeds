@@ -7,9 +7,51 @@ import {
   resolveStatusFromEntities,
 } from './parsers-structured';
 
+function getGraphQLErrorStatus(error: unknown): number | null {
+  const extensions = asRecord(asRecord(error)?.extensions);
+  const status = extensions?.status;
+  return typeof status === 'number' ? status : null;
+}
+
+function isProfileAccessDeniedError(error: unknown): boolean {
+  const record = asRecord(error);
+  const message = asString(record?.message) || '';
+  const extensions = asRecord(record?.extensions);
+  const exceptionClass = asString(extensions?.exceptionClass) || '';
+  const classification = asString(extensions?.classification) || '';
+  const status = getGraphQLErrorStatus(error);
+
+  return (
+    status === 403 &&
+    /DataFetchingException/i.test(classification) &&
+    /VoyagerUserVisibleException/i.test(exceptionClass) &&
+    /profile can.?t be accessed/i.test(message)
+  );
+}
+
+function parseUnavailableGraphQLError(payload: unknown): RelationshipResolution | null {
+  const errors = asArray(asRecord(payload)?.errors);
+  if (!errors.some(isProfileAccessDeniedError)) {
+    return null;
+  }
+
+  return {
+    status: 'unavailable',
+    canMessage: false,
+    canFollow: false,
+    canConnect: false,
+    isFollowing: false,
+  };
+}
+
 export function parseGraphQLRelationshipStatus(
   payload: unknown
 ): RelationshipResolution | null {
+  const unavailableErrorResult = parseUnavailableGraphQLError(payload);
+  if (unavailableErrorResult) {
+    return unavailableErrorResult;
+  }
+
   const root = asRecord(payload);
   const rawData = asRecord(root?.data);
   const data = asRecord(rawData?.data) || rawData;

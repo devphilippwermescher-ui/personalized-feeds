@@ -390,10 +390,16 @@ export async function updateProfileViewer(
   const shouldPreserveWithdrawn =
     existing?.status === 'withdrawn' &&
     (updates.status === 'connect' || updates.status === 'following');
+  const shouldPreserveUnavailable =
+    existing?.status === 'unavailable' &&
+    (updates.status === 'connect' || updates.status === 'following' || updates.status === 'pending');
   const safeUpdates = {
     ...updates,
     ...(shouldPreserveWithdrawn ? { status: 'withdrawn' as const, canConnect: false } : {}),
-    ...(existing?.isFollowing === true && typeof updates.isFollowing !== 'boolean'
+    ...(shouldPreserveUnavailable
+      ? { status: 'unavailable' as const, canMessage: false, canFollow: false, canConnect: false, isFollowing: false }
+      : {}),
+    ...(existing?.isFollowing === true && !shouldPreserveUnavailable && typeof updates.isFollowing !== 'boolean'
       ? { isFollowing: true }
       : {}),
     linkedinUsername,

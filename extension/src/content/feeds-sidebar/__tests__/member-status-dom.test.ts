@@ -1,7 +1,8 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getMemberStatus } from '../utils';
-import type { FeedMemberInfo } from '../types';
-import { renderMemberStatusAction } from '../logic/member-action-render';
+import type { FeedInfo, FeedMemberInfo } from '../types';
+import { bindMemberActionButtons, renderMemberStatusAction } from '../logic/member-action-render';
+import type { MemberActionDeps } from '../logic/member-action-types';
 
 function member(overrides: Partial<FeedMemberInfo> = {}): FeedMemberInfo {
   return {
@@ -220,5 +221,125 @@ describe('renderMemberStatusAction', () => {
     expect(element.textContent).not.toContain('Follow');
     expect(element.textContent).not.toContain('Connect');
     expect(element.textContent).toContain('Deleted');
+  });
+});
+
+describe('bindMemberActionButtons connect action', () => {
+  it('attempts the connect request when the latest status only proves the profile is followed', async () => {
+    const testMember = member({
+      status: 'following',
+      canConnect: true,
+      canFollow: true,
+      isFollowing: true,
+    });
+    const feed: FeedInfo = {
+      id: 'feed-1',
+      name: 'Feed',
+      color: '#2563eb',
+      memberCount: 1,
+    };
+    const wrapper = document.createElement('div');
+    wrapper.innerHTML = renderMemberStatusAction(feed.id, testMember, 'following').trim();
+    document.body.appendChild(wrapper);
+
+    const sendLinkedInConnectRequest = vi.fn().mockRejectedValue(new Error('network failed'));
+    const fetchLinkedInRelationshipStatus = vi.fn().mockResolvedValue({
+      status: 'following',
+      profileUrn: 'urn:li:fsd_profile:ACoAAConnectTest',
+      canMessage: false,
+      canFollow: true,
+      canConnect: false,
+      isFollowing: true,
+    });
+
+    const deps: MemberActionDeps = {
+      sendMsg: vi.fn(),
+      showToast: vi.fn(),
+      renderSidebarContent: vi.fn(),
+      openLinkedInMessage: vi.fn(),
+      openLinkedInProfile: vi.fn(),
+      fetchLinkedInRelationshipStatus,
+      resolveProfileUrn: vi.fn(),
+      sendLinkedInConnectRequest,
+      sendLinkedInFollowState: vi.fn(),
+      invalidateCacheForUser: vi.fn(),
+      getFeedMembersById: () => ({ [feed.id]: [testMember] }),
+      setFeedMembersById: vi.fn(),
+      getFeeds: () => [feed],
+      loadFeeds: vi.fn(),
+      persistResolvedMemberState: vi.fn(),
+      getActiveMemberEditor: vi.fn(() => null),
+      setActiveMemberEditor: vi.fn(),
+    };
+
+    bindMemberActionButtons(wrapper, deps);
+    wrapper.querySelector<HTMLButtonElement>('[data-member-action="connect"]')?.click();
+
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(sendLinkedInConnectRequest).toHaveBeenCalledWith(
+      'urn:li:fsd_profile:ACoAAConnectTest',
+      'https://www.linkedin.com/in/yuliia-biliavtseva/'
+    );
+  });
+
+  it('attempts the connect request when the visible connect action resolves as connect with canConnect=false', async () => {
+    const testMember = member({
+      status: 'connect',
+      canConnect: true,
+    });
+    const feed: FeedInfo = {
+      id: 'feed-1',
+      name: 'Feed',
+      color: '#2563eb',
+      memberCount: 1,
+    };
+    const wrapper = document.createElement('div');
+    wrapper.innerHTML = renderMemberStatusAction(feed.id, testMember, 'connect').trim();
+    document.body.appendChild(wrapper);
+
+    const sendLinkedInConnectRequest = vi.fn().mockRejectedValue(new Error('network failed'));
+    const fetchLinkedInRelationshipStatus = vi.fn().mockResolvedValue({
+      status: 'connect',
+      profileUrn: 'urn:li:fsd_profile:ACoAAConnectFalse',
+      canMessage: false,
+      canFollow: false,
+      canConnect: false,
+      isFollowing: false,
+    });
+
+    const deps: MemberActionDeps = {
+      sendMsg: vi.fn(),
+      showToast: vi.fn(),
+      renderSidebarContent: vi.fn(),
+      openLinkedInMessage: vi.fn(),
+      openLinkedInProfile: vi.fn(),
+      fetchLinkedInRelationshipStatus,
+      resolveProfileUrn: vi.fn(),
+      sendLinkedInConnectRequest,
+      sendLinkedInFollowState: vi.fn(),
+      invalidateCacheForUser: vi.fn(),
+      getFeedMembersById: () => ({ [feed.id]: [testMember] }),
+      setFeedMembersById: vi.fn(),
+      getFeeds: () => [feed],
+      loadFeeds: vi.fn(),
+      persistResolvedMemberState: vi.fn(),
+      getActiveMemberEditor: vi.fn(() => null),
+      setActiveMemberEditor: vi.fn(),
+    };
+
+    bindMemberActionButtons(wrapper, deps);
+    wrapper.querySelector<HTMLButtonElement>('[data-member-action="connect"]')?.click();
+
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(sendLinkedInConnectRequest).toHaveBeenCalledWith(
+      'urn:li:fsd_profile:ACoAAConnectFalse',
+      'https://www.linkedin.com/in/yuliia-biliavtseva/'
+    );
   });
 });
