@@ -10,6 +10,56 @@ import { connectRequestSentMessage } from '../../shared/toast-messages';
 import type { MemberActionDeps } from './member-action-types';
 import { escapeHtml } from './escape-html';
 
+function shouldPreserveWithdrawnStatus(
+  currentStatus: FeedMemberInfo['status'],
+  nextStatus?: FeedMemberInfo['status']
+): boolean {
+  return currentStatus === 'withdrawn' && (nextStatus === 'connect' || nextStatus === 'following');
+}
+
+function shouldPreserveUnavailableStatus(
+  currentStatus: FeedMemberInfo['status'],
+  nextStatus?: FeedMemberInfo['status']
+): boolean {
+  return (
+    currentStatus === 'unavailable' &&
+    (nextStatus === 'connect' || nextStatus === 'following' || nextStatus === 'pending')
+  );
+}
+
+function applyResolvedRelationshipToMember(
+  member: FeedMemberInfo,
+  relationship: Awaited<ReturnType<MemberActionDeps['fetchLinkedInRelationshipStatus']>>
+): void {
+  const preserveWithdrawn = shouldPreserveWithdrawnStatus(member.status, relationship.status);
+  const preserveUnavailable = shouldPreserveUnavailableStatus(member.status, relationship.status);
+
+  member.profileUrn = relationship.profileUrn;
+  member.status = preserveUnavailable ? 'unavailable' : preserveWithdrawn ? 'withdrawn' : relationship.status;
+  member.canMessage = preserveUnavailable ? false : relationship.canMessage;
+  member.canFollow = preserveUnavailable ? false : relationship.canFollow;
+  member.canConnect = preserveWithdrawn || preserveUnavailable ? false : relationship.canConnect;
+  member.isFollowing = preserveUnavailable ? false : relationship.isFollowing;
+  member.memberNumericId = relationship.memberNumericId;
+  member.isPremium = relationship.isPremium;
+  member.profileImageUrl = relationship.profileImageUrl || member.profileImageUrl;
+  member.statusResolvedAt = Date.now();
+}
+
+function getMemberSplitStateMarkup(status: ReturnType<typeof getMemberStatus>): string {
+  if (status !== 'withdrawn') {
+    return getMemberStatusMarkup(status);
+  }
+
+  return `
+      <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="8" cy="8" r="5.25"></circle>
+        <path d="M5.4 8h5.2"></path>
+      </svg>
+      <span>Resend</span>
+    `;
+}
+
 export function renderMemberAvatar(member: FeedMemberInfo): string {
   return member.profileImageUrl
     ? `<img class="lfa-member-avatar" src="${escapeHtml(member.profileImageUrl)}" alt="${escapeHtml(member.displayName)}" data-lfa-avatar-img="true" /><div class="lfa-member-avatar lfa-member-avatar--fallback" style="display:none;">${escapeHtml(getMemberInitials(member.displayName))}</div>`
@@ -53,7 +103,7 @@ export function renderMemberStatusAction(
     </div>`;
   }
 
-  if (status === 'pending' || status === 'connected' || status === 'withdrawn' || status === 'unavailable' || status === 'loading') {
+  if (status === 'connected' || status === 'unavailable' || status === 'loading') {
     const tooltip = getMemberStatusTooltip(status);
     const tooltipAttr = tooltip ? ` title="${escapeHtml(tooltip)}"` : '';
 
@@ -68,64 +118,68 @@ export function renderMemberStatusAction(
     </div>`;
   }
 
-  if (member.canFollow && member.canConnect) {
-    return `
-      <div class="lfa-member-status lfa-member-status--split" aria-label="Profile actions">
-        <button
-          class="lfa-member-status-split-btn lfa-member-status-split-btn--follow"
-          data-member-action="follow-toggle"
-          data-member-id="${escapeHtml(member.id)}"
-          data-feed-id="${escapeHtml(feedId)}"
-          data-follow-state="${member.isFollowing ? 'inactive' : 'active'}"
-          type="button"
-        >
-          ${member.isFollowing ? 'Unfollow' : 'Follow'}
-        </button>
-        <button
-          class="lfa-member-status-split-btn lfa-member-status-split-btn--connect"
-          data-member-action="connect"
-          data-member-id="${escapeHtml(member.id)}"
-          data-feed-id="${escapeHtml(feedId)}"
-          type="button"
-        >
-          Connect
-        </button>
-      </div>
-    `;
-  }
+  const isConnectActionAvailable = status === 'connect' || status === 'following';
+  const connectTooltip = isConnectActionAvailable ? getMemberStatusTooltip('connect') : getMemberStatusTooltip(status);
+  const connectTooltipAttr = connectTooltip ? ` title="${escapeHtml(connectTooltip)}"` : '';
+  const stateTooltip = !isConnectActionAvailable && connectTooltip
+    ? `<span class="lfa-member-status-tooltip" role="tooltip">${escapeHtml(connectTooltip)}</span>`
+    : '';
+  const followLabel = member.isFollowing ? 'Unfollow' : 'Follow';
+  const hasStateConnectArea = !isConnectActionAvailable;
+  const splitClass = hasStateConnectArea
+    ? 'lfa-member-status lfa-member-status--split lfa-member-status--split-state'
+    : 'lfa-member-status lfa-member-status--split';
+  const connectArea = isConnectActionAvailable
+    ? `<button
+        class="lfa-member-status-split-btn lfa-member-status-split-btn--connect"
+        data-member-action="connect"
+        data-member-id="${escapeHtml(member.id)}"
+        data-feed-id="${escapeHtml(feedId)}"
+        type="button"
+        aria-label="Send connect request"${connectTooltipAttr}
+      >
+        Connect
+      </button>`
+    : `<button
+        class="lfa-member-status-split-btn lfa-member-status-split-btn--${status} lfa-member-status-split-btn--state"
+        type="button"
+        aria-disabled="true"
+        aria-label="${escapeHtml(connectTooltip || 'Connection status')}"
+      >
+        ${getMemberSplitStateMarkup(status)}
+      </button>${stateTooltip}`;
 
-  if (member.canFollow && !member.canConnect) {
-    return `
+  return `
+    <div class="${splitClass}" aria-label="Profile actions">
       <button
-        class="lfa-member-status lfa-member-status--${member.isFollowing ? 'following' : 'follow'}"
+        class="lfa-member-status-split-btn lfa-member-status-split-btn--follow"
         data-member-action="follow-toggle"
         data-member-id="${escapeHtml(member.id)}"
         data-feed-id="${escapeHtml(feedId)}"
         data-follow-state="${member.isFollowing ? 'inactive' : 'active'}"
         type="button"
       >
-        <span>${member.isFollowing ? 'Unfollow' : 'Follow'}</span>
+        ${followLabel}
       </button>
-    `;
-  }
-
-  const tooltip = getMemberStatusTooltip(status);
-  const tooltipAttr = tooltip ? ` title="${escapeHtml(tooltip)}"` : '';
-
-  if (status === 'connect') {
-    return `<button class="lfa-member-status lfa-member-status--${status}" data-member-action="connect" data-member-id="${escapeHtml(member.id)}" data-feed-id="${escapeHtml(feedId)}" type="button" aria-label="Send connect request"${tooltipAttr}>
-      ${getMemberStatusMarkup(status)}
-    </button>`;
-  }
-
-  return `<div class="lfa-member-status lfa-member-status--${status}" aria-label="Connection status"${tooltipAttr}>
-    ${getMemberStatusMarkup(status)}
-  </div>`;
+      ${connectArea}
+    </div>
+  `;
 }
 
 function isConnectCooldownError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error || '');
   return /withdraw|cooldown|resend|invitation|invite|already sent|cannot send|unable to send/i.test(message);
+}
+
+function shouldSkipConnectRequest(
+  relationship: Awaited<ReturnType<MemberActionDeps['fetchLinkedInRelationshipStatus']>>
+): boolean {
+  return (
+    relationship.status === 'connected' ||
+    relationship.status === 'pending' ||
+    relationship.status === 'withdrawn' ||
+    relationship.status === 'unavailable'
+  );
 }
 
 export function bindMemberActionButtons(root: ParentNode, deps: MemberActionDeps): void {
@@ -191,26 +245,11 @@ export function bindMemberActionButtons(root: ParentNode, deps: MemberActionDeps
       try {
         try {
           const relationship = await fetchLinkedInRelationshipStatus(member);
-          member.profileUrn = relationship.profileUrn;
-          member.status = relationship.status;
-          member.canMessage = relationship.canMessage;
-          member.canFollow = relationship.canFollow;
-          member.canConnect = relationship.canConnect;
-          member.isFollowing = relationship.isFollowing;
-          member.memberNumericId = relationship.memberNumericId;
-          member.isPremium = relationship.isPremium;
-          member.profileImageUrl = relationship.profileImageUrl || member.profileImageUrl;
-          member.statusResolvedAt = Date.now();
+          applyResolvedRelationshipToMember(member, relationship);
           void persistResolvedMemberState?.(feedId, member);
           renderSidebarContent();
 
-          if (
-            relationship.status === 'connected' ||
-            relationship.status === 'pending' ||
-            relationship.status === 'withdrawn' ||
-            relationship.status === 'unavailable' ||
-            relationship.canConnect === false
-          ) {
+          if (shouldSkipConnectRequest(relationship)) {
             showToast('Profile status updated', 'success');
             return;
           }
@@ -221,15 +260,7 @@ export function bindMemberActionButtons(root: ParentNode, deps: MemberActionDeps
         if (!member.profileUrn) {
           try {
             const relationship = await fetchLinkedInRelationshipStatus(member);
-            member.profileUrn = relationship.profileUrn;
-            member.status = relationship.status;
-            member.canFollow = relationship.canFollow;
-            member.canConnect = relationship.canConnect;
-            member.isFollowing = relationship.isFollowing;
-            member.memberNumericId = relationship.memberNumericId;
-            member.isPremium = relationship.isPremium;
-            member.profileImageUrl = relationship.profileImageUrl || member.profileImageUrl;
-            member.statusResolvedAt = Date.now();
+            applyResolvedRelationshipToMember(member, relationship);
             void persistResolvedMemberState?.(feedId, member);
             renderSidebarContent();
           } catch {
@@ -245,7 +276,7 @@ export function bindMemberActionButtons(root: ParentNode, deps: MemberActionDeps
           throw new Error('Could not resolve LinkedIn profile URN');
         }
 
-        await sendLinkedInConnectRequest(member.profileUrn);
+        await sendLinkedInConnectRequest(member.profileUrn, member.linkedinUrl);
         invalidateCacheForUser(member.linkedinUsername);
         member.transientAction = 'connect';
         member.canConnect = false;
@@ -257,16 +288,11 @@ export function bindMemberActionButtons(root: ParentNode, deps: MemberActionDeps
           });
 
           const refreshed = await fetchLinkedInRelationshipStatus(member);
-          member.status = refreshed.status;
-          member.profileUrn = refreshed.profileUrn ?? member.profileUrn;
-          member.canMessage = refreshed.canMessage;
-          member.canFollow = refreshed.canFollow;
-          member.canConnect = refreshed.canConnect;
-          member.isFollowing = refreshed.isFollowing;
-          member.memberNumericId = refreshed.memberNumericId ?? member.memberNumericId;
-          member.isPremium = refreshed.isPremium;
-          member.profileImageUrl = refreshed.profileImageUrl || member.profileImageUrl;
-          member.statusResolvedAt = Date.now();
+          applyResolvedRelationshipToMember(member, {
+            ...refreshed,
+            profileUrn: refreshed.profileUrn ?? member.profileUrn,
+            memberNumericId: refreshed.memberNumericId ?? member.memberNumericId,
+          });
         } catch {
           member.status = 'pending';
           member.canConnect = false;
@@ -309,6 +335,24 @@ export function bindMemberActionButtons(root: ParentNode, deps: MemberActionDeps
       if (!memberId || !feedId) return;
 
       const member = (getFeedMembersById()[feedId] || []).find((item) => item.id === memberId);
+      const statusBeforeFollow = member?.status;
+      if (
+        member &&
+        member.linkedinUsername &&
+        (!member.memberNumericId || !member.profileUrn)
+      ) {
+        try {
+          const relationship = await fetchLinkedInRelationshipStatus(member, {
+            requireActionIdentifiers: true,
+          });
+          applyResolvedRelationshipToMember(member, relationship);
+          void persistResolvedMemberState?.(feedId, member);
+          renderSidebarContent();
+        } catch {
+          // Follow can proceed only after resolving the LinkedIn member identifiers.
+        }
+      }
+
       if (!member?.memberNumericId || !member.profileUrn || !member.linkedinUsername) {
         showToast(`Couldn't resolve LinkedIn follow data for ${member?.displayName || 'this profile'}`, 'error');
         return;
@@ -327,7 +371,17 @@ export function bindMemberActionButtons(root: ParentNode, deps: MemberActionDeps
         invalidateCacheForUser(member.linkedinUsername);
         member.canFollow = true;
         member.isFollowing = shouldFollow;
-        member.status = shouldFollow && !member.canConnect ? 'following' : member.status === 'following' ? 'connect' : member.status;
+        member.status =
+          statusBeforeFollow === 'withdrawn'
+            ? 'withdrawn'
+            : shouldFollow && !member.canConnect
+              ? 'following'
+              : member.status === 'following'
+                ? 'connect'
+                : member.status;
+        if (member.status === 'withdrawn') {
+          member.canConnect = false;
+        }
         member.statusResolvedAt = Date.now();
         void persistResolvedMemberState?.(feedId, member);
         renderSidebarContent();

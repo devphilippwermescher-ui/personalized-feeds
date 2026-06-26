@@ -244,7 +244,27 @@ export async function updateMemberInFeed(
     >
   >
 ): Promise<void> {
-  await updateDoc(doc(membersCollection(userId, feedId), memberId), updates);
+  const memberRef = doc(membersCollection(userId, feedId), memberId);
+  const existingSnapshot = await getDoc(memberRef);
+  const existing = existingSnapshot.exists() ? { id: existingSnapshot.id, ...existingSnapshot.data() } as FeedMember : null;
+  const shouldPreserveWithdrawn =
+    existing?.status === 'withdrawn' &&
+    (updates.status === 'connect' || updates.status === 'following');
+  const shouldPreserveUnavailable =
+    existing?.status === 'unavailable' &&
+    (updates.status === 'connect' || updates.status === 'following' || updates.status === 'pending');
+  const safeUpdates = {
+    ...updates,
+    ...(shouldPreserveWithdrawn ? { status: 'withdrawn' as const, canConnect: false } : {}),
+    ...(shouldPreserveUnavailable
+      ? { status: 'unavailable' as const, canMessage: false, canFollow: false, canConnect: false, isFollowing: false }
+      : {}),
+    ...(existing?.isFollowing === true && !shouldPreserveUnavailable && typeof updates.isFollowing !== 'boolean'
+      ? { isFollowing: true }
+      : {}),
+  };
+
+  await updateDoc(memberRef, safeUpdates);
   await updateDoc(doc(feedsCollection(userId), feedId), {
     updatedAt: Date.now(),
   });

@@ -129,6 +129,35 @@ function extractConnectionDegree(root: ParentNode): string {
   return match?.[1] || '';
 }
 
+function extractProfileUrnFromPage(): string {
+  const html = document.documentElement.innerHTML;
+  const match = html.match(/urn:li:fsd_profile:[A-Za-z0-9_-]+/);
+  return match?.[0] || '';
+}
+
+function extractMemberNumericIdFromPage(section: HTMLElement): string {
+  const explicit = section.getAttribute('data-member-id') || '';
+  if (/^\d+$/.test(explicit)) {
+    return explicit;
+  }
+
+  const html = document.documentElement.innerHTML;
+  const statePatterns = [
+    /urn:li:fsd_followingState:urn:li:member:(\d+)/i,
+    /state:invitation:urn:li:member:(\d+)/i,
+    /urn:li:member:(\d+)/i,
+  ];
+
+  for (const pattern of statePatterns) {
+    const match = html.match(pattern);
+    if (match?.[1]) {
+      return match[1];
+    }
+  }
+
+  return '';
+}
+
 function isLikelyPrimaryProfileImage(img: HTMLImageElement): boolean {
   const src = img.currentSrc || img.src || '';
   if (!src.includes('profile-displayphoto') && !src.includes('profile-framedphoto')) {
@@ -247,10 +276,14 @@ export function extractProfileData(): ProfileData | null {
 
   const connectionDegree = extractConnectionDegree(section);
   const memberId = section.getAttribute('data-member-id') || undefined;
+  const profileUrn = extractProfileUrnFromPage() || undefined;
+  const memberNumericId = extractMemberNumericIdFromPage(section) || memberId;
 
   return {
     linkedinUrl: `https://www.linkedin.com/in/${username}/`,
     linkedinUsername: username,
+    profileUrn,
+    memberNumericId,
     displayName,
     headline,
     profileImageUrl,

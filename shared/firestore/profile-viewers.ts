@@ -384,10 +384,28 @@ export async function updateProfileViewer(
     throw new Error('Invalid profile viewer id');
   }
 
-  await updateDoc(doc(profileViewersCollection(userId), linkedinUsername), {
+  const viewerRef = doc(profileViewersCollection(userId), linkedinUsername);
+  const existingSnapshot = await getDoc(viewerRef);
+  const existing = existingSnapshot.exists() ? existingSnapshot.data() as Partial<ProfileViewer> : null;
+  const shouldPreserveWithdrawn =
+    existing?.status === 'withdrawn' &&
+    (updates.status === 'connect' || updates.status === 'following');
+  const shouldPreserveUnavailable =
+    existing?.status === 'unavailable' &&
+    (updates.status === 'connect' || updates.status === 'following' || updates.status === 'pending');
+  const safeUpdates = {
     ...updates,
+    ...(shouldPreserveWithdrawn ? { status: 'withdrawn' as const, canConnect: false } : {}),
+    ...(shouldPreserveUnavailable
+      ? { status: 'unavailable' as const, canMessage: false, canFollow: false, canConnect: false, isFollowing: false }
+      : {}),
+    ...(existing?.isFollowing === true && !shouldPreserveUnavailable && typeof updates.isFollowing !== 'boolean'
+      ? { isFollowing: true }
+      : {}),
     linkedinUsername,
-  });
+  };
+
+  await updateDoc(viewerRef, safeUpdates);
 }
 
 export async function removeProfileViewer(userId: string, viewerId: string): Promise<void> {

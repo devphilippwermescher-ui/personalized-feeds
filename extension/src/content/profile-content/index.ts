@@ -7,6 +7,7 @@ import { injectProfileContentStyles } from './styles';
 import { createFeedCard, unmountFeedCard } from './template';
 import type { ProfileData } from './types';
 import { sendMessageToBackground, showToast } from './utils';
+import { hasRelationshipSignal } from '../shared/relationship-dom-signals';
 
 let feedCardInjected = false;
 let currentProfileData: ProfileData | null = null;
@@ -174,13 +175,21 @@ function removeExistingCard(): void {
 }
 
 function getRelationshipDomSignature(root: ParentNode): string {
-  const buttons = Array.from(root.querySelectorAll<HTMLButtonElement>('button'))
+  const buttons = Array.from(new Set([
+    ...Array.from(root.querySelectorAll<HTMLButtonElement>('button')),
+    ...Array.from(
+      document.querySelectorAll<HTMLButtonElement>(
+        '[role="menu"] button, [role="menuitem"], .artdeco-dropdown__content button'
+      )
+    ),
+  ]))
     .map((button) => {
       const text = button.textContent?.replace(/\s+/g, ' ').trim().toLowerCase() || '';
       const label = button.getAttribute('aria-label')?.replace(/\s+/g, ' ').trim().toLowerCase() || '';
       return `${text}|${label}`;
     })
     .filter((value) =>
+      hasRelationshipSignal({ text: value, label: '' }) ||
       /connect|invite|pending|withdraw|message|follow|unfollow|встановити|повідомлення|розглядається|скасувати/i.test(
         value
       )
@@ -215,7 +224,7 @@ function observeProfileRelationshipChanges(root: HTMLElement): void {
     scheduleProfileRelationshipSync(root);
   });
 
-  profileRelationshipObserver.observe(root, {
+  profileRelationshipObserver.observe(document.body, {
     childList: true,
     subtree: true,
     attributes: true,
