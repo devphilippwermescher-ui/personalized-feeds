@@ -266,6 +266,35 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  if (message.type === 'PROFILE_VIEWERS_STATUS_SYNC_QUEUE') {
+    getAuthenticatedFeedsUser()
+      .then(async (user) => {
+        if (!user) {
+          sendResponse(getFeedsAuthErrorResponse({ queued: false }));
+          return;
+        }
+
+        const priorityUsernames = Array.isArray(message.priorityUsernames)
+          ? (message.priorityUsernames as unknown[]).filter((value): value is string => typeof value === 'string')
+          : [];
+
+        await queueProfileViewersStatusSync({
+          trigger: 'manual',
+          priorityUsernames,
+          urgent: false,
+        });
+        sendResponse({ success: true, queued: true });
+      })
+      .catch((error) => {
+        sendResponse({
+          success: false,
+          queued: false,
+          error: normalizeFeedsError(error, 'Failed to queue profile visitor status sync'),
+        });
+      });
+    return true;
+  }
+
   if (message.type === 'PROFILE_VIEWERS_SYNC_API_NOW' || message.type === 'PROFILE_VIEWERS_SYNC_NOW') {
     getAuthenticatedFeedsUser()
       .then(async (user) => {

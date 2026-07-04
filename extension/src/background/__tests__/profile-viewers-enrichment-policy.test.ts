@@ -33,7 +33,11 @@ describe('profile viewer enrichment policy', () => {
     expect(profileViewerNeedsEnrichment(input(), existing(), false)).toBe(false);
   });
 
-  it('enriches new, incomplete, or ambiguous profiles', () => {
+  it('skips network enrichment for a new complete RSC profile', () => {
+    expect(profileViewerNeedsEnrichment(input({ profileImageUrl: validImage }), undefined, false)).toBe(false);
+  });
+
+  it('enriches new incomplete or ambiguous profiles', () => {
     expect(profileViewerNeedsEnrichment(input(), undefined, false)).toBe(true);
     expect(
       profileViewerNeedsEnrichment(

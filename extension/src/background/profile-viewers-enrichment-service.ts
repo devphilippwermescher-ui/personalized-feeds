@@ -1,6 +1,10 @@
 import type { ProfileViewer, ProfileViewerInput } from 'shared/types';
 import { findLinkedInPeopleSearchResultByUsername, type LinkedInPeopleSearchResult } from 'shared/linkedin-people-search';
-import { getAmbiguousProfileViewerImageUrls, isUsableLinkedInProfileImageUrl } from 'shared/profile-viewer-quality';
+import {
+  getAmbiguousProfileViewerImageUrls,
+  isUsableLinkedInProfileImageUrl,
+  isWeakProfileViewerDisplayName,
+} from 'shared/profile-viewer-quality';
 import { fetchWithTimeout } from './fetch-with-timeout';
 import { mergeProfileViewerWithPageMetadata, parseProfileViewerPageMetadata } from './profile-viewers-enrichment';
 import { hasCompleteProfileViewerIdentity, mapWithConcurrency, profileViewerNeedsEnrichment } from './profile-viewers-enrichment-policy';
@@ -81,12 +85,18 @@ async function enrichProfileViewerFromProfilePage(
   const peopleSearchImageUrl = isUsableLinkedInProfileImageUrl(peopleSearchMatch?.profileImageUrl)
     ? peopleSearchMatch.profileImageUrl
     : '';
+  const shouldUsePeopleSearchDisplayName = isWeakProfileViewerDisplayName(
+    viewer.displayName,
+    viewer.linkedinUsername
+  );
   const viewerWithTrustedData: ProfileViewerInput = {
     ...viewer,
-    displayName: peopleSearchMatch?.displayName || viewer.displayName,
-    headline: peopleSearchMatch?.headline || viewer.headline,
-    connectionDegree: peopleSearchMatch?.connectionDegree || viewer.connectionDegree,
-    profileImageUrl: peopleSearchImageUrl,
+    displayName: shouldUsePeopleSearchDisplayName
+      ? peopleSearchMatch?.displayName || viewer.displayName
+      : viewer.displayName,
+    headline: viewer.headline || peopleSearchMatch?.headline || '',
+    connectionDegree: viewer.connectionDegree || peopleSearchMatch?.connectionDegree || '',
+    profileImageUrl: viewer.profileImageUrl || peopleSearchImageUrl,
   };
   const createResult = (
     enrichedViewer: ProfileViewerInput,

@@ -51,4 +51,47 @@ describe('parseProfileViewersFromPayload', () => {
       viewers.find((viewer) => viewer.linkedinUsername === 'alia-waleczek-806248315')?.displayName
     ).not.toBe('Dima Lavrov');
   });
+
+  it('uses the visible card name when the profile slug does not match it', () => {
+    const payload = [
+      '"url":"https://www.linkedin.com/in/alexandrushka/"',
+      '"children":[[null,"Alexandra Mitskevich"',
+      '"children":["• 2nd"]',
+      '"children":["IT Talent Scout / IT Recruiter at ZNOJDZIEM"]',
+      '"children":["Viewed 2d ago"]',
+      '"a11yText":"Alexandra Mitskevich","shape":"circle","renderPayload":{"rootUrl":"https://media.licdn.com/dms/image/v2/D4D03AQ/profile-displayphoto-","imageRenditions":[{"width":100,"height":100,"suffixUrl":"scale_100_100/test.jpg"}],"assetUrn":"urn:li:digitalmediaAsset:test"}',
+    ].join(',');
+
+    expect(parseProfileViewersFromPayload(payload)).toEqual([
+      expect.objectContaining({
+        linkedinUsername: 'alexandrushka',
+        displayName: 'Alexandra Mitskevich',
+        headline: 'IT Talent Scout / IT Recruiter at ZNOJDZIEM',
+        connectionDegree: '2nd',
+        viewedAgoText: 'Viewed 2d ago',
+        profileImageUrl: 'https://media.licdn.com/dms/image/v2/D4D03AQ/profile-displayphoto-scale_100_100/test.jpg',
+      }),
+    ]);
+  });
+
+  it('keeps short role headlines instead of RSC boolean fragments', () => {
+    const payload = [
+      '"url":"https://www.linkedin.com/in/maksym-krapivnoy-a50870164/"',
+      '"children":[[null,"Maksym Krapivnoy"',
+      '"children":["• 1st"]',
+      '"children":["Recruiter"]',
+      '":false,"',
+      '"children":["Viewed 2w ago"]',
+    ].join(',');
+
+    expect(parseProfileViewersFromPayload(payload)).toEqual([
+      expect.objectContaining({
+        linkedinUsername: 'maksym-krapivnoy-a50870164',
+        displayName: 'Maksym Krapivnoy',
+        headline: 'Recruiter',
+        connectionDegree: '1st',
+        viewedAgoText: 'Viewed 2w ago',
+      }),
+    ]);
+  });
 });

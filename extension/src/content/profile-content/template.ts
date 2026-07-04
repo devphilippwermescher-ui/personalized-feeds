@@ -2,9 +2,7 @@ import { createElement, Fragment } from 'react';
 import { flushSync } from 'react-dom';
 import { createRoot, type Root } from 'react-dom/client';
 import { AuthPrompt } from './components/AuthPrompt/AuthPrompt';
-import { CreateFeedForm } from './components/CreateFeedForm/CreateFeedForm';
 import { FeedCard } from './components/FeedCard/FeedCard';
-import { FeedSelectionList } from './components/FeedSelectionList/FeedSelectionList';
 import type { ProfileData } from './types';
 
 const feedCardRoots = new WeakMap<HTMLElement, Root>();
@@ -17,8 +15,6 @@ export function createFeedCard(profile: ProfileData): HTMLDivElement {
     root.render(
       createElement(Fragment, null,
         createElement(FeedCard, { profile }),
-        createElement(FeedSelectionList),
-        createElement(CreateFeedForm),
         createElement(AuthPrompt)
       )
     );

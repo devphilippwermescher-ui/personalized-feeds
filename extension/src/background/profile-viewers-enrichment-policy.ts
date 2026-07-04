@@ -18,6 +18,10 @@ export function profileViewerNeedsEnrichment(
   existingViewer: ProfileViewer | undefined,
   existingImageIsAmbiguous: boolean
 ): boolean {
+  if (hasCompleteProfileViewerIdentity(viewer)) {
+    return false;
+  }
+
   if (!existingViewer || existingImageIsAmbiguous) {
     return true;
   }

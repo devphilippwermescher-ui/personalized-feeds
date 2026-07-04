@@ -1,17 +1,28 @@
 import { POST_BUTTONS_CSS } from './styles';
-import { CONTENT_COPY, getMemberCountLabel } from '../shared/copy';
+import { CONTENT_COPY } from '../shared/copy';
 import type { FeedSummary, PostAuthorProfile } from './types';
-import { feedAddedMessage, profileAlreadyInFeedMessage } from '../shared/toast-messages';
+import { feedAddedMessage, feedCreatedAndProfileAddedMessage, feedCreatedButProfileAddFailedMessage, profileAlreadyInFeedMessage } from '../shared/toast-messages';
 import { showToast } from '../shared/toast';
-import { escapeHtml, extractPostAuthorProfile, findPostAuthorDrawerHost, findPostCandidates } from './utils';
+import { extractPostAuthorProfile, findPostAuthorDrawerHost, findPostCandidates } from './utils';
 import { dispatchFeedMemberAdded } from '../feeds-sidebar/sync-events';
 import type { FeedMemberInfo } from '../feeds-sidebar/types';
 import { enrichProfileDataForFeed } from '../shared/enrich-profile-data';
+import {
+  ensureProfileFeedModals,
+  getCreateFeedModalElements,
+  getSelectedCreateFeedColor,
+  renderFeedModalEmpty,
+  renderFeedModalLoading,
+  renderFeedModalOption,
+  resetCreateFeedModalFields,
+  setProfileFeedModalContext,
+} from '../shared/profile-feed-modals';
+import { injectSharedStyles } from '../../shared/ui';
 
 const POST_FLAG = 'data-lfa-post-buttons-bound';
 const STYLE_ID = 'lfa-post-buttons-styles';
-const MODAL_ID = 'lfa-post-feed-modal-overlay';
-const TOGGLE_ID = 'lfa-post-toggle-btn';
+const MODAL_ID = 'pf-feed-modal-overlay';
+const CREATE_MODAL_ID = 'pf-create-feed-overlay';
 const DRAWER_ID = 'lfa-post-drawer-btn';
 const POST_CONTROL_EVENTS = ['pointerdown', 'mousedown', 'mouseup', 'touchstart', 'click'] as const;
 
@@ -20,6 +31,7 @@ let scanTimer: number | null = null;
 let iconUrl = '';
 let activeProfile: PostAuthorProfile | null = null;
 let globalPostControlEventsBound = false;
+let createFeedSubmitInFlight = false;
 const postControlProfiles = new WeakMap<HTMLElement, PostAuthorProfile>();
 
 function sendMessage<T>(message: Record<string, unknown>): Promise<T | null> {
@@ -33,6 +45,7 @@ function ensureStyles(): void {
     return;
   }
 
+  injectSharedStyles();
   const style = document.createElement('style');
   style.id = STYLE_ID;
   style.textContent = POST_BUTTONS_CSS;
@@ -40,38 +53,35 @@ function ensureStyles(): void {
 }
 
 function ensureModal(): HTMLDivElement {
-  const existing = document.getElementById(MODAL_ID) as HTMLDivElement | null;
-  if (existing) {
-    return existing;
+  ensureProfileFeedModals();
+
+  const overlay = document.getElementById(MODAL_ID) as HTMLDivElement | null;
+  const createButton = document.getElementById('pf-feed-modal-create');
+  if (createButton && createButton.getAttribute('data-post-create-feed-bound') !== 'true') {
+    createButton.addEventListener('click', () => {
+      if (overlay?.dataset.feedModalContext !== 'post') {
+        return;
+      }
+      openCreateFeedModal();
+    });
+    createButton.setAttribute('data-post-create-feed-bound', 'true');
   }
 
-  const overlay = document.createElement('div');
-  overlay.id = MODAL_ID;
-  overlay.className = 'lfa-post-feed-modal-overlay';
-  overlay.innerHTML = `
-    <div class="lfa-post-feed-modal">
-      <button class="lfa-post-feed-modal__close" type="button" aria-label="Close">&times;</button>
-      <div class="lfa-post-feed-modal__header">
-        <h3 class="lfa-post-feed-modal__title">${CONTENT_COPY.postButtons.addToFeedTitle}</h3>
-        <div class="lfa-post-feed-modal__subtitle" id="lfa-post-feed-modal-subtitle"></div>
-      </div>
-      <div class="lfa-post-feed-modal__body" id="lfa-post-feed-modal-body"></div>
-      <div class="lfa-post-feed-modal__footer">
-        <div class="lfa-post-feed-modal__hint">${CONTENT_COPY.postButtons.chooseFeedHint}</div>
-      </div>
-    </div>
-  `;
+  if (!overlay) {
+    throw new Error('Feed modal is unavailable');
+  }
+  return overlay;
+}
 
-  overlay.addEventListener('click', (event) => {
-    if (event.target === overlay) {
-      overlay.style.display = 'none';
-    }
-  });
-  overlay.querySelector('.lfa-post-feed-modal__close')?.addEventListener('click', () => {
-    overlay.style.display = 'none';
-  });
+function ensureCreateFeedModal(): HTMLDivElement {
+  ensureProfileFeedModals();
 
-  document.body.appendChild(overlay);
+  const overlay = document.getElementById(CREATE_MODAL_ID) as HTMLDivElement | null;
+  if (!overlay) {
+    throw new Error('Create feed modal is unavailable');
+  }
+
+  bindCreateFeedModal(overlay);
   return overlay;
 }
 
@@ -81,6 +91,19 @@ async function getFeeds(): Promise<FeedSummary[]> {
     throw new Error(response?.error || 'Failed to load feeds');
   }
   return response.feeds || [];
+}
+
+async function createFeed(name: string, color: string, description = ''): Promise<FeedSummary> {
+  const response = await sendMessage<{ success: boolean; feed?: FeedSummary; error?: string }>({
+    type: 'FEEDS_CREATE',
+    name,
+    description,
+    color,
+  });
+  if (!response?.success || !response.feed) {
+    throw new Error(response?.error || 'Failed to create feed');
+  }
+  return response.feed;
 }
 
 async function enrichPostProfile(profile: PostAuthorProfile): Promise<PostAuthorProfile> {
@@ -133,58 +156,128 @@ async function addProfileToFeed(feedId: string, feedName: string, profile: PostA
   return added;
 }
 
+function renderFeedOptions(feeds: FeedSummary[], memberships: Map<string, string>): string {
+  if (feeds.length === 0) {
+    return renderFeedModalEmpty(CONTENT_COPY.postButtons.noFeedsTitle, CONTENT_COPY.profile.noFeedsHint);
+  }
+
+  return feeds
+    .map((feed) => {
+      return renderFeedModalOption({
+        id: feed.id,
+        name: feed.name,
+        color: feed.color,
+        memberCount: feed.memberCount,
+        isMember: memberships.has(feed.id),
+        element: 'button',
+      });
+    })
+    .join('');
+}
+
+function resetCreateFeedModal(overlay: HTMLElement): void {
+  resetCreateFeedModalFields(overlay);
+}
+
+function openCreateFeedModal(): void {
+  const feedOverlay = document.getElementById(MODAL_ID);
+  const overlay = ensureCreateFeedModal();
+  feedOverlay?.style.setProperty('display', 'none');
+  setProfileFeedModalContext(overlay, 'post');
+  resetCreateFeedModal(overlay);
+  overlay.style.display = 'flex';
+  window.setTimeout(() => {
+    getCreateFeedModalElements()?.nameInput.focus();
+  }, 80);
+}
+
+function bindCreateFeedModal(overlay: HTMLElement): void {
+  if (overlay.getAttribute('data-post-create-feed-submit-bound') === 'true') {
+    return;
+  }
+
+  const elements = getCreateFeedModalElements();
+  if (!elements) {
+    return;
+  }
+  const { nameInput, descriptionInput, submitButton } = elements;
+
+  overlay.querySelectorAll<HTMLElement>('.pf-color-option').forEach((button) => {
+    button.addEventListener('click', () => {
+      overlay.querySelectorAll<HTMLElement>('.pf-color-option').forEach((colorButton) => {
+        const isSelected = colorButton === button;
+        colorButton.classList.toggle('active', isSelected);
+      });
+    });
+  });
+
+  submitButton.addEventListener('click', async (event) => {
+    event.preventDefault();
+    if (overlay.dataset.feedModalContext !== 'post' || !activeProfile || createFeedSubmitInFlight) {
+      return;
+    }
+
+    const feedName = nameInput.value.trim();
+    if (!feedName) {
+      showToast('Enter a feed name', 'error');
+      nameInput.focus();
+      return;
+    }
+
+    createFeedSubmitInFlight = true;
+    submitButton.disabled = true;
+    nameInput.disabled = true;
+    descriptionInput.disabled = true;
+    submitButton.textContent = CONTENT_COPY.profile.creatingFeedSubmit;
+    let createdFeedName = '';
+    try {
+      const feed = await createFeed(feedName, getSelectedCreateFeedColor(), descriptionInput.value.trim());
+      createdFeedName = feed.name;
+      submitButton.textContent = CONTENT_COPY.profile.addToFeedSubmitting;
+      const added = await addProfileToFeed(feed.id, feed.name, activeProfile);
+      overlay.style.display = 'none';
+      showToast(
+        added
+          ? feedCreatedAndProfileAddedMessage(feed.name)
+          : profileAlreadyInFeedMessage(activeProfile.displayName, feed.name),
+        added ? 'success' : 'error'
+      );
+    } catch (createError) {
+      const message = createError instanceof Error ? createError.message : 'Failed to create feed';
+      showToast(createdFeedName ? feedCreatedButProfileAddFailedMessage(createdFeedName) : message, 'error');
+      submitButton.disabled = false;
+      nameInput.disabled = false;
+      descriptionInput.disabled = false;
+      submitButton.textContent = CONTENT_COPY.profile.createFeedSubmit;
+    } finally {
+      createFeedSubmitInFlight = false;
+    }
+  });
+  overlay.setAttribute('data-post-create-feed-submit-bound', 'true');
+}
+
 async function openFeedModal(profile: PostAuthorProfile, feeds: FeedSummary[]): Promise<void> {
   const overlay = ensureModal();
-  const body = overlay.querySelector<HTMLElement>('#lfa-post-feed-modal-body');
-  const subtitle = overlay.querySelector<HTMLElement>('#lfa-post-feed-modal-subtitle');
-  if (!body || !subtitle) {
+  const body = overlay.querySelector<HTMLElement>('#pf-feed-modal-body');
+  if (!body) {
     return;
   }
 
   activeProfile = profile;
-  subtitle.innerHTML = CONTENT_COPY.postButtons.authorAddSubtitle(escapeHtml(profile.displayName));
-  body.innerHTML = `<div class="lfa-post-feed-modal__empty">${CONTENT_COPY.postButtons.loadingFeeds}</div>`;
+  setProfileFeedModalContext(overlay, 'post');
+  body.innerHTML = renderFeedModalLoading(CONTENT_COPY.postButtons.loadingFeeds, true);
   overlay.style.display = 'flex';
 
   const enrichedProfile = await enrichPostProfile(profile);
   activeProfile = enrichedProfile;
-  subtitle.innerHTML = CONTENT_COPY.postButtons.authorAddSubtitle(escapeHtml(enrichedProfile.displayName));
 
   const memberships = await getMemberships(enrichedProfile);
 
-  if (feeds.length === 0) {
-    body.innerHTML = `
-        <div class="lfa-post-feed-modal__empty">
-        <div>${CONTENT_COPY.postButtons.noFeedsTitle}</div>
-        <div class="lfa-post-feed-modal__hint">${CONTENT_COPY.postButtons.noFeedsHint}</div>
-      </div>
-    `;
-    return;
-  }
+  body.innerHTML = `
+    ${renderFeedOptions(feeds, memberships)}
+  `;
 
-  body.innerHTML = feeds
-    .map((feed) => {
-      const isMember = memberships.has(feed.id);
-      return `
-        <button
-          class="lfa-post-feed-option${isMember ? ' already-added' : ''}"
-          type="button"
-          data-feed-id="${escapeHtml(feed.id)}"
-          data-feed-name="${escapeHtml(feed.name)}"
-          ${isMember ? 'disabled' : ''}
-        >
-          <span class="lfa-post-feed-option-left">
-            <span class="lfa-post-feed-option-dot" style="background:${escapeHtml(feed.color || '#615DEC')}"></span>
-            <span class="lfa-post-feed-option-name">${escapeHtml(feed.name)}</span>
-            <span class="lfa-post-feed-option-count">${getMemberCountLabel(feed.memberCount)}</span>
-          </span>
-          ${isMember ? '<span class="lfa-post-feed-option-check">&#10003;</span>' : ''}
-        </button>
-      `;
-    })
-    .join('');
-
-  body.querySelectorAll<HTMLButtonElement>('.lfa-post-feed-option:not(.already-added)').forEach((button) => {
+  body.querySelectorAll<HTMLButtonElement>('.pf-feed-option:not(.already-added)').forEach((button) => {
     button.addEventListener('click', async () => {
       if (!activeProfile) {
         return;
@@ -225,16 +318,6 @@ async function handlePostButtonClick(profile: PostAuthorProfile): Promise<void> 
   await openFeedModal(profile, feeds);
 }
 
-function buildToggleButton(): HTMLButtonElement {
-  const button = document.createElement('button');
-  button.type = 'button';
-  button.className = 'lfa-post-toggle-btn';
-  button.title = CONTENT_COPY.postButtons.buttonAria;
-  button.setAttribute('aria-label', CONTENT_COPY.postButtons.buttonAria);
-  button.innerHTML = `<img src="${iconUrl}" alt="" width="14" height="14" />`;
-  return button;
-}
-
 function buildDrawerButton(): HTMLButtonElement {
   const button = document.createElement('button');
   button.type = 'button';
@@ -257,6 +340,10 @@ function stopLinkedInNavigation(event: Event): void {
 }
 
 function findPostControlFromEvent(event: Event): HTMLElement | null {
+  if (event.target instanceof Element && event.target.closest(`#${MODAL_ID}, #${CREATE_MODAL_ID}`)) {
+    return null;
+  }
+
   const targetControl = event.target instanceof Element
     ? event.target.closest<HTMLElement>('[data-lfa-post-control]')
     : null;
@@ -358,19 +445,7 @@ function injectButtonsIntoPost(post: HTMLElement): void {
     drawerHost.appendChild(wrapper);
   }
 
-  if (!post.querySelector('.lfa-post-toggle')) {
-    if (window.getComputedStyle(post).position === 'static') {
-      post.style.position = 'relative';
-    }
-    post.style.overflow = 'visible';
-    const toggleWrap = document.createElement('div');
-    toggleWrap.className = 'lfa-post-toggle';
-    const toggleButton = buildToggleButton();
-    toggleButton.dataset.lfaPostControl = TOGGLE_ID;
-    bindPostControlButton(toggleButton, profile);
-    toggleWrap.appendChild(toggleButton);
-    post.appendChild(toggleWrap);
-  }
+  post.querySelectorAll('.lfa-post-toggle').forEach((element) => element.remove());
 }
 
 function scanPosts(): void {
@@ -413,5 +488,4 @@ export function destroyPostButtons(): void {
   removeGlobalPostControlEvents();
   document.querySelectorAll('.lfa-post-toggle, .lfa-post-drawer-btn-wrapper').forEach((element) => element.remove());
   document.querySelectorAll(`[${POST_FLAG}]`).forEach((element) => element.removeAttribute(POST_FLAG));
-  document.getElementById(MODAL_ID)?.remove();
 }

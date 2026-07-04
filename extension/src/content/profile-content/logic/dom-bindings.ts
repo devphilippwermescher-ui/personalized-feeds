@@ -7,6 +7,7 @@ import {
 } from '../../shared/toast-messages';
 import { CONTENT_COPY } from '../../shared/copy';
 import { enrichProfileDataForFeed } from '../../shared/enrich-profile-data';
+import { getCreateFeedModalElements, getSelectedCreateFeedColor } from '../../shared/profile-feed-modals';
 
 interface DomBindingDeps {
   handleAddToFeed: () => Promise<void>;
@@ -79,14 +80,14 @@ export function setupProfileContentDomBindings(deps: DomBindingDeps): void {
       return;
     }
 
-    const nameInput = document.getElementById('pf-create-feed-name') as HTMLInputElement | null;
-    const descInput = document.getElementById('pf-create-feed-desc') as HTMLInputElement | null;
-    const activeColor = document.querySelector('.pf-color-option.active') as HTMLElement | null;
-    const createOverlay = document.getElementById('pf-create-feed-overlay');
-    const submitButton = document.getElementById('pf-create-feed-submit') as HTMLButtonElement | null;
+    const elements = getCreateFeedModalElements();
+    if (!elements) {
+      return;
+    }
+    const { overlay: createOverlay, nameInput, descriptionInput, submitButton } = elements;
 
     const name = nameInput?.value.trim();
-    if (!name || !submitButton) {
+    if (!name) {
       nameInput?.focus();
       return;
     }
@@ -99,8 +100,8 @@ export function setupProfileContentDomBindings(deps: DomBindingDeps): void {
       const result = (await deps.sendMessageToBackground({
         type: 'FEEDS_CREATE',
         name,
-        description: descInput?.value.trim() || '',
-        color: activeColor?.getAttribute('data-color') || '#615DEC',
+        description: descriptionInput.value.trim(),
+        color: getSelectedCreateFeedColor(),
       })) as { success: boolean; feed?: FeedInfo; error?: string } | null;
 
       const currentProfileData = deps.getCurrentProfileData();
@@ -116,9 +117,7 @@ export function setupProfileContentDomBindings(deps: DomBindingDeps): void {
           profileData: enrichedProfileData,
         })) as { success: boolean; member?: unknown; alreadyExists?: boolean } | null;
 
-        if (createOverlay) {
-          createOverlay.style.display = 'none';
-        }
+        createOverlay.style.display = 'none';
 
         if (addResult?.success) {
           if (addResult.alreadyExists) {

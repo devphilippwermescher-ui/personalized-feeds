@@ -2,7 +2,6 @@ import type { ProfileViewerInput, ProfileViewerSearchInput } from 'shared/types'
 import { fetchWithTimeout } from './fetch-with-timeout';
 import { validateProfileViewersRscPayload } from './profile-viewers-response';
 import { parseProfileViewersFromPayload } from './profile-viewers-payload-parser';
-import { extractProfileViewerSearches } from './profile-viewer-searches';
 import { extractPrivateProfileViewerCount } from './profile-viewer-private-count';
 import {
   extractRecruiterProfileViewerCount,
@@ -84,6 +83,18 @@ export interface ProfileViewersRscPage {
   nextCursor: ProfileViewersPaginationCursor | null;
 }
 
+function assignVisibleViewerPositions(viewers: ProfileViewerInput[]): void {
+  [...viewers]
+    .sort(
+      (left, right) =>
+        (left.sourceIndex ?? Number.MAX_SAFE_INTEGER) -
+        (right.sourceIndex ?? Number.MAX_SAFE_INTEGER)
+    )
+    .forEach((viewer, listPosition) => {
+      viewer.listPosition = listPosition;
+    });
+}
+
 async function fetchProfileViewersRscPage(
   url: string,
   body: string,
@@ -137,30 +148,14 @@ async function fetchProfileViewersRscPage(
 
   try {
     const viewers = parseProfileViewersFromPayload(payload);
-    const searches = extractProfileViewerSearches(payload);
     const privateViewerCount = extractPrivateProfileViewerCount(payload);
     const recruiterViewerCount = extractRecruiterProfileViewerCount(payload);
     const recruiterViewerUrl = extractRecruiterProfileViewerUrl(payload);
-    const orderedItems = [
-      ...viewers.map((viewer) => ({
-        type: 'profile' as const,
-        sourceIndex: viewer.sourceIndex ?? Number.MAX_SAFE_INTEGER,
-        value: viewer,
-      })),
-      ...searches.map((search) => ({
-        type: 'search' as const,
-        sourceIndex: search.sourceIndex ?? Number.MAX_SAFE_INTEGER,
-        value: search,
-      })),
-    ].sort((left, right) => left.sourceIndex - right.sourceIndex);
-
-    orderedItems.forEach((item, listPosition) => {
-      item.value.listPosition = listPosition;
-    });
+    assignVisibleViewerPositions(viewers);
 
     return {
       viewers,
-      searches,
+      searches: [],
       privateViewerCount,
       recruiterViewerCount,
       recruiterViewerUrl,

@@ -4,9 +4,16 @@ import {
 } from './relationship';
 import type { FeedInfo, FeedMembership, ProfileData } from '../types';
 import { feedAddedMessage, profileAlreadyInFeedMessage, profileRemovedFromFeedMessage } from '../../shared/toast-messages';
-import { CONTENT_COPY, getMemberCountLabel } from '../../shared/copy';
+import { CONTENT_COPY } from '../../shared/copy';
 import { escapeHtml } from '../utils';
 import { enrichProfileDataForFeed } from '../../shared/enrich-profile-data';
+import {
+  getCreateFeedModalElements,
+  renderFeedModalLoading,
+  renderFeedModalOption,
+  resetCreateFeedModalFields,
+  setProfileFeedModalContext,
+} from '../../shared/profile-feed-modals';
 
 interface FeedActionDeps {
   getCurrentProfileData: () => ProfileData | null;
@@ -60,12 +67,7 @@ export function createFeedActions(deps: FeedActionDeps) {
   }
 
   function renderFeedModalLoadingState(body: HTMLElement): void {
-    body.innerHTML = `
-      <div class="pf-feed-modal-loading">
-        <div class="pf-feed-modal-loading-spinner pf-inline-spinner" aria-hidden="true"></div>
-        <span>${CONTENT_COPY.profile.loadingFeeds}</span>
-      </div>
-    `;
+    body.innerHTML = renderFeedModalLoading(CONTENT_COPY.profile.loadingFeeds, true);
   }
 
   async function checkAuth(): Promise<boolean> {
@@ -85,6 +87,7 @@ export function createFeedActions(deps: FeedActionDeps) {
       return;
     }
 
+    setProfileFeedModalContext(overlay, 'profile');
     overlay.style.display = 'flex';
     resetFeedSelectionModalState(body);
     renderFeedModalLoadingState(body);
@@ -100,22 +103,13 @@ export function createFeedActions(deps: FeedActionDeps) {
 
     body.innerHTML = feeds
       .map((feed) => {
-        const isMember = membershipMap.has(feed.id);
-        return `
-          <div class="pf-feed-option ${isMember ? 'already-added' : ''}"
-               data-feed-id="${feed.id}"
-               data-feed-name="${escapeHtml(feed.name)}"
-               ${isMember ? '' : 'role="button" tabindex="0"'}>
-            <div class="pf-feed-option-left">
-              <div class="pf-feed-option-dot" style="background:${escapeHtml(feed.color || '#615DEC')}"></div>
-              <span class="pf-feed-option-name">${escapeHtml(feed.name)}</span>
-              <span class="pf-feed-option-count">${getMemberCountLabel(feed.memberCount)}</span>
-            </div>
-            <div class="pf-feed-option-status">
-              ${isMember ? '<span class="pf-feed-option-check">&#10003;</span>' : ''}
-            </div>
-          </div>
-        `;
+        return renderFeedModalOption({
+          id: feed.id,
+          name: feed.name,
+          color: feed.color,
+          memberCount: feed.memberCount,
+          isMember: membershipMap.has(feed.id),
+        });
       })
       .join('');
 
@@ -184,22 +178,12 @@ export function createFeedActions(deps: FeedActionDeps) {
       feedModal.style.display = 'none';
     }
     if (overlay) {
+      setProfileFeedModalContext(overlay, 'profile');
+      resetCreateFeedModalFields(overlay);
       overlay.style.display = 'flex';
     }
 
-    const nameInput = document.getElementById('pf-create-feed-name') as HTMLInputElement | null;
-    if (nameInput) {
-      nameInput.value = '';
-      nameInput.focus();
-    }
-
-    const descInput = document.getElementById('pf-create-feed-desc') as HTMLInputElement | null;
-    if (descInput) {
-      descInput.value = '';
-    }
-
-    document.querySelectorAll('.pf-color-option').forEach((element) => element.classList.remove('active'));
-    document.querySelector('.pf-color-option[data-color="#615DEC"]')?.classList.add('active');
+    getCreateFeedModalElements()?.nameInput.focus();
   }
 
   function showAuthModal(): void {

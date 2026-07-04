@@ -2,7 +2,7 @@ import { normalizeLinkedInUsername } from 'shared/linkedin-identity';
 import type { ProfileViewer } from 'shared/types';
 
 export const PROFILE_VIEWERS_STATUS_STALE_MS = 60 * 60 * 1000;
-export const PROFILE_VIEWERS_STATUS_BATCH_LIMIT = 20;
+export const PROFILE_VIEWERS_STATUS_BATCH_LIMIT = 5;
 
 function normalizePriorityUsernames(usernames: string[] = []): string[] {
   return Array.from(

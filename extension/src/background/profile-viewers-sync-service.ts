@@ -1,13 +1,11 @@
 import type { User } from 'firebase/auth';
 import {
   deleteStaleProfileViewerCache,
-  getProfileViewerSearches,
   getProfileViewers,
   updateProfileViewerSummary,
-  upsertProfileViewerSearches,
   upsertProfileViewers,
 } from 'shared/firestore-service';
-import type { ProfileViewerInput, ProfileViewerSearchInput } from 'shared/types';
+import type { ProfileViewerInput } from 'shared/types';
 import { mergeProfileViewerCandidates } from './profile-viewers-parser-merge';
 import {
   createRecentProfileViewerSnapshot,
@@ -50,15 +48,9 @@ export async function syncProfileViewersViaApi(
     );
   }
 
-  const [existingViewers, existingSearches] = await Promise.all([
-    getProfileViewers(user.uid),
-    getProfileViewerSearches(user.uid),
-  ]);
+  const existingViewers = await getProfileViewers(user.uid);
   const existingByUsername = new Map(
     existingViewers.map((viewer) => [viewer.linkedinUsername.toLowerCase(), viewer])
-  );
-  const existingSearchesByKey = new Map(
-    existingSearches.map((search) => [search.searchKey, search])
   );
   const existingUsernames = new Set(existingByUsername.keys());
   const csrfToken = await getLinkedInCsrfToken();
@@ -76,15 +68,12 @@ export async function syncProfileViewersViaApi(
       ? syncState.backfillStartedAt || Date.now()
       : Date.now();
   const collectedViewers: ProfileViewerInput[] = [];
-  const collectedSearches = new Map<string, ProfileViewerSearchInput>();
   const newProfileUsernames: string[] = [];
   const visitedCursors = new Set<number>();
   let requestCount = 0;
   let pagesFetched = 0;
   let savedCount = 0;
   let newCount = 0;
-  let searchSavedCount = 0;
-  let newSearchCount = 0;
   let privateViewerCount: number | undefined;
   let recruiterViewerCount: number | undefined;
   let recruiterViewerUrl: string | undefined;
@@ -138,17 +127,6 @@ export async function syncProfileViewersViaApi(
     savedCount += writeResult.savedCount;
     newCount += writeResult.newCount;
     newProfileUsernames.push(...writeResult.newProfileUsernames);
-    const searchWriteResult = await upsertProfileViewerSearches(
-      user.uid,
-      page.searches,
-      Array.from(existingSearchesByKey.values()),
-      {
-        seenAt: syncSeenAt,
-        positionOffset,
-      }
-    );
-    searchSavedCount += searchWriteResult.savedCount;
-    newSearchCount += searchWriteResult.newCount;
     if (page.privateViewerCount !== null) {
       privateViewerCount = page.privateViewerCount;
     }
@@ -158,25 +136,6 @@ export async function syncProfileViewersViaApi(
     if (page.recruiterViewerUrl) {
       recruiterViewerUrl = page.recruiterViewerUrl;
     }
-    page.searches.forEach((search) => {
-      const existing = existingSearchesByKey.get(search.searchKey);
-      existingSearchesByKey.set(search.searchKey, {
-        id: encodeURIComponent(search.searchKey),
-        itemType: 'search',
-        searchKey: search.searchKey,
-        searchUrl: search.searchUrl,
-        displayName: search.displayName,
-        keywords: search.keywords,
-        currentCompany: search.currentCompany,
-        viewedAgoText: search.viewedAgoText,
-        firstSeenAt: existing?.firstSeenAt || syncSeenAt,
-        lastSeenAt: syncSeenAt,
-        lastSeenPosition:
-          positionOffset + (search.listPosition ?? collectedSearches.size),
-        source: 'linkedin_profile_views',
-      });
-      collectedSearches.set(search.searchKey, search);
-    });
     updateExistingProfileViewerSnapshot(
       existingByUsername,
       pageViewers,
@@ -292,32 +251,17 @@ export async function syncProfileViewersViaApi(
   }
 
   if (options.pruneStaleAfterComplete && paginationComplete) {
-    const pruneResult = await deleteStaleProfileViewerCache(user.uid, syncSeenAt);
-    console.info('[profile-viewers-sync] pruned stale cache entries', pruneResult);
+    await deleteStaleProfileViewerCache(user.uid, syncSeenAt);
   }
-
-  console.info('[profile-viewers-sync] pagination', {
-    mode: paginationMode,
-    pagesFetched,
-    requestCount,
-    profilesCollected: collectedViewers.length,
-    searchesCollected: collectedSearches.size,
-    privateViewerCount,
-    recruiterViewerCount,
-    recruiterViewerUrl,
-    paginationComplete,
-    backfillStatus: syncState.backfillStatus,
-    backfillNextStart: syncState.backfillNextStart,
-  });
 
   return {
     savedCount,
     newCount,
-    searchSavedCount,
-    newSearchCount,
+    searchSavedCount: 0,
+    newSearchCount: 0,
     newProfileUsernames,
     visibleCount: collectedViewers.length,
-    visibleSearchCount: collectedSearches.size,
+    visibleSearchCount: 0,
     privateViewerCount,
     recruiterViewerCount,
     recruiterViewerUrl,

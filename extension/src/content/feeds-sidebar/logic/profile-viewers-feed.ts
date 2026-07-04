@@ -57,6 +57,10 @@ function profileViewerToMember(viewer: ProfileViewerListItem): FeedMemberInfo {
   };
 }
 
+function isVisibleProfileViewer(viewer: ProfileViewerListItem): boolean {
+  return !('searchKey' in viewer);
+}
+
 export function buildRecruiterAggregateMember(
   summary?: ProfileViewerSummary | null
 ): FeedMemberInfo | null {
@@ -135,7 +139,9 @@ export function buildProfileViewersState(params: {
   feeds: FeedInfo[];
   feedMembersById: Record<string, FeedMemberInfo[]>;
 } {
-  const members = params.viewers.map(profileViewerToMember);
+  const members = params.viewers
+    .filter(isVisibleProfileViewer)
+    .map(profileViewerToMember);
   const privateViewerCount =
     params.summary &&
     Number.isSafeInteger(params.summary.privateViewerCount) &&

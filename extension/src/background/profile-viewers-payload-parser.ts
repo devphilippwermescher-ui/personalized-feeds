@@ -211,6 +211,7 @@ function isTechnicalLinkedInString(value: string): boolean {
   return (
     value.length > 220 ||
     /^(offsetstart|offsetend|start|end|length|text|attributes|entityurn|navigationurl)$/i.test(value) ||
+    /^[\s:,[\]{}]*(?:true|false|null)[\s:,[\]{}]*$/i.test(value) ||
     /^\d+(?:\.\d+)?x$/i.test(value) ||
     /^-?\d+(?:\.\d+)?$/.test(value) ||
     /^https?:\/\//i.test(value) ||
@@ -229,7 +230,7 @@ function isTechnicalLinkedInString(value: string): boolean {
 }
 
 function isProfileViewerUiText(value: string): boolean {
-  return /^(connect|message|follow|view profile|1st|2nd|3rd|\d+th)$/i.test(value);
+  return /^(connect|message|follow|view profile|[•\u2022]?\s*(?:1st|2nd|3rd|\d+th))$/i.test(value);
 }
 
 function isLikelyProfileHeadline(value: string, displayName: string, linkedinUsername: string): boolean {
@@ -245,7 +246,30 @@ function isLikelyProfileHeadline(value: string, displayName: string, linkedinUse
     return false;
   }
 
-  return /\p{L}/u.test(value) && (/\s|[|/\\,.-]/.test(value) || value.length > 10);
+  return (
+    /\p{L}/u.test(value) &&
+    (/\s|[|/\\,.-]/.test(value) ||
+      value.length > 10 ||
+      /^(?:recruiter|developer|designer|founder|student|manager|consultant|engineer)$/i.test(value))
+  );
+}
+
+function isLikelyProfileDisplayName(value: string): boolean {
+  if (
+    value.length > 90 ||
+    isTechnicalLinkedInString(value) ||
+    isProfileViewerUiText(value) ||
+    /viewed\s+.+?\sago/i.test(value) ||
+    /\d+\s+mutual\s+connections?/i.test(value) ||
+    /^(?:send a message to|invite|following, click|pending, click|sorry, unable|sort by)\b/i.test(value) ||
+    /^(?:someone|recruiter|consultant|business owner|photographer|specialist|manager|student)\b.+\b(?:at|in|from)\b/i.test(value) ||
+    /[|@]/.test(value)
+  ) {
+    return false;
+  }
+
+  const words = value.split(/\s+/).filter(Boolean);
+  return words.length >= 2 && words.length <= 6 && /\p{L}/u.test(value);
 }
 
 function pickDisplayNameFromStrings(strings: string[], linkedinUsername: string): string {
@@ -264,7 +288,11 @@ function pickDisplayNameFromStrings(strings: string[], linkedinUsername: string)
     }
   });
 
-  return bestScore > 0 ? bestName : '';
+  if (bestScore > 0) {
+    return bestName;
+  }
+
+  return strings.find((value) => isLikelyProfileDisplayName(value)) || '';
 }
 
 function pickHeadlineFromStrings(strings: string[], displayName: string, linkedinUsername: string): string {
@@ -312,7 +340,9 @@ function parseProfileViewersFromRscPayload(payload: string): ProfileViewerInput[
       referenceContext.match(/\d+\s+mutual\s+connections?/i)?.[0] || ''
     );
     const connectionDegree = normalizeText(
-      referenceStrings.find((value) => /^(1st|2nd|3rd|\d+th)$/i.test(value)) || ''
+      referenceStrings
+        .find((value) => /^[•\u2022]?\s*(1st|2nd|3rd|\d+th)$/i.test(value))
+        ?.match(/(1st|2nd|3rd|\d+th)/i)?.[1] || ''
     );
     seenUsernames.add(profile.linkedinUsername);
     viewers.push({

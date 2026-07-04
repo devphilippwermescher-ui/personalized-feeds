@@ -307,11 +307,7 @@ export async function getProfileViewerSearches(
 export async function getProfileViewerItems(
   userId: string
 ): Promise<ProfileViewerListItem[]> {
-  const [viewers, searches] = await Promise.all([
-    getProfileViewers(userId),
-    getProfileViewerSearches(userId),
-  ]);
-  return sortProfileViewersByRecency([...viewers, ...searches]);
+  return getProfileViewers(userId);
 }
 
 export async function updateProfileViewerSummary(

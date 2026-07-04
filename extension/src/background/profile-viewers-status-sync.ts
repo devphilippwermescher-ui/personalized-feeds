@@ -9,7 +9,6 @@ import type { RelationshipResolution } from '../content/linkedin-relationship-st
 import { getAuthenticatedFeedsUser } from './feeds-auth';
 import { resolveLinkedInRelationshipStatusInBackground } from './linkedin-relationship-status-resolver';
 import {
-  PROFILE_VIEWERS_STATUS_BATCH_LIMIT,
   PROFILE_VIEWERS_STATUS_STALE_MS,
   selectProfileViewersForStatusSync,
 } from './profile-viewers-status-sync-selection';
@@ -22,6 +21,7 @@ export {
 
 export const PROFILE_VIEWERS_STATUS_ALARM_NAME = 'profile-viewers-status-sync';
 export const PROFILE_VIEWERS_STATUS_BATCH_COOLDOWN_MS = 5 * 60 * 1000;
+export const PROFILE_VIEWERS_STATUS_REQUEST_DELAY_MS = 5_000;
 
 const PROFILE_VIEWERS_STATUS_STATE_KEY = 'lfs_profile_viewers_status_sync_state_v1';
 const PROFILE_VIEWERS_STATUS_LEASE_MS = 2 * 60 * 1000;
@@ -89,6 +89,12 @@ function scheduleStatusSyncAlarmAt(scheduledAt: number): Promise<void> {
 
   return chrome.alarms.create(PROFILE_VIEWERS_STATUS_ALARM_NAME, {
     when: Math.max(Date.now() + 1_000, scheduledAt),
+  });
+}
+
+function waitBetweenStatusRequests(): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, PROFILE_VIEWERS_STATUS_REQUEST_DELAY_MS);
   });
 }
 
@@ -295,7 +301,8 @@ export async function runProfileViewersStatusSync(
     let failedCount = 0;
     const checkedUsernames: string[] = [];
 
-    for (const viewer of candidates) {
+    for (let index = 0; index < candidates.length; index += 1) {
+      const viewer = candidates[index];
       const username = normalizeLinkedInUsername(viewer.linkedinUsername || viewer.id);
       if (!username) {
         continue;
@@ -319,6 +326,10 @@ export async function runProfileViewersStatusSync(
         await updateProfileViewerStatusFailure(user.uid, viewer, error, Date.now()).catch((updateError) => {
           console.warn('[profile-viewers-status-sync] failed to persist status check failure', updateError);
         });
+      }
+
+      if (index < candidates.length - 1) {
+        await waitBetweenStatusRequests();
       }
     }
 

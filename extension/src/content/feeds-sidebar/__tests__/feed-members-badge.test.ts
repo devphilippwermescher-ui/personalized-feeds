@@ -1,21 +1,3 @@
-/**
- * Tests for Bug 2: adding one new person makes all badges go into Loading.
- *
- * Root cause: toggleFeedExpansion creates NEW member objects with `loading`
- * status and stores them in feedMembersById, but then passes the ORIGINAL
- * cachedMembers array to startBackgroundStatusRefresh.
- * fetchStatusesProgressively mutates the objects it receives in-place; those
- * mutations land on the ORIGINAL objects which are no longer in
- * feedMembersById — so feedMembersById permanently holds stale `loading`
- * statuses after re-expansion.
- *
- * When handleExternalMemberAdded subsequently calls renderSidebarContent(),
- * it reads feedMembersById (all loading) and the whole list appears as loading.
- *
- * Fix: toggleFeedExpansion now captures the new loading-member array and
- * passes that — not the original cachedMembers — to startBackgroundStatusRefresh.
- */
-
 import { describe, it, expect, vi } from 'vitest';
 import {
   getStaleFeedMemberCacheIds,
@@ -23,8 +5,6 @@ import {
   toggleFeedExpansion,
 } from '../logic/feed-members';
 import type { FeedInfo, FeedMemberInfo } from '../types';
-
-// ── Fixtures ──────────────────────────────────────────────────────────────────
 
 function makeMember(id: string, status: FeedMemberInfo['status'] = 'connected'): FeedMemberInfo {
   return {
@@ -88,9 +68,7 @@ function makeDeps(overrides: Partial<FeedMembersDeps> & {
   };
 }
 
-// ── Bug 2: toggleFeedExpansion passes new objects to background refresh ────────
-
-describe('toggleFeedExpansion — status-mutation wiring', () => {
+describe('toggleFeedExpansion status mutation wiring', () => {
   it('passes the freshly-created loading objects to fetchStatusesProgressively, not the old ones', async () => {
     const feedId = 'feed-1';
     const resolvedMember1 = makeMember('m1', 'connected');
@@ -109,14 +87,10 @@ describe('toggleFeedExpansion — status-mutation wiring', () => {
 
     await toggleFeedExpansion(feedId, deps);
 
-    // The members passed to fetchStatusesProgressively must be the NEW objects
-    // (not the original resolvedMember1/2 references) because setFeedMembersById
-    // was called with a new mapped array.
     expect(capturedRefreshMembers).toHaveLength(2);
     expect(capturedRefreshMembers[0]).not.toBe(resolvedMember1);
     expect(capturedRefreshMembers[1]).not.toBe(resolvedMember2);
 
-    // They should start with loading status (the initial state before refresh).
     expect(capturedRefreshMembers[0].status).toBe('loading');
     expect(capturedRefreshMembers[1].status).toBe('loading');
   });
@@ -138,7 +112,6 @@ describe('toggleFeedExpansion — status-mutation wiring', () => {
       getFeedMembersById: () => storedMembers,
       setFeedMembersById,
       fetchStatusesProgressively: vi.fn((members: FeedMemberInfo[], onUpdate: (m: FeedMemberInfo) => void) => {
-        // Simulate what fetchStatusesProgressively does: mutate members in-place.
         for (const member of members) {
           member.status = 'connected';
           member.canMessage = true;
@@ -150,22 +123,14 @@ describe('toggleFeedExpansion — status-mutation wiring', () => {
 
     await toggleFeedExpansion(feedId, deps);
 
-    // After the refresh simulates mutations, feedMembersById must reflect them.
     expect(storedMembers[feedId][0].status).toBe('connected');
     expect(storedMembers[feedId][1].status).toBe('connected');
     expect(storedMembers[feedId][0].canMessage).toBe(true);
   });
 
   it('existing member statuses survive a subsequent renderSidebarContent call after new member added', async () => {
-    /**
-     * Simulates the full sequence:
-     * 1. feed expanded → toggleFeedExpansion → new loading objects stored in feedMembersById
-     * 2. fetchStatusesProgressively resolves statuses in-place
-     * 3. handleExternalMemberAdded appends new member
-     * 4. renderSidebarContent is called → feedMembersById should NOT have stale 'loading'
-     */
     const feedId = 'feed-1';
-    const existingM1 = makeMember('m1', 'loading'); // starts as loading
+    const existingM1 = makeMember('m1', 'loading');
     const existingM2 = makeMember('m2', 'loading');
 
     let storedMembers: Record<string, FeedMemberInfo[]> = { [feedId]: [existingM1, existingM2] };
@@ -188,23 +153,19 @@ describe('toggleFeedExpansion — status-mutation wiring', () => {
       }),
     });
 
-    // Step 1+2: expand feed, statuses resolved
     await toggleFeedExpansion(feedId, deps);
 
-    // Verify: feedMembersById has resolved statuses
     expect(storedMembers[feedId][0].status).toBe('connected');
     expect(storedMembers[feedId][1].status).toBe('connected');
 
-    // Step 3: simulate handleExternalMemberAdded appending a new member
     const newMember = makeMember('m3', 'loading');
     const existingMembers = storedMembers[feedId];
     storedMembers[feedId] = [...existingMembers, newMember];
 
-    // Step 4: after append, existing members should still have resolved statuses
     const snapshotAfterAdd = storedMembers[feedId];
     expect(snapshotAfterAdd[0].status).toBe('connected');
     expect(snapshotAfterAdd[1].status).toBe('connected');
-    expect(snapshotAfterAdd[2].status).toBe('loading'); // only new member is loading
+    expect(snapshotAfterAdd[2].status).toBe('loading');
   });
 
   it('collapses an already-expanded feed without touching loading state', async () => {
@@ -217,14 +178,13 @@ describe('toggleFeedExpansion — status-mutation wiring', () => {
     const deps = makeDeps({
       feedMembersById: storedMembers,
       feeds: [makeFeed(feedId)],
-      expandedFeedId: feedId, // already expanded
+      expandedFeedId: feedId,
       fetchStatusesProgressively: fetchProgressivelySpy,
       getStatusFetchController: () => controller,
     });
 
     await toggleFeedExpansion(feedId, deps);
 
-    // Should collapse (setExpandedFeedId(null)) and NOT start a background refresh.
     expect(deps.setExpandedFeedId).toHaveBeenCalledWith(null);
     expect(fetchProgressivelySpy).not.toHaveBeenCalled();
   });
@@ -245,7 +205,6 @@ describe('toggleFeedExpansion — status-mutation wiring', () => {
 
     await toggleFeedExpansion(feedId, deps);
 
-    // setFeedMembersById should NOT be called with loading-state members for shared feeds.
     const loadingCall = setFeedMembersById.mock.calls.find((args) => {
       const members = (args[0] as Record<string, FeedMemberInfo[]>)[feedId];
       return members?.some((m) => m.status === 'loading');
@@ -317,9 +276,7 @@ describe('toggleFeedExpansion — status-mutation wiring', () => {
 
 });
 
-// ── loadFeedMembers — parity check: members passed to refresh are the stored array ──
-
-describe('loadFeedMembers — status-mutation wiring', () => {
+describe('loadFeedMembers status mutation wiring', () => {
   it('passes the same member objects to fetchStatusesProgressively that are stored in feedMembersById', async () => {
     const feedId = 'feed-1';
     const feed = makeFeed(feedId);
@@ -349,25 +306,64 @@ describe('loadFeedMembers — status-mutation wiring', () => {
 
     await loadFeedMembers(feedId, deps);
 
-    // The members in feedMembersById and those passed to refresh must be the same objects.
     expect(capturedRefreshMembers).toBe(storedMembers[feedId]);
     expect(capturedRefreshMembers[0]).toBe(storedMembers[feedId][0]);
   });
-});
 
-// ── Regression: add-only member does not flip all badges to loading ──────────
+  it('queues Profile Visitors status refresh in the service worker after load', async () => {
+    const feedId = 'profile-viewers';
+    let storedMembers: Record<string, FeedMemberInfo[]> = {};
+    const setFeedMembersById = vi.fn((value: Record<string, FeedMemberInfo[]>) => {
+      storedMembers = { ...storedMembers, ...value };
+    });
+    const sendMsg = vi.fn((message: Record<string, unknown>) => {
+      if (message.type === 'PROFILE_VIEWERS_GET') {
+        return Promise.resolve({
+          viewers: [
+            {
+              id: 'viewer-1',
+              linkedinUrl: 'https://www.linkedin.com/in/viewer-1/',
+              linkedinUsername: 'viewer-1',
+              displayName: 'Viewer One',
+              source: 'linkedin_profile_views',
+              firstSeenAt: 1,
+              lastSeenAt: 2,
+            },
+          ],
+          summary: null,
+        });
+      }
+
+      return Promise.resolve({ success: true, queued: true });
+    });
+
+    const deps = makeDeps({
+      feedMembersById: storedMembers,
+      feeds: [
+        makeFeed(feedId, {
+          isSystem: true,
+          systemType: 'profileViewers',
+          memberCount: 1,
+        }),
+      ],
+      getFeedMembersById: () => storedMembers,
+      setFeedMembersById,
+      sendMsg,
+    });
+
+    await loadFeedMembers(feedId, deps);
+
+    expect(deps.fetchStatusesProgressively).not.toHaveBeenCalled();
+    expect(sendMsg).toHaveBeenCalledWith({ type: 'PROFILE_VIEWERS_GET' });
+    expect(sendMsg).toHaveBeenCalledWith({
+      type: 'PROFILE_VIEWERS_STATUS_SYNC_QUEUE',
+      priorityUsernames: ['viewer-1'],
+    });
+  });
+});
 
 describe('adding a new member does not reset existing member statuses', () => {
   it('existing resolved statuses are preserved in feedMembersById after a new member is appended', async () => {
-    /**
-     * This test validates the absence of the regression:
-     *  Before fix: feedMembersById would have stale `loading` for all members
-     *   after toggleFeedExpansion, so appending a new member and reading
-     *   feedMembersById would show all-loading.
-     *  After fix: fetchStatusesProgressively mutates the new objects that are
-     *   IN feedMembersById, so after refresh feedMembersById has resolved
-     *   statuses for existing members.
-     */
     const feedId = 'feed-1';
     const m1 = makeMember('m1', 'connected');
     const m2 = makeMember('m2', 'following');
@@ -384,7 +380,6 @@ describe('adding a new member does not reset existing member statuses', () => {
       getFeedMembersById: () => storedMembers,
       setFeedMembersById,
       fetchStatusesProgressively: vi.fn((members: FeedMemberInfo[], onUpdate: (m: FeedMemberInfo) => void) => {
-        // Simulate full resolution: restore the statuses that the UI had shown.
         for (const member of members) {
           member.status = member.id === 'm1' ? 'connected' : 'following';
           onUpdate(member);
@@ -395,15 +390,13 @@ describe('adding a new member does not reset existing member statuses', () => {
 
     await toggleFeedExpansion(feedId, deps);
 
-    // Append new member (simulating handleExternalMemberAdded)
     const newMember = makeMember('m3', 'loading');
     storedMembers[feedId] = [...storedMembers[feedId], newMember];
 
-    // Read state as renderSidebarContent would see it
     const members = storedMembers[feedId];
-    expect(members[0].status).toBe('connected');   // existing member — NOT loading
-    expect(members[1].status).toBe('following');   // existing member — NOT loading
-    expect(members[2].status).toBe('loading');     // only the newly-added member is loading
+    expect(members[0].status).toBe('connected');
+    expect(members[1].status).toBe('following');
+    expect(members[2].status).toBe('loading');
   });
 });
 

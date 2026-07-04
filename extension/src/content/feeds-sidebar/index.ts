@@ -57,7 +57,6 @@ let sharedFeedsList: FeedInfo[] = [];
 let profileViewerMembers: FeedMemberInfo[] = [];
 let profileViewerPrivateCount: number | undefined;
 let isRefreshingProfileViewers = false;
-let isConfirmingProfileViewersRefresh = false;
 let isLoading = false;
 let isInitializing = false;
 let isPremium = false;
@@ -77,9 +76,6 @@ function renderSidebarContent(): void {
 
 function setProfileViewersRefreshing(isRefreshing: boolean): void {
   isRefreshingProfileViewers = isRefreshing;
-  if (isRefreshing) {
-    isConfirmingProfileViewersRefresh = false;
-  }
   feedsList = feedsList.map((feed) =>
     feed.id === PROFILE_VIEWERS_FEED_ID
       ? {
@@ -99,7 +95,6 @@ function setProfileViewersRefreshConfirmation(isConfirming: boolean): void {
     return;
   }
 
-  isConfirmingProfileViewersRefresh = isConfirming;
   feedsList = feedsList.map((feed) =>
     feed.id === PROFILE_VIEWERS_FEED_ID
       ? { ...feed, isConfirmingProfileViewersRefresh: isConfirming }
@@ -113,7 +108,6 @@ function resetSignedOutSidebarState(): void {
   profileViewerMembers = [];
   profileViewerPrivateCount = undefined;
   isRefreshingProfileViewers = false;
-  isConfirmingProfileViewersRefresh = false;
   const nextFeedMembersById = { ...feedMembersById };
   delete nextFeedMembersById[PROFILE_VIEWERS_FEED_ID];
   feedMembersById = nextFeedMembersById;

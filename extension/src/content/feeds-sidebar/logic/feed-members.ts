@@ -63,6 +63,21 @@ function startBackgroundStatusRefresh(
   });
 }
 
+function queueProfileViewersStatusRefresh(
+  members: FeedMemberInfo[],
+  deps: Pick<FeedMembersDeps, 'sendMsg'>
+): void {
+  const priorityUsernames = members
+    .filter((member) => !member.itemType || member.itemType === 'profile')
+    .map((member) => member.linkedinUsername)
+    .filter((username): username is string => Boolean(username));
+
+  void deps.sendMsg({
+    type: 'PROFILE_VIEWERS_STATUS_SYNC_QUEUE',
+    priorityUsernames,
+  }).catch(() => undefined);
+}
+
 function profileViewerToMember(viewer: Partial<FeedMemberInfo> | ProfileViewerListItem): FeedMemberInfo | null {
   const itemType = 'itemType' in viewer ? viewer.itemType : undefined;
   const isSearchItem = 'searchUrl' in viewer || itemType === 'search';
@@ -145,6 +160,7 @@ export async function loadFeedMembers(feedId: string, deps: FeedMembersDeps): Pr
     });
     deps.setLoadingMembersFeedId(null);
     deps.renderSidebarContent();
+    queueProfileViewersStatusRefresh(nextMembers, deps);
     return;
   }
 

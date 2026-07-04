@@ -8,6 +8,7 @@ import { createFeedCard, unmountFeedCard } from './template';
 import type { ProfileData } from './types';
 import { sendMessageToBackground, showToast } from './utils';
 import { hasRelationshipSignal } from '../shared/relationship-dom-signals';
+import { ensureProfileFeedModals } from '../shared/profile-feed-modals';
 
 let feedCardInjected = false;
 let currentProfileData: ProfileData | null = null;
@@ -233,6 +234,7 @@ function observeProfileRelationshipChanges(root: HTMLElement): void {
 }
 
 function setupEventListeners(): void {
+  ensureProfileFeedModals();
   setupProfileContentDomBindings({
     handleAddToFeed: feedActions.handleAddToFeed,
     showCreateFeedOverlay: feedActions.showCreateFeedOverlay,
