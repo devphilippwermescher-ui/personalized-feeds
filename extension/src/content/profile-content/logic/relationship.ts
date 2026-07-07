@@ -18,6 +18,29 @@ function isNonFirstDegreeConnection(value?: string): boolean {
   return /^(2nd|3rd\+?|3rd|2-й|3-й|2-го|3-го)$/i.test((value || '').trim());
 }
 
+function hasPremiumProfileBadgeSignal(scope: ParentNode): boolean {
+  const premiumTextPattern =
+    /\b(?:linkedin\s+premium|premium\s+profile|premium\s+member|profile\s+enhanced\s+with\s+premium)\b/i;
+  const premiumIconPattern = /(?:linkedin-bug|premium-badge|premium_profile|premium-profile)/i;
+
+  return Array.from(scope.querySelectorAll<HTMLElement>('*')).some((element) => {
+    const attributeText = [
+      element.getAttribute('aria-label'),
+      element.getAttribute('title'),
+      element.getAttribute('type'),
+      element.getAttribute('data-test-icon'),
+      element.getAttribute('href'),
+      element.getAttribute('xlink:href'),
+      element.id,
+      element.className,
+    ]
+      .map((value) => String(value || ''))
+      .join(' ');
+
+    return premiumTextPattern.test(attributeText) || premiumIconPattern.test(attributeText);
+  });
+}
+
 function buildCurrentProfileRelationshipUpdates(
   currentProfileData: ProfileData,
   relationship: RelationshipState
@@ -50,23 +73,24 @@ function buildCurrentProfileRelationshipUpdates(
     currentProfileData.isFollowing = relationship.isFollowing;
   }
 
-  // Write isPremium only when DOM detection has a definitive signal.
-  // Do NOT write false for statuses like 'connect'/'pending'/'following' where the DOM
-  // alone cannot distinguish Premium InMail targets from regular non-connections.
-  // The GraphQL refresh path (persistResolvedMemberState) is the authoritative stale-reset.
-  if (relationship.status || typeof relationship.canMessage === 'boolean') {
-    if (typeof relationship.isPremium === 'boolean') {
-      updates.isPremium = relationship.isPremium;
-    } else if (relationship.status === 'connected') {
-      updates.isPremium = false;
-    }
+  // Write isPremium when DOM detection has a definitive signal. Do NOT write false
+  // for non-connection states where the DOM cannot distinguish InMail availability
+  // from a Premium subscriber badge.
+  if (typeof relationship.isPremium === 'boolean') {
+    updates.isPremium = relationship.isPremium;
+  } else if (relationship.status === 'connected') {
+    updates.isPremium = false;
   }
 
   return updates;
 }
 
 export function detectCurrentProfileRelationship(currentProfileData: ProfileData | null): RelationshipState {
-  const scope = document.querySelector('.ph5.pb5') || document.querySelector('.pv-top-card') || document.body;
+  const scope =
+    document.querySelector('section[componentkey*="Topcard"], section[componentkey*="topcard"]') ||
+    document.querySelector('.pv-top-card') ||
+    document.querySelector('.ph5.pb5') ||
+    document.body;
 
   const connectionDegree =
     (scope.querySelector('.dist-value')?.textContent?.trim() || currentProfileData?.connectionDegree || '').trim();
@@ -110,6 +134,8 @@ export function detectCurrentProfileRelationship(currentProfileData: ProfileData
   const hasExplicitFollowing = buttonText.some(hasFollowingSignal);
   const hasAuthoritativeFollowing = hasExplicitFollowing;
   const hasPremiumMessage = buttonText.some(({ label }) => label.includes('premium'));
+  const hasPremiumBadge = hasPremiumProfileBadgeSignal(scope);
+  const isPremiumProfile = hasPremiumBadge || (hasMessage && hasPremiumMessage);
   const hasFirstDegree = isFirstDegreeConnection(connectionDegree);
   const hasNonFirstDegree = isNonFirstDegreeConnection(connectionDegree);
 
@@ -121,7 +147,7 @@ export function detectCurrentProfileRelationship(currentProfileData: ProfileData
       canConnect: false,
       canFollow: hasAuthoritativeFollowing || hasFollow ? true : undefined,
       isFollowing: hasAuthoritativeFollowing ? true : hasFollow ? false : undefined,
-      isPremium: hasMessage && hasPremiumMessage ? true : undefined,
+      isPremium: isPremiumProfile ? true : undefined,
     };
   }
 
@@ -129,7 +155,7 @@ export function detectCurrentProfileRelationship(currentProfileData: ProfileData
     hasFirstDegree ||
     (hasMessage && !hasConnect && !hasPremiumMessage && !hasFollow && !hasAuthoritativeFollowing && !hasNonFirstDegree)
   ) {
-    return { status: 'connected', connectionDegree: '1st', canMessage: true, canConnect: false };
+    return { status: 'connected', connectionDegree: '1st', canMessage: true, canConnect: false, isPremium: isPremiumProfile ? true : undefined };
   }
 
   if (hasConnect && hasAuthoritativeFollowing) {
@@ -139,7 +165,7 @@ export function detectCurrentProfileRelationship(currentProfileData: ProfileData
       canFollow: true,
       canConnect: true,
       isFollowing: true,
-      isPremium: hasMessage && hasPremiumMessage ? true : undefined,
+      isPremium: isPremiumProfile ? true : undefined,
     };
   }
 
@@ -151,7 +177,7 @@ export function detectCurrentProfileRelationship(currentProfileData: ProfileData
       canConnect: true,
       canFollow: hasFollow ? true : undefined,
       isFollowing: hasFollow ? false : undefined,
-      isPremium: hasMessage && hasPremiumMessage ? true : undefined,
+      isPremium: isPremiumProfile ? true : undefined,
     };
   }
 
@@ -163,7 +189,7 @@ export function detectCurrentProfileRelationship(currentProfileData: ProfileData
       canConnect: true,
       canFollow: true,
       isFollowing: false,
-      isPremium: hasMessage && hasPremiumMessage ? true : undefined,
+      isPremium: isPremiumProfile ? true : undefined,
     };
   }
 
@@ -175,14 +201,14 @@ export function detectCurrentProfileRelationship(currentProfileData: ProfileData
       canFollow: true,
       canConnect: false,
       isFollowing: true,
-      isPremium: hasMessage && hasPremiumMessage ? true : undefined,
+      isPremium: isPremiumProfile ? true : undefined,
     };
   }
 
   // Premium profile: LinkedIn shows a Message button that routes through InMail.
   // The button aria-label contains "premium". We enable messaging and mark the profile as Premium.
-  if (hasMessage && hasPremiumMessage) {
-    return { connectionDegree, canMessage: true, isPremium: true };
+  if (isPremiumProfile) {
+    return { connectionDegree, canMessage: hasMessage ? true : undefined, isPremium: true };
   }
 
   return { connectionDegree };

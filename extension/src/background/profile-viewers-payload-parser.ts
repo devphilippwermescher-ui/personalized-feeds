@@ -4,6 +4,7 @@ import { chooseProfileViewerDisplayName, humanizeLinkedInUsername } from 'shared
 import { mergeProfileViewerCandidates } from './profile-viewers-parser-merge';
 import { extractProfileViewerReferences } from './profile-viewers-references';
 import { extractProfileViewerImageUrls } from './profile-viewers-rsc-images';
+import { hasExplicitProfileViewerPremiumSignal } from './profile-viewers-premium';
 
 function decodeHtmlEntities(value: string): string {
   return value
@@ -125,6 +126,7 @@ function extractProfileViewerFromAnchor(
     connectionDegree,
     viewedAgoText,
     mutualConnectionsText,
+    isPremium: hasExplicitProfileViewerPremiumSignal(anchorHtml) || undefined,
     sourceIndex,
   };
 }
@@ -353,6 +355,7 @@ function parseProfileViewersFromRscPayload(payload: string): ProfileViewerInput[
       connectionDegree,
       viewedAgoText,
       mutualConnectionsText,
+      isPremium: hasExplicitProfileViewerPremiumSignal(referenceContext) || undefined,
       sourceIndex: profile.index,
     });
   }

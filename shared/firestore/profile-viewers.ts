@@ -149,7 +149,11 @@ export async function upsertProfileViewers(
     if (typeof existingViewer.canFollow === 'boolean') preservedRelationshipUpdates.canFollow = existingViewer.canFollow;
     if (typeof existingViewer.canConnect === 'boolean') preservedRelationshipUpdates.canConnect = existingViewer.canConnect;
     if (typeof existingViewer.isFollowing === 'boolean') preservedRelationshipUpdates.isFollowing = existingViewer.isFollowing;
-    if (typeof existingViewer.isPremium === 'boolean') preservedRelationshipUpdates.isPremium = existingViewer.isPremium;
+    if (typeof viewer.isPremium === 'boolean') {
+      preservedRelationshipUpdates.isPremium = viewer.isPremium;
+    } else if (typeof existingViewer.isPremium === 'boolean') {
+      preservedRelationshipUpdates.isPremium = existingViewer.isPremium;
+    }
     if (existingViewer.status) preservedRelationshipUpdates.status = existingViewer.status;
     if (typeof existingViewer.statusResolvedAt === 'number') {
       preservedRelationshipUpdates.statusResolvedAt = existingViewer.statusResolvedAt;

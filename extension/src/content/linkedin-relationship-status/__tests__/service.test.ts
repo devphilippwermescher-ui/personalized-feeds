@@ -345,6 +345,32 @@ describe('fetchLinkedInRelationshipStatus', () => {
     expect(member.isFollowing).toBe(false);
   });
 
+  it('preserves an existing premium flag when Profile Visitors status refresh has no premium signal', async () => {
+    fetchWithGraphQL.mockResolvedValue({
+      status: 'connected',
+      canMessage: true,
+      profileUrn: 'urn:li:fsd_profile:premium-viewer',
+    });
+
+    const { fetchStatusesProgressively } = await import('../service');
+    const member: FeedMemberInfo = {
+      id: 'premium-viewer',
+      linkedinUrl: 'https://www.linkedin.com/in/premium-viewer/',
+      linkedinUsername: 'premium-viewer',
+      displayName: 'Premium Viewer',
+      isPremium: true,
+      profileImageUrl: 'https://media.licdn.com/profile.jpg',
+      addedAt: Date.now(),
+    };
+
+    await fetchStatusesProgressively([member], () => undefined, undefined, {
+      preserveExistingPremium: true,
+    });
+
+    expect(member.status).toBe('connected');
+    expect(member.isPremium).toBe(true);
+  });
+
   it('lets profile HTML unavailable override partial GraphQL action results', async () => {
     fetchWithGraphQL.mockResolvedValue({
       status: 'connect',

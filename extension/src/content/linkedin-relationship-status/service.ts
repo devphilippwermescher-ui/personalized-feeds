@@ -13,6 +13,7 @@ import {
 type RelationshipStatusResult = RelationshipResolution;
 interface FetchRelationshipStatusOptions {
   requireActionIdentifiers?: boolean;
+  preserveExistingPremium?: boolean;
 }
 
 type FetchSingleStatusOptions = FetchRelationshipStatusOptions;
@@ -192,6 +193,18 @@ function applyRelationshipResultToMember(
   member.memberNumericId = result.memberNumericId;
   member.isPremium = result.isPremium;
   member.profileImageUrl = result.profileImageUrl || member.profileImageUrl;
+}
+
+function applyRelationshipResultToMemberWithOptions(
+  member: FeedMemberInfo,
+  result: RelationshipResolution,
+  options: FetchSingleStatusOptions = {}
+): void {
+  const existingIsPremium = member.isPremium;
+  applyRelationshipResultToMember(member, result);
+  if (options.preserveExistingPremium && existingIsPremium === true && result.isPremium !== true) {
+    member.isPremium = true;
+  }
 }
 
 function takeBackgroundFallbackSlot(now = Date.now()): boolean {
@@ -418,7 +431,8 @@ export async function fetchLinkedInRelationshipStatus(
 export async function fetchStatusesProgressively(
   members: FeedMemberInfo[],
   onUpdate: (member: FeedMemberInfo) => void,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  options: FetchRelationshipStatusOptions = {}
 ): Promise<void> {
   let nextIndex = 0;
 
@@ -436,7 +450,7 @@ export async function fetchStatusesProgressively(
 
     const cached = getCachedStatus(canonicalUsername);
     if (cached && (isUsableProfileImageUrl(cached.profileImageUrl) || isUsableProfileImageUrl(member.profileImageUrl))) {
-      applyRelationshipResultToMember(member, {
+      applyRelationshipResultToMemberWithOptions(member, {
         status: cached.status,
         profileUrn: cached.profileUrn,
         canMessage: cached.canMessage,
@@ -446,14 +460,14 @@ export async function fetchStatusesProgressively(
         memberNumericId: cached.memberNumericId,
         isPremium: cached.isPremium,
         profileImageUrl: isUsableProfileImageUrl(cached.profileImageUrl) ? cached.profileImageUrl : member.profileImageUrl,
-      });
+      }, options);
       onUpdate(member);
       return;
     }
 
     try {
-      const result = await fetchSingleStatus(member);
-      applyRelationshipResultToMember(member, result);
+      const result = await fetchSingleStatus(member, options);
+      applyRelationshipResultToMemberWithOptions(member, result, options);
     } catch {
       member.status = undefined;
       member.canMessage = undefined;

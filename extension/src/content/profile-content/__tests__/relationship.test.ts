@@ -113,4 +113,36 @@ describe('detectCurrentProfileRelationship', () => {
     expect(relationship.canFollow).toBe(true);
     expect(relationship.isFollowing).toBe(true);
   });
+
+  it('marks the current profile as Premium from a scoped LinkedIn premium badge icon', () => {
+    document.body.innerHTML = `
+      <section class="pv-top-card">
+        <h1>Yevhen Romanenko</h1>
+        <span class="dist-value">1st</span>
+        <button aria-label="Message Yevhen">Message</button>
+        <li-icon type="linkedin-bug"></li-icon>
+      </section>
+    `;
+
+    const relationship = detectCurrentProfileRelationship(null);
+
+    expect(relationship.status).toBe('connected');
+    expect(relationship.isPremium).toBe(true);
+  });
+
+  it('does not mark Premium from unrelated page chrome outside the profile top card', () => {
+    document.body.innerHTML = `
+      <section class="pv-top-card">
+        <h1>Regular Person</h1>
+        <span class="dist-value">1st</span>
+        <button aria-label="Message Regular Person">Message</button>
+      </section>
+      <a title="LinkedIn Premium">Try Premium</a>
+    `;
+
+    const relationship = detectCurrentProfileRelationship(null);
+
+    expect(relationship.status).toBe('connected');
+    expect(relationship.isPremium).toBeUndefined();
+  });
 });

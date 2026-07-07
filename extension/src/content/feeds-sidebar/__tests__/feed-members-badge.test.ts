@@ -310,9 +310,10 @@ describe('loadFeedMembers status mutation wiring', () => {
     expect(capturedRefreshMembers[0]).toBe(storedMembers[feedId][0]);
   });
 
-  it('queues Profile Visitors status refresh in the service worker after load', async () => {
+  it('refreshes Profile Visitors statuses through the same content resolver used by regular feeds', async () => {
     const feedId = 'profile-viewers';
     let storedMembers: Record<string, FeedMemberInfo[]> = {};
+    let capturedRefreshMembers: FeedMemberInfo[] = [];
     const setFeedMembersById = vi.fn((value: Record<string, FeedMemberInfo[]>) => {
       storedMembers = { ...storedMembers, ...value };
     });
@@ -336,6 +337,10 @@ describe('loadFeedMembers status mutation wiring', () => {
 
       return Promise.resolve({ success: true, queued: true });
     });
+    const fetchStatusesProgressively = vi.fn((members: FeedMemberInfo[]) => {
+      capturedRefreshMembers = members;
+      return Promise.resolve();
+    });
 
     const deps = makeDeps({
       feedMembersById: storedMembers,
@@ -349,15 +354,27 @@ describe('loadFeedMembers status mutation wiring', () => {
       getFeedMembersById: () => storedMembers,
       setFeedMembersById,
       sendMsg,
+      fetchStatusesProgressively,
     });
 
     await loadFeedMembers(feedId, deps);
 
-    expect(deps.fetchStatusesProgressively).not.toHaveBeenCalled();
     expect(sendMsg).toHaveBeenCalledWith({ type: 'PROFILE_VIEWERS_GET' });
-    expect(sendMsg).toHaveBeenCalledWith({
+    expect(sendMsg).not.toHaveBeenCalledWith(expect.objectContaining({
       type: 'PROFILE_VIEWERS_STATUS_SYNC_QUEUE',
-      priorityUsernames: ['viewer-1'],
+    }));
+    expect(fetchStatusesProgressively).toHaveBeenCalledTimes(1);
+    const fetchStatusCalls = fetchStatusesProgressively.mock.calls as unknown as Array<
+      [FeedMemberInfo[], (member: FeedMemberInfo) => void, AbortSignal, { preserveExistingPremium?: boolean }]
+    >;
+    expect(fetchStatusCalls[0]?.[3]).toEqual({
+      preserveExistingPremium: true,
+    });
+    expect(capturedRefreshMembers).toBe(storedMembers[feedId]);
+    expect(capturedRefreshMembers[0]).toMatchObject({
+      id: 'viewer-1',
+      linkedinUsername: 'viewer-1',
+      itemType: 'profile',
     });
   });
 });

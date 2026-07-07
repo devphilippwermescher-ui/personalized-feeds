@@ -4,10 +4,12 @@ import {
   chooseProfileViewerImageUrl,
   isUsableLinkedInProfileImageUrl,
 } from 'shared/profile-viewer-quality';
+import { hasExplicitProfileViewerPremiumSignal } from './profile-viewers-premium';
 
 export interface ProfileViewerPageMetadata {
   displayName: string;
   profileImageUrl: string;
+  isPremium?: boolean;
 }
 
 function decodeHtml(value: string): string {
@@ -95,6 +97,7 @@ export function parseProfileViewerPageMetadata(html: string): ProfileViewerPageM
   return {
     displayName: extractDisplayName(html),
     profileImageUrl: extractProfileImageUrl(html),
+    isPremium: hasExplicitProfileViewerPremiumSignal(html) || undefined,
   };
 }
 
@@ -120,5 +123,6 @@ export function mergeProfileViewerWithPageMetadata(
       metadata.profileImageUrl || viewer.profileImageUrl,
       existing?.profileImageUrl
     ),
+    isPremium: metadata.isPremium === true ? true : viewer.isPremium ?? existing?.isPremium,
   };
 }
