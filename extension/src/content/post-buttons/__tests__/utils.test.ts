@@ -258,6 +258,37 @@ describe('extractPostAuthorProfile', () => {
     expect(findPostAuthorDrawerHost(post!)?.textContent).toContain('1d');
   });
 
+  it('uses the promoted-by row as the drawer host for promoted SDUI posts by people', () => {
+    document.body.innerHTML = `
+      <div role="listitem" componentkey="expandedPostFeedType_MAIN_FEED_RELEVANCE">
+        <a href="https://www.linkedin.com/in/danamuntean/">
+          <img alt="View Dana Muntean's profile" src="https://media.licdn.com/dana.jpg" />
+        </a>
+        <a href="https://www.linkedin.com/in/danamuntean/">
+          <div aria-label="Dana Muntean Premium Profile 3rd+">
+            <p><span>Dana Muntean</span></p>
+            <p><span> • 3rd+</span></p>
+          </div>
+        </a>
+        <p><span>Transforming how Banks & Fintechs talk to Customers</span></p>
+        <p><span>Promoted by <a href="https://www.linkedin.com/company/elevenlabsio/posts/"><strong>ElevenLabs</strong></a></span></p>
+        <button aria-label="Open control menu for post by Dana Muntean"></button>
+        <div data-testid="expandable-text-box">Promoted post content</div>
+      </div>
+    `;
+
+    const post = document.querySelector<HTMLElement>('[role="listitem"]');
+    const host = findPostAuthorDrawerHost(post!);
+
+    expect(extractPostAuthorProfile(post!)).toMatchObject({
+      linkedinUsername: 'danamuntean',
+      displayName: 'Dana Muntean',
+      profileImageUrl: 'https://media.licdn.com/dana.jpg',
+    });
+    expect(host?.textContent).toContain('Promoted by ElevenLabs');
+    expect(host?.textContent).not.toContain('Dana Muntean');
+  });
+
   it('does not place SDUI drawer buttons on the author name when visibility text differs', () => {
     document.body.innerHTML = `
       <div role="listitem" componentkey="expandedPostFeedType_MAIN_FEED_RELEVANCE">

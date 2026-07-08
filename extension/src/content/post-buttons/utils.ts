@@ -270,11 +270,21 @@ function findModernSduiPostMetaHost(post: HTMLElement): HTMLElement | null {
     return iconHost;
   }
 
-  return Array.from(post.querySelectorAll<HTMLElement>('p span, p'))
+  const timestampHost = Array.from(post.querySelectorAll<HTMLElement>('p span, p'))
     .filter((element) => actorLink.compareDocumentPosition(element) & Node.DOCUMENT_POSITION_FOLLOWING)
     .find((element) => {
       const text = element.textContent?.replace(/\s+/g, ' ').trim() || '';
       return /^\d+\s*(?:s|m|h|d|w|mo|yr)\b(?:\s*[•·]|$)/i.test(text);
+    }) || null;
+  if (timestampHost) {
+    return timestampHost;
+  }
+
+  return Array.from(post.querySelectorAll<HTMLElement>('p span, p'))
+    .filter((element) => actorLink.compareDocumentPosition(element) & Node.DOCUMENT_POSITION_FOLLOWING)
+    .find((element) => {
+      const text = element.textContent?.replace(/\s+/g, ' ').trim() || '';
+      return /^promoted by\b/i.test(text);
     }) || null;
 }
 
