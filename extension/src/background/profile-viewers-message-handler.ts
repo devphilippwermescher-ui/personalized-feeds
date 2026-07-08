@@ -4,8 +4,7 @@ import {
   removeProfileViewer,
   updateProfileViewer,
 } from 'shared/firestore-service';
-import type { ProfileViewer, ProfileViewerListItem, ProfileViewerSummary } from 'shared/types';
-import { getUsernameFromLinkedInUrl, normalizeLinkedInUsername } from 'shared/linkedin-identity';
+import type { ProfileViewerSummary } from 'shared/types';
 import {
   appendProfileViewersWakeEvent,
   getProfileViewersSyncState,
@@ -19,6 +18,7 @@ import {
 import { syncProfileViewersViaPage } from './profile-viewers-page-sync';
 import { getAuthenticatedFeedsUser } from './feeds-auth';
 import { getFeedsAuthErrorResponse, normalizeFeedsError } from './feeds-errors';
+import { findProfileViewerUpdateTargets } from './profile-viewers-update-targets';
 
 async function notifyLinkedInTabsAboutProfileViewerUpdate(): Promise<void> {
   const tabs = await chrome.tabs.query({ url: 'https://www.linkedin.com/*' });
@@ -32,8 +32,6 @@ async function notifyLinkedInTabsAboutProfileViewerUpdate(): Promise<void> {
       )
   );
 }
-
-type ProfileViewerProfileItem = ProfileViewer;
 
 function getProfileViewerSummaryFromSyncState(
   syncState: Awaited<ReturnType<typeof getProfileViewersSyncState>>
@@ -64,66 +62,6 @@ function getProfileViewerSummaryFromSyncState(
         : undefined,
     updatedAt: logWithSummaryCount.finishedAt,
   };
-}
-
-function normalizeComparableName(value: unknown): string {
-  return String(value || '')
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, ' ');
-}
-
-function isProfileViewerProfileItem(
-  viewer: ProfileViewerListItem
-): viewer is ProfileViewerProfileItem {
-  return 'linkedinUsername' in viewer && typeof viewer.linkedinUsername === 'string';
-}
-
-function findProfileViewerUpdateTargets(
-  viewers: ProfileViewerListItem[],
-  viewerId: string,
-  updates: Record<string, unknown>
-): ProfileViewerProfileItem[] {
-  const normalizedViewerId = normalizeLinkedInUsername(viewerId);
-  const normalizedUpdateUsername = normalizeLinkedInUsername(
-    String(updates.linkedinUsername || '')
-  );
-  const normalizedLinkedInUrlUsername = normalizeLinkedInUsername(
-    getUsernameFromLinkedInUrl(String(updates.linkedinUrl || ''))
-  );
-  const updateProfileUrn = String(updates.profileUrn || '').trim();
-  const updateMemberNumericId = String(updates.memberNumericId || '').trim();
-  const usernameCandidates = new Set(
-    [normalizedViewerId, normalizedUpdateUsername, normalizedLinkedInUrlUsername].filter(Boolean)
-  );
-
-  const profileViewers = viewers.filter(isProfileViewerProfileItem);
-  const targets = new Map<string, ProfileViewerProfileItem>();
-  profileViewers
-    .filter((viewer) => {
-      const viewerUsername = normalizeLinkedInUsername(viewer.linkedinUsername || viewer.id);
-      const viewerUrlUsername = normalizeLinkedInUsername(getUsernameFromLinkedInUrl(viewer.linkedinUrl));
-      return (
-        usernameCandidates.has(viewerUsername) ||
-        usernameCandidates.has(viewerUrlUsername) ||
-        Boolean(updateProfileUrn && viewer.profileUrn === updateProfileUrn) ||
-        Boolean(updateMemberNumericId && viewer.memberNumericId === updateMemberNumericId)
-      );
-    })
-    .forEach((viewer) => {
-      targets.set(viewer.linkedinUsername || viewer.id, viewer);
-    });
-
-  const displayName = normalizeComparableName(updates.displayName);
-  if (displayName) {
-    profileViewers
-      .filter((viewer) => normalizeComparableName(viewer.displayName) === displayName)
-      .forEach((viewer) => {
-        targets.set(viewer.linkedinUsername || viewer.id, viewer);
-      });
-  }
-
-  return Array.from(targets.values());
 }
 
 async function updateProfileViewerByBestMatch(

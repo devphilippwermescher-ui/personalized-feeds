@@ -208,6 +208,30 @@ function scoreProfileSlugMatch(value: string, linkedinUsername: string): number 
     .reduce((score, part) => score + (normalizedValue.includes(part) ? 1 : 0), 0);
 }
 
+function getMeaningfulSlugParts(linkedinUsername: string): string[] {
+  return linkedinUsername
+    .split(/[-_]+/)
+    .filter((part) => part.length > 2 && !/^\d+$/.test(part));
+}
+
+function chooseDisplayNameForProfileContext(
+  displayNameCandidate: string,
+  linkedinUsername: string
+): string {
+  const displayName = chooseProfileViewerDisplayName(
+    displayNameCandidate,
+    undefined,
+    linkedinUsername
+  );
+  const slugParts = getMeaningfulSlugParts(linkedinUsername);
+
+  if (slugParts.length >= 2 && scoreProfileSlugMatch(displayName, linkedinUsername) === 0) {
+    return humanizeLinkedInUsername(linkedinUsername);
+  }
+
+  return displayName;
+}
+
 function isTechnicalLinkedInString(value: string): boolean {
   const lower = value.toLowerCase();
   return (
@@ -329,9 +353,8 @@ function parseProfileViewersFromRscPayload(payload: string): ProfileViewerInput[
     const displayNameCandidate =
       pickDisplayNameFromStrings(referenceStrings, profile.linkedinUsername) ||
       humanizeLinkedInUsername(profile.linkedinUsername);
-    const displayName = chooseProfileViewerDisplayName(
+    const displayName = chooseDisplayNameForProfileContext(
       displayNameCandidate,
-      undefined,
       profile.linkedinUsername
     );
 

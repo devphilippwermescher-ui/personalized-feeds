@@ -134,4 +134,30 @@ describe('parseProfileViewersFromPayload', () => {
       }),
     ]);
   });
+
+  it('does not attach another viewer name to a name-like profile slug', () => {
+    const payload = [
+      '"url":"https://www.linkedin.com/in/carmen-linzner/"',
+      '"children":[[null,"Niels Wennesheimer"',
+      '"children":["Viewed 1h ago"]',
+      '"url":"https://www.linkedin.com/in/niels-wennesheimer/"',
+      '"children":[[null,"Niels Wennesheimer"',
+      '"children":["Viewed 2h ago"]',
+    ].join(',');
+
+    const viewers = parseProfileViewersFromPayload(payload);
+
+    expect(viewers.find((viewer) => viewer.linkedinUsername === 'carmen-linzner')).toEqual(
+      expect.objectContaining({
+        displayName: 'Carmen Linzner',
+        linkedinUrl: 'https://www.linkedin.com/in/carmen-linzner/',
+      })
+    );
+    expect(viewers.find((viewer) => viewer.linkedinUsername === 'niels-wennesheimer')).toEqual(
+      expect.objectContaining({
+        displayName: 'Niels Wennesheimer',
+        linkedinUrl: 'https://www.linkedin.com/in/niels-wennesheimer/',
+      })
+    );
+  });
 });

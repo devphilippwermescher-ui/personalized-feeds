@@ -50,6 +50,10 @@ function keepExistingIfIncomingEmpty(incoming: string | undefined, existing: str
   return normalizedIncoming;
 }
 
+function buildLinkedInProfileUrl(linkedinUsername: string): string {
+  return `https://www.linkedin.com/in/${encodeURIComponent(linkedinUsername)}/`;
+}
+
 function isSearchUrlLikeDisplayName(value: string | undefined): boolean {
   const normalized = (value || '').trim().toLocaleLowerCase();
   return (
@@ -168,7 +172,7 @@ export async function upsertProfileViewers(
     batch.set(
       viewerRef,
       {
-        linkedinUrl: viewer.linkedinUrl,
+        linkedinUrl: buildLinkedInProfileUrl(linkedinUsername),
         linkedinUsername,
         displayName: chooseProfileViewerDisplayName(viewer.displayName, existingViewer.displayName, linkedinUsername),
         headline: keepExistingIfIncomingEmpty(viewer.headline, existingViewer.headline),
@@ -384,6 +388,15 @@ export async function updateProfileViewer(
     throw new Error('Invalid profile viewer id');
   }
 
+  const updateUsername = normalizeLinkedInUsername(updates.linkedinUsername || '');
+  const updateUrlUsername = normalizeLinkedInUsername(getUsernameFromLinkedInUrl(updates.linkedinUrl || ''));
+  if (
+    (updateUsername && updateUsername !== linkedinUsername) ||
+    (updateUrlUsername && updateUrlUsername !== linkedinUsername)
+  ) {
+    throw new Error('Profile viewer identity mismatch');
+  }
+
   const viewerRef = doc(profileViewersCollection(userId), linkedinUsername);
   const existingSnapshot = await getDoc(viewerRef);
   const existing = existingSnapshot.exists() ? existingSnapshot.data() as Partial<ProfileViewer> : null;
@@ -402,6 +415,7 @@ export async function updateProfileViewer(
     ...(existing?.isFollowing === true && !shouldPreserveUnavailable && typeof updates.isFollowing !== 'boolean'
       ? { isFollowing: true }
       : {}),
+    linkedinUrl: buildLinkedInProfileUrl(linkedinUsername),
     linkedinUsername,
   };
 
