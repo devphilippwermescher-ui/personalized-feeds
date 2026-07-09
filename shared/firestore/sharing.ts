@@ -61,11 +61,19 @@ async function upsertFollowedFeed(
   role: FeedShareRole
 ): Promise<void> {
   const followedId = `${ownerId}_${feedId}`;
-  await setDoc(doc(followedFeedsCollection(userId), followedId), {
+  const now = Date.now();
+  const followedRef = doc(followedFeedsCollection(userId), followedId);
+  const existingSnap = await getDoc(followedRef);
+  const existing = existingSnap.exists()
+    ? (existingSnap.data() as Partial<Omit<FollowedFeed, 'id'>>)
+    : null;
+
+  await setDoc(followedRef, {
     ownerId,
     feedId,
     role,
-    followedAt: Date.now(),
+    followedAt: typeof existing?.followedAt === 'number' ? existing.followedAt : now,
+    sortOrder: typeof existing?.sortOrder === 'number' ? existing.sortOrder : -now,
   } satisfies Omit<FollowedFeed, 'id'>);
 }
 
@@ -233,6 +241,8 @@ export async function followFeedByShareToken(userId: string, token: string): Pro
     ownerEmail: ownerProfile.email,
     ownerPhotoURL: ownerProfile.photoURL,
     followedAt: now,
+    followedFeedId: `${tokenData.ownerId}_${tokenData.feedId}`,
+    followedSortOrder: -now,
   };
 }
 
@@ -261,12 +271,18 @@ export async function getFollowedFeeds(userId: string): Promise<SharedFeedSummar
           : followed.role;
 
         if (activeRole !== followed.role) {
-          await setDoc(doc(followedFeedsCollection(userId), followed.id), {
+          const followedUpdate: Omit<FollowedFeed, 'id'> = {
             ownerId: followed.ownerId,
             feedId: followed.feedId,
             role: activeRole,
             followedAt: followed.followedAt,
-          } satisfies Omit<FollowedFeed, 'id'>);
+          };
+
+          if (typeof followed.sortOrder === 'number') {
+            followedUpdate.sortOrder = followed.sortOrder;
+          }
+
+          await setDoc(doc(followedFeedsCollection(userId), followed.id), followedUpdate);
         }
 
         return {
@@ -276,6 +292,8 @@ export async function getFollowedFeeds(userId: string): Promise<SharedFeedSummar
           ownerEmail: ownerProfile.email,
           ownerPhotoURL: ownerProfile.photoURL,
           followedAt: followed.followedAt,
+          followedFeedId: followed.id,
+          followedSortOrder: followed.sortOrder,
         };
       } catch (err: unknown) {
         const code =
@@ -291,7 +309,27 @@ export async function getFollowedFeeds(userId: string): Promise<SharedFeedSummar
     })
   );
 
-  return summaries.filter((item): item is SharedFeedSummary => !!item);
+  return summaries
+    .filter((item): item is SharedFeedSummary => !!item)
+    .sort((a, b) => {
+      const aOrder = typeof a.followedSortOrder === 'number' ? a.followedSortOrder : Number.MAX_SAFE_INTEGER;
+      const bOrder = typeof b.followedSortOrder === 'number' ? b.followedSortOrder : Number.MAX_SAFE_INTEGER;
+      if (aOrder !== bOrder) {
+        return aOrder - bOrder;
+      }
+
+      return (b.followedAt || 0) - (a.followedAt || 0);
+    });
+}
+
+export async function reorderFollowedFeeds(userId: string, orderedFollowedFeedIds: string[]): Promise<void> {
+  await Promise.all(
+    orderedFollowedFeedIds.map((followedFeedId, index) =>
+      updateDoc(doc(followedFeedsCollection(userId), followedFeedId), {
+        sortOrder: index,
+      })
+    )
+  );
 }
 
 export async function unfollowFeed(userId: string, ownerId: string, feedId: string): Promise<void> {

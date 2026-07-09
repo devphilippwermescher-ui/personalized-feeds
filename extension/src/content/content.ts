@@ -13,7 +13,7 @@ import '../runtime/set-public-path';
 
 import { loadFeatureSettings, onFeatureSettingsChange } from './feature-settings';
 import { destroyPostButtons, initPostButtons } from './post-buttons';
-import { destroySpeechToCommentButton, initSpeechToCommentButton } from './speech-to-comment';
+import { destroySpeechToCommentButton } from './speech-to-comment';
 import type { UserFeatureSettings } from 'shared/types';
 
 let featureSettings: UserFeatureSettings = {
@@ -32,11 +32,12 @@ function applyFeatureUI(): void {
     destroyPostButtons();
   }
 
-  if (featureSettings.speechToComment) {
-    initSpeechToCommentButton();
-  } else {
-    destroySpeechToCommentButton();
-  }
+  destroySpeechToCommentButton();
+  // if (featureSettings.speechToComment) {
+  //   initSpeechToCommentButton();
+  // } else {
+  //   destroySpeechToCommentButton();
+  // }
 }
 
 function applyFeatureSettings(nextSettings: UserFeatureSettings): void {

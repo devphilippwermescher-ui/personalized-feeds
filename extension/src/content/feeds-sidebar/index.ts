@@ -281,6 +281,7 @@ function getFeedActionDeps() {
     setSharedFeeds: (feeds: FeedInfo[]) => {
       sharedFeedsList = feeds;
     },
+    getActiveFeedTab: () => activeFeedTab,
     getExpandedFeedId: () => expandedFeedId,
     setExpandedFeedId: (feedId: string | null) => {
       expandedFeedId = feedId;

@@ -74,7 +74,7 @@ export function renderFeedRow({
         </span>
       `
     : `
-        <svg class="lfa-feed-grip${isShared ? ' lfa-feed-grip--hidden' : ''}" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <svg class="lfa-feed-grip" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
           <circle cx="9" cy="6" r="1.3"></circle>
           <circle cx="9" cy="12" r="1.3"></circle>
           <circle cx="9" cy="18" r="1.3"></circle>
@@ -86,7 +86,7 @@ export function renderFeedRow({
 
   return `
     <div class="${groupClasses}" data-feed-group-id="${escapeHtml(feed.id)}">
-      <div class="${itemClasses}" data-feed-id="${escapeHtml(feed.id)}" draggable="${isShared || isSystem ? 'false' : 'true'}">
+      <div class="${itemClasses}" data-feed-id="${escapeHtml(feed.id)}" draggable="${isSystem ? 'false' : 'true'}">
         ${leadingIcon}
         <div class="lfa-feed-name-wrap">
           <div class="lfa-feed-title-row">

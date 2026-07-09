@@ -19,6 +19,8 @@ export interface FeedInfo {
   ownerEmail?: string;
   ownerPhotoURL?: string;
   followedAt?: number;
+  followedFeedId?: string;
+  followedSortOrder?: number;
   isSystem?: boolean;
   systemType?: 'profileViewers';
   privateViewerCount?: number;

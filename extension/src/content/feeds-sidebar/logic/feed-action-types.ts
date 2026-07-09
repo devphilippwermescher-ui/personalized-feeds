@@ -10,6 +10,7 @@ export interface FeedActionDeps {
   setFeeds: (feeds: FeedInfo[]) => void;
   getSharedFeeds: () => FeedInfo[];
   setSharedFeeds: (feeds: FeedInfo[]) => void;
+  getActiveFeedTab: () => 'owned' | 'shared';
   getExpandedFeedId: () => string | null;
   setExpandedFeedId: (feedId: string | null) => void;
   getFeedMembersById: () => Record<string, FeedMemberInfo[]>;

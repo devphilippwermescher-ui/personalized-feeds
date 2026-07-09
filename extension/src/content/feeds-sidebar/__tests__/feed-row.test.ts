@@ -51,4 +51,17 @@ describe('renderFeedRow', () => {
     expect(html).not.toContain('lfa-feed-pin');
     expect(html).not.toContain('lfa-feed-info');
   });
+
+  it('keeps the drag grip and draggable row for a shared feed', () => {
+    const html = renderFeedRow({
+      feed: makeFeed({ name: 'Shared Work', isShared: true, ownerDisplayName: 'Owner' }),
+      expanded: false,
+      previewHtml: '',
+    });
+
+    expect(html).toContain('lfa-feed-grip');
+    expect(html).toContain('draggable="true"');
+    expect(html).toContain('lfa-feed-owner-badge">by Owner</span>');
+    expect(html).not.toContain('lfa-feed-grip--hidden');
+  });
 });

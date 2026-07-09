@@ -150,6 +150,30 @@ export const CONTENT_CSS = `.lfa-sidebar-content {
     flex: 1;
     min-height: 0;
   }
+  .lfa-support-footer {
+    flex-shrink: 0;
+    margin: 8px 12px 12px;
+    padding: 10px 12px;
+    border-top: 1px solid rgba(226, 232, 240, 0.9);
+    color: #64748b;
+    font-size: 12px;
+    line-height: 1.4;
+    text-align: center;
+  }
+  .lfa-support-label {
+    font-weight: 700;
+    color: #475569;
+  }
+  .lfa-support-link {
+    color: #2563eb;
+    font-weight: 600;
+    text-decoration: none;
+    word-break: break-word;
+  }
+  .lfa-support-link:hover {
+    color: #615DEC;
+    text-decoration: underline;
+  }
   .lfa-tabs {
     display: flex;
     margin: 12px 12px 6px;

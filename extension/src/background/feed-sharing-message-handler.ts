@@ -5,6 +5,7 @@ import {
   getFeedShares,
   getFollowedFeeds,
   removeFeedShare,
+  reorderFollowedFeeds,
   shareFeedWithUser,
   unfollowFeed,
   updateFeedShareRole,
@@ -153,6 +154,23 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       })
       .catch((error) => {
         sendResponse({ success: false, error: normalizeFeedsError(error, 'Failed to unfollow shared feed') });
+      });
+    return true;
+  }
+
+  if (message.type === 'FEEDS_REORDER_SHARED') {
+    getAuthenticatedFeedsUser()
+      .then((user) => {
+        if (!user) {
+          sendResponse(getFeedsAuthErrorResponse());
+          return;
+        }
+        return reorderFollowedFeeds(user.uid, (message.followedFeedIds as string[]) || []).then(() => {
+          sendResponse({ success: true });
+        });
+      })
+      .catch((error) => {
+        sendResponse({ success: false, error: normalizeFeedsError(error, 'Failed to reorder shared feeds') });
       });
     return true;
   }
