@@ -147,7 +147,7 @@ export const MEMBERS_CSS = `.lfa-member-row {
     align-items: center;
     gap: 2px;
     min-width: 0;
-    width: 100%;
+    width: auto;
     max-width: 100%;
   }
   .lfa-member-name-text {
@@ -155,7 +155,7 @@ export const MEMBERS_CSS = `.lfa-member-row {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    flex: 1 1 auto;
+    flex: 0 1 auto;
   }
   .lfa-member-name:hover {
     color: #1d4ed8;

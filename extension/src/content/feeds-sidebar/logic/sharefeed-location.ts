@@ -1,8 +1,8 @@
 const PENDING_SHARE_SESSION_KEY = 'lfa_pending_sharefeed';
 
-export function getSharefeedTokenFromLocation(): string | null {
+export function getSharefeedTokenFromHref(href: string): string | null {
   try {
-    const url = new URL(window.location.href);
+    const url = new URL(href);
     const fromQuery = url.searchParams.get('sharefeed');
     if (fromQuery) {
       return fromQuery;
@@ -21,6 +21,23 @@ export function getSharefeedTokenFromLocation(): string | null {
     }
   } catch {
     /* ignore malformed locations */
+  }
+
+  return null;
+}
+
+export function storePendingSharefeedToken(token: string): void {
+  try {
+    sessionStorage.setItem(PENDING_SHARE_SESSION_KEY, token);
+  } catch {
+    /* ignore unavailable session storage */
+  }
+}
+
+export function getSharefeedTokenFromLocation(): string | null {
+  const token = getSharefeedTokenFromHref(window.location.href);
+  if (token) {
+    return token;
   }
 
   try {

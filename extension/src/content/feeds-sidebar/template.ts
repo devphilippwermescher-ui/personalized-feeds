@@ -11,7 +11,7 @@ function escapeHtml(text: string): string {
 function renderSupportFooter(): string {
   return `
     <div class="lfa-support-footer">
-      <span class="lfa-support-label">Support &amp; Feedback:</span>
+      <span class="lfa-support-label">Support &amp; Feedback :</span>
       <a class="lfa-support-link" href="mailto:dev.philipp.wermescher@gmail.com">dev.philipp.wermescher@gmail.com</a>
     </div>
   `;

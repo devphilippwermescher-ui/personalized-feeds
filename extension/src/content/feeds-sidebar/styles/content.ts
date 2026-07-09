@@ -152,26 +152,29 @@ export const CONTENT_CSS = `.lfa-sidebar-content {
   }
   .lfa-support-footer {
     flex-shrink: 0;
-    margin: 8px 12px 12px;
-    padding: 10px 12px;
-    border-top: 1px solid rgba(226, 232, 240, 0.9);
-    color: #64748b;
+    margin: 0;
+    padding: 10px 14px;
+    border-top: 1px solid #dde4ee;
+    background: #edf0f5;
+    color: #6b7280;
     font-size: 12px;
-    line-height: 1.4;
+    line-height: 1.35;
     text-align: center;
   }
   .lfa-support-label {
-    font-weight: 700;
-    color: #475569;
+    font-weight: 400;
+    color: #6b7280;
+    margin-right: 4px;
   }
   .lfa-support-link {
-    color: #2563eb;
-    font-weight: 600;
-    text-decoration: none;
+    color: #034C9D;
+    font-weight: 400;
+    text-decoration: underline;
     word-break: break-word;
+    cursor: pointer;
   }
   .lfa-support-link:hover {
-    color: #615DEC;
+    color: #034C9D;
     text-decoration: underline;
   }
   .lfa-tabs {

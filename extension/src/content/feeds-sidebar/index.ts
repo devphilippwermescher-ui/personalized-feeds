@@ -151,6 +151,7 @@ const { sendMsg, checkAuth, handleSignIn, handleSignOut } =
 const { handlePendingSharedFeedLink, schedulePendingShareRetries } =
   createSharedFeedLinkController({
     getCurrentUser: () => currentUser,
+    checkAuth,
     sendMsg,
     getSharedFeeds: () => sharedFeedsList,
     setSharedFeeds: (feeds) => {
@@ -158,9 +159,6 @@ const { handlePendingSharedFeedLink, schedulePendingShareRetries } =
     },
     selectSharedTab: () => {
       activeFeedTab = 'shared';
-    },
-    openSidebar: () => {
-      sidebarUiController?.openSidebar();
     },
     renderSidebarContent,
     showToast,
@@ -275,6 +273,9 @@ function getFeedActionDeps() {
     sendMsg,
     showToast,
     renderSidebarContent,
+    openSidebar: () => {
+      sidebarUiController?.openSidebar();
+    },
     loadFeeds,
     getFeeds: () => [...feedsList, ...sharedFeedsList],
     setFeeds: (feeds: FeedInfo[]) => {

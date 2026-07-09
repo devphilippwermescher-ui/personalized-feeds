@@ -368,12 +368,6 @@ export function createSidebarUiController(deps: SidebarUiControllerDeps): {
         void deps.checkAuth();
       }
 
-      setTimeout(() => {
-        if (getSharefeedTokenFromLocation() && !sidebarOpen) {
-          toggle();
-        }
-      }, 1500);
-
       chrome.storage.onChanged.addListener((changes, area) => {
         if (area === 'local' && changes.pf_userPlan) {
           deps.setIsPremium(changes.pf_userPlan.newValue === 'premium');

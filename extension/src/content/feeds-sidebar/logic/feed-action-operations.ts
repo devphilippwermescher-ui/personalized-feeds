@@ -433,8 +433,11 @@ export function showSharedFeedFollowedModal(feedName: string, ownerName: string,
       onClose: () => closeFeedActionModal(deps),
       onViewSharedFeeds: () => {
         closeFeedActionModal(deps);
+        deps.openSidebar();
         deps.renderSidebarContent();
-        document.getElementById('lfa-tab-shared')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        requestAnimationFrame(() => {
+          document.getElementById('lfa-tab-shared')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        });
       },
     }),
     deps

@@ -1,18 +1,20 @@
 import type { FeedInfo, UserInfo } from '../types';
 import { SESSION_EXPIRED_MESSAGE } from './sidebar-session';
 import {
+  getSharefeedTokenFromHref,
   getSharefeedTokenFromLocation,
+  storePendingSharefeedToken,
   stripSharefeedFromLocation,
 } from './sharefeed-location';
 import { normalizeSharedFeed } from './profile-viewers-feed';
 
 interface SharedFeedLinkControllerDeps {
   getCurrentUser: () => UserInfo | null;
+  checkAuth: () => Promise<void>;
   sendMsg: (message: Record<string, unknown>) => Promise<Record<string, unknown>>;
   getSharedFeeds: () => FeedInfo[];
   setSharedFeeds: (feeds: FeedInfo[]) => void;
   selectSharedTab: () => void;
-  openSidebar: () => void;
   renderSidebarContent: () => void;
   showToast: (message: string, type?: 'success' | 'error') => void;
   showFollowedModal: (feed: FeedInfo) => void;
@@ -26,10 +28,16 @@ export function createSharedFeedLinkController(
 } {
   let processedShareToken: string | null = null;
   let shareFollowInFlightToken: string | null = null;
+  let retryIntervalId: number | null = null;
+  let locationWatcherStarted = false;
 
   const handlePendingSharedFeedLink = async (): Promise<void> => {
     if (!deps.getCurrentUser()) {
-      return;
+      await deps.checkAuth();
+
+      if (!deps.getCurrentUser()) {
+        return;
+      }
     }
 
     const token = getSharefeedTokenFromLocation();
@@ -71,7 +79,6 @@ export function createSharedFeedLinkController(
       }
 
       deps.selectSharedTab();
-      deps.openSidebar();
       deps.renderSidebarContent();
       deps.showFollowedModal(sharedFeed);
       stripSharefeedFromLocation();
@@ -82,19 +89,65 @@ export function createSharedFeedLinkController(
     }
   };
 
+  const startRetryWindow = (): void => {
+    if (retryIntervalId !== null) {
+      window.clearInterval(retryIntervalId);
+    }
+
+    let attempt = 0;
+    const maxAttempts = 40;
+    retryIntervalId = window.setInterval(() => {
+      attempt += 1;
+      if (attempt > maxAttempts) {
+        if (retryIntervalId !== null) {
+          window.clearInterval(retryIntervalId);
+          retryIntervalId = null;
+        }
+        return;
+      }
+      void handlePendingSharedFeedLink();
+    }, 500);
+  };
+
+  const handlePotentialSharefeedLocationChange = (event?: Event): void => {
+    const eventToken =
+      event instanceof HashChangeEvent
+        ? getSharefeedTokenFromHref(event.newURL)
+        : null;
+
+    if (eventToken) {
+      storePendingSharefeedToken(eventToken);
+    }
+
+    if (!eventToken && !getSharefeedTokenFromLocation()) {
+      return;
+    }
+
+    void handlePendingSharedFeedLink();
+    startRetryWindow();
+  };
+
+  const startLocationWatcher = (): void => {
+    if (locationWatcherStarted) {
+      return;
+    }
+
+    locationWatcherStarted = true;
+    window.addEventListener('hashchange', handlePotentialSharefeedLocationChange);
+    window.addEventListener('popstate', handlePotentialSharefeedLocationChange);
+    window.addEventListener('focus', handlePotentialSharefeedLocationChange);
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        handlePotentialSharefeedLocationChange();
+      }
+    });
+  };
+
   return {
     handlePendingSharedFeedLink,
     schedulePendingShareRetries: () => {
-      let attempt = 0;
-      const maxAttempts = 40;
-      const intervalId = window.setInterval(() => {
-        attempt += 1;
-        if (attempt > maxAttempts) {
-          window.clearInterval(intervalId);
-          return;
-        }
-        void handlePendingSharedFeedLink();
-      }, 500);
+      startLocationWatcher();
+      startRetryWindow();
     },
   };
 }
