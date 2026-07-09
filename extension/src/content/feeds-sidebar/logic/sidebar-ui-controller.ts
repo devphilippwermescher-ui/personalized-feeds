@@ -81,6 +81,7 @@ export function createSidebarUiController(deps: SidebarUiControllerDeps): {
   renderSidebarContent: () => void;
   getSidebarEl: () => HTMLElement | null;
   isOpen: () => boolean;
+  openSidebar: () => void;
 } {
   let sidebarOpen = false;
   let sidebarEl: HTMLElement | null = null;
@@ -347,6 +348,15 @@ export function createSidebarUiController(deps: SidebarUiControllerDeps): {
     renderSidebarContent,
     getSidebarEl: () => sidebarEl,
     isOpen: () => sidebarOpen,
+    openSidebar: () => {
+      if (!sidebarEl) {
+        init();
+      }
+
+      if (!sidebarOpen) {
+        toggle();
+      }
+    },
     start: () => {
       ensureInit({
         setIsPremium: deps.setIsPremium,

@@ -12,6 +12,7 @@ interface SharedFeedLinkControllerDeps {
   getSharedFeeds: () => FeedInfo[];
   setSharedFeeds: (feeds: FeedInfo[]) => void;
   selectSharedTab: () => void;
+  openSidebar: () => void;
   renderSidebarContent: () => void;
   showToast: (message: string, type?: 'success' | 'error') => void;
   showFollowedModal: (feed: FeedInfo) => void;
@@ -70,6 +71,7 @@ export function createSharedFeedLinkController(
       }
 
       deps.selectSharedTab();
+      deps.openSidebar();
       deps.renderSidebarContent();
       deps.showFollowedModal(sharedFeed);
       stripSharefeedFromLocation();

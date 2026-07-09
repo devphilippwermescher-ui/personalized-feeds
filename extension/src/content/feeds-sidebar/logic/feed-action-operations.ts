@@ -387,23 +387,42 @@ export function showDuplicateSharedFeedModal(feed: FeedInfo, deps: FeedActionDep
 }
 
 export async function unfollowSharedFeed(feed: FeedInfo, deps: FeedActionDeps): Promise<void> {
-  const response = await deps.sendMsg({
-    type: 'FEEDS_UNFOLLOW_SHARED',
-    ownerId: feed.ownerId,
-    feedId: feed.id,
-  });
+  openFeedActionModal(
+    createElement(DeleteFeedModal, {
+      feedName: feed.name,
+      memberCount: feed.memberCount || 0,
+      title: 'Unfollow this feed?',
+      descriptionTitle: `Unfollow "${feed.name}"?`,
+      description: 'Are you sure you want to unfollow this shared feed? It will be removed from "Shared with me".',
+      cancelLabel: 'No',
+      confirmLabel: 'Yes',
+      submittingLabel: 'Unfollowing...',
+      confirmVariant: 'danger',
+      confirmLeadingIcon: null,
+      onClose: () => closeFeedActionModal(deps),
+      onDelete: async () => {
+        const response = await deps.sendMsg({
+          type: 'FEEDS_UNFOLLOW_SHARED',
+          ownerId: feed.ownerId,
+          feedId: feed.id,
+        });
 
-  if (!response?.success) {
-    deps.showToast((response?.error as string) || 'Failed to unfollow feed', 'error');
-    return;
-  }
+        if (!response?.success) {
+          deps.showToast((response?.error as string) || 'Failed to unfollow feed', 'error');
+          return { success: false };
+        }
 
-  deps.setSharedFeeds(deps.getSharedFeeds().filter((item) => !(item.id === feed.id && item.ownerId === feed.ownerId)));
-  if (deps.getExpandedFeedId() === feed.id) {
-    deps.setExpandedFeedId(null);
-  }
-  deps.renderSidebarContent();
-  deps.showToast(feedUnfollowedMessage(feed.name), 'success');
+        deps.setSharedFeeds(deps.getSharedFeeds().filter((item) => !(item.id === feed.id && item.ownerId === feed.ownerId)));
+        if (deps.getExpandedFeedId() === feed.id) {
+          deps.setExpandedFeedId(null);
+        }
+        deps.renderSidebarContent();
+        deps.showToast(feedUnfollowedMessage(feed.name), 'success');
+        return { success: true };
+      },
+    }),
+    deps
+  );
 }
 
 export function showSharedFeedFollowedModal(feedName: string, ownerName: string, deps: FeedActionDeps): void {

@@ -159,6 +159,9 @@ const { handlePendingSharedFeedLink, schedulePendingShareRetries } =
     selectSharedTab: () => {
       activeFeedTab = 'shared';
     },
+    openSidebar: () => {
+      sidebarUiController?.openSidebar();
+    },
     renderSidebarContent,
     showToast,
     showFollowedModal: (sharedFeed) => {
