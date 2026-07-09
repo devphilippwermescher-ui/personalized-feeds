@@ -333,7 +333,10 @@ export async function reorderFollowedFeeds(userId: string, orderedFollowedFeedId
 }
 
 export async function unfollowFeed(userId: string, ownerId: string, feedId: string): Promise<void> {
-  await deleteDoc(doc(followedFeedsCollection(userId), `${ownerId}_${feedId}`));
+  const batch = writeBatch(getFirebaseDb());
+  batch.delete(doc(followedFeedsCollection(userId), `${ownerId}_${feedId}`));
+  batch.delete(doc(sharesCollection(ownerId, feedId), userId));
+  await batch.commit();
 }
 
 export async function duplicateSharedFeed(

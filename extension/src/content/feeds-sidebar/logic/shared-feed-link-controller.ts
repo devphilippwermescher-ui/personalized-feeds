@@ -62,7 +62,6 @@ export function createSharedFeedLinkController(
         return;
       }
 
-      processedShareToken = token;
       const sharedFeed = normalizeSharedFeed(
         response.sharedFeed as FeedInfo & { role?: 'reader' | 'editor' }
       );
@@ -82,6 +81,7 @@ export function createSharedFeedLinkController(
       deps.renderSidebarContent();
       deps.showFollowedModal(sharedFeed);
       stripSharefeedFromLocation();
+      processedShareToken = null;
     } finally {
       if (shareFollowInFlightToken === token) {
         shareFollowInFlightToken = null;

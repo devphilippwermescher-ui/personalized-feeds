@@ -42,7 +42,12 @@ service cloud.firestore {
         match /shares/{targetUid} {
           allow read: if isOwner(userId) || (signedIn() && request.auth.uid == targetUid);
           allow create: if isOwner(userId) || (signedIn() && request.auth.uid == targetUid);
-          allow update, delete: if isOwner(userId);
+          allow update: if isOwner(userId);
+          allow delete: if isOwner(userId) || (
+            signedIn() &&
+            request.auth.uid == targetUid &&
+            resource.data.targetUid == request.auth.uid
+          );
         }
       }
 
