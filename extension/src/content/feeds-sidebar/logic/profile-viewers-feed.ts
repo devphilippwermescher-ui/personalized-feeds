@@ -6,12 +6,13 @@ const DEFAULT_RECRUITER_VIEWERS_URL =
   'https://www.linkedin.com/analytics/recruiter-views/?timeRange=WvmpSearchFilterTimeRange_LAST_90_DAYS';
 
 export function normalizeSharedFeed(
-  feed: FeedInfo & { role?: 'reader' | 'editor' }
+  feed: FeedInfo & { role?: 'reader' | 'editor'; previousRole?: 'reader' | 'editor' }
 ): FeedInfo {
   return {
     ...feed,
     isShared: true,
     accessRole: feed.accessRole || feed.role,
+    previousAccessRole: feed.previousAccessRole || feed.previousRole,
   };
 }
 

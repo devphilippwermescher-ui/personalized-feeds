@@ -15,6 +15,7 @@ export interface FeedInfo {
   ownerId?: string;
   isShared?: boolean;
   accessRole?: 'reader' | 'editor';
+  previousAccessRole?: 'reader' | 'editor';
   ownerDisplayName?: string;
   ownerEmail?: string;
   ownerPhotoURL?: string;

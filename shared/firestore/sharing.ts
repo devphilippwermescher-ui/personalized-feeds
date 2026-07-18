@@ -288,6 +288,7 @@ export async function getFollowedFeeds(userId: string): Promise<SharedFeedSummar
         return {
           ...feed,
           role: activeRole,
+          previousRole: activeRole !== followed.role ? followed.role : undefined,
           ownerDisplayName: ownerProfile.displayName,
           ownerEmail: ownerProfile.email,
           ownerPhotoURL: ownerProfile.photoURL,

@@ -114,6 +114,7 @@ export interface FollowedFeed {
 
 export interface SharedFeedSummary extends Feed {
   role: FeedShareRole;
+  previousRole?: FeedShareRole;
   ownerDisplayName: string;
   ownerEmail: string;
   ownerPhotoURL?: string;

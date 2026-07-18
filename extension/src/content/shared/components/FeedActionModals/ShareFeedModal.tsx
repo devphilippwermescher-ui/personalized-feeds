@@ -144,7 +144,6 @@ export function ShareFeedModal({
     }
 
     setShares((current) => current.map((share) => (share.targetUid === targetUid ? { ...share, role } : share)));
-    setMessage('Access role updated');
   };
 
   const handleRemoveShare = async (targetUid: string) => {

@@ -425,11 +425,18 @@ export async function unfollowSharedFeed(feed: FeedInfo, deps: FeedActionDeps): 
   );
 }
 
-export function showSharedFeedFollowedModal(feedName: string, ownerName: string, deps: FeedActionDeps): void {
+export function showSharedFeedFollowedModal(
+  feedName: string,
+  ownerName: string,
+  deps: FeedActionDeps,
+  options: { mode?: 'followed' | 'roleChanged'; role?: 'reader' | 'editor' } = {}
+): void {
   openFeedActionModal(
     createElement(SharedFeedFollowedModal, {
       feedName,
       ownerName,
+      mode: options.mode,
+      role: options.role,
       onClose: () => closeFeedActionModal(deps),
       onViewSharedFeeds: () => {
         closeFeedActionModal(deps);

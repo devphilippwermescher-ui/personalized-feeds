@@ -70,6 +70,102 @@ let feedActionModalEl: HTMLElement | null = null;
 let feedActionModalRoot: Root | null = null;
 let sidebarUiController: ReturnType<typeof createSidebarUiController> | null = null;
 
+type SharedFeedRoleSnapshot = Record<string, 'reader' | 'editor'>;
+type SharedFeedResponse = FeedInfo & {
+  role?: 'reader' | 'editor';
+  previousRole?: 'reader' | 'editor';
+};
+
+const SHARED_FEED_ROLE_STORAGE_PREFIX = 'lfa_shared_feed_roles';
+
+function getSharedFeedRoleStorageKey(): string | null {
+  return currentUser?.userId
+    ? `${SHARED_FEED_ROLE_STORAGE_PREFIX}:${currentUser.userId}`
+    : null;
+}
+
+function getSharedFeedRoleSnapshotKey(feed: FeedInfo): string | null {
+  return feed.ownerId && feed.accessRole ? `${feed.ownerId}:${feed.id}` : null;
+}
+
+function buildSharedFeedRoleSnapshot(feeds: FeedInfo[]): SharedFeedRoleSnapshot {
+  return feeds.reduce<SharedFeedRoleSnapshot>((snapshot, feed) => {
+    const key = getSharedFeedRoleSnapshotKey(feed);
+    if (key && feed.accessRole) {
+      snapshot[key] = feed.accessRole;
+    }
+    return snapshot;
+  }, {});
+}
+
+function readSharedFeedRoleSnapshot(): Promise<SharedFeedRoleSnapshot> {
+  const storageKey = getSharedFeedRoleStorageKey();
+  if (!storageKey) {
+    return Promise.resolve({});
+  }
+
+  return new Promise((resolve) => {
+    chrome.storage.local.get([storageKey], (result) => {
+      const stored = result[storageKey] as unknown;
+      if (!stored || typeof stored !== 'object' || Array.isArray(stored)) {
+        resolve({});
+        return;
+      }
+
+      const snapshot: SharedFeedRoleSnapshot = {};
+      Object.entries(stored as Record<string, unknown>).forEach(([key, value]) => {
+        if (value === 'reader' || value === 'editor') {
+          snapshot[key] = value;
+        }
+      });
+      resolve(snapshot);
+    });
+  });
+}
+
+function writeSharedFeedRoleSnapshot(snapshot: SharedFeedRoleSnapshot): Promise<void> {
+  const storageKey = getSharedFeedRoleStorageKey();
+  if (!storageKey) {
+    return Promise.resolve();
+  }
+
+  return new Promise((resolve) => {
+    chrome.storage.local.set({ [storageKey]: snapshot }, () => resolve());
+  });
+}
+
+async function syncSharedFeedRoleChanges(nextSharedFeeds: FeedInfo[]): Promise<void> {
+  const nextSnapshot = buildSharedFeedRoleSnapshot(nextSharedFeeds);
+  const previousSnapshot = await readSharedFeedRoleSnapshot();
+  const changedFeed =
+    nextSharedFeeds.find(
+      (feed) =>
+        feed.previousAccessRole &&
+        feed.accessRole &&
+        feed.previousAccessRole !== feed.accessRole
+    ) ||
+    nextSharedFeeds.find((feed) => {
+      const key = getSharedFeedRoleSnapshotKey(feed);
+      return key && previousSnapshot[key] && previousSnapshot[key] !== feed.accessRole;
+    });
+
+  await writeSharedFeedRoleSnapshot(nextSnapshot);
+
+  if (!changedFeed?.accessRole) {
+    return;
+  }
+
+  showSharedFeedFollowedModal(
+    changedFeed.name,
+    changedFeed.ownerDisplayName || 'Unknown user',
+    getFeedActionDeps(),
+    {
+      mode: 'roleChanged',
+      role: changedFeed.accessRole,
+    }
+  );
+}
+
 function renderSidebarContent(): void {
   sidebarUiController?.renderSidebarContent();
 }
@@ -254,7 +350,8 @@ async function refreshSharedFeeds(): Promise<void> {
     return;
   }
 
-  sharedFeedsList = (sharedResp.sharedFeeds as Array<FeedInfo & { role?: 'reader' | 'editor' }>).map(normalizeSharedFeed);
+  sharedFeedsList = (sharedResp.sharedFeeds as SharedFeedResponse[]).map(normalizeSharedFeed);
+  await syncSharedFeedRoleChanges(sharedFeedsList);
 }
 
 async function openFeedPosts(feedId: string): Promise<void> {
@@ -364,7 +461,8 @@ async function loadFeeds(): Promise<void> {
   }
 
   if (Array.isArray(sharedResp?.sharedFeeds)) {
-    sharedFeedsList = (sharedResp.sharedFeeds as Array<FeedInfo & { role?: 'reader' | 'editor' }>).map(normalizeSharedFeed);
+    sharedFeedsList = (sharedResp.sharedFeeds as SharedFeedResponse[]).map(normalizeSharedFeed);
+    await syncSharedFeedRoleChanges(sharedFeedsList);
   }
 
   const staleFeedIds = getStaleFeedMemberCacheIds(

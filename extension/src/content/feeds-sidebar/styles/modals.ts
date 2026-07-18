@@ -358,6 +358,9 @@ export const MODALS_CSS = `.lfa-share-modal {
     font-size: 14px;
     color: #6b7280;
   }
+  .lfa-followed-modal-owner--secondary {
+    margin-top: 6px;
+  }
   .lfa-member-icon-btn:hover {
     background: #eef2ff;
     color: #334155;
