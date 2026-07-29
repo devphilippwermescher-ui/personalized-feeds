@@ -94,4 +94,70 @@ describe('parseProfileViewersFromPayload', () => {
       }),
     ]);
   });
+
+  it('extracts a premium badge signal scoped to the current viewer', () => {
+    const payload = [
+      '"url":"https://www.linkedin.com/in/yevhen-romanenko/"',
+      '"children":[[null,"Yevhen Romanenko"',
+      '"children":["Senior/Lead Frontend Engineer"]',
+      '"premiumFeatures":[{"featureType":"SUBSCRIBER","hasAccess":true}]',
+      '"url":"https://www.linkedin.com/in/regular-viewer/"',
+      '"children":[[null,"Regular Viewer"',
+      '"children":["Product Manager"]',
+    ].join(',');
+
+    const viewers = parseProfileViewersFromPayload(payload);
+
+    expect(viewers.find((viewer) => viewer.linkedinUsername === 'yevhen-romanenko')).toEqual(
+      expect.objectContaining({
+        displayName: 'Yevhen Romanenko',
+        isPremium: true,
+      })
+    );
+    expect(viewers.find((viewer) => viewer.linkedinUsername === 'regular-viewer')?.isPremium).toBeUndefined();
+  });
+
+  it('does not treat Profile Visitors premium endpoint metadata as a profile premium badge', () => {
+    const payload = [
+      '"url":"https://www.linkedin.com/in/regular-viewer/"',
+      '"children":[[null,"Regular Viewer"',
+      '"children":["Product Manager"]',
+      '"pagerId":"com.linkedin.sdui.premium.wvmp.entityList"',
+      '"requestId":"WvmpEntityList"',
+    ].join(',');
+
+    expect(parseProfileViewersFromPayload(payload)).toEqual([
+      expect.objectContaining({
+        linkedinUsername: 'regular-viewer',
+        displayName: 'Regular Viewer',
+        isPremium: undefined,
+      }),
+    ]);
+  });
+
+  it('does not attach another viewer name to a name-like profile slug', () => {
+    const payload = [
+      '"url":"https://www.linkedin.com/in/carmen-linzner/"',
+      '"children":[[null,"Niels Wennesheimer"',
+      '"children":["Viewed 1h ago"]',
+      '"url":"https://www.linkedin.com/in/niels-wennesheimer/"',
+      '"children":[[null,"Niels Wennesheimer"',
+      '"children":["Viewed 2h ago"]',
+    ].join(',');
+
+    const viewers = parseProfileViewersFromPayload(payload);
+
+    expect(viewers.find((viewer) => viewer.linkedinUsername === 'carmen-linzner')).toEqual(
+      expect.objectContaining({
+        displayName: 'Carmen Linzner',
+        linkedinUrl: 'https://www.linkedin.com/in/carmen-linzner/',
+      })
+    );
+    expect(viewers.find((viewer) => viewer.linkedinUsername === 'niels-wennesheimer')).toEqual(
+      expect.objectContaining({
+        displayName: 'Niels Wennesheimer',
+        linkedinUrl: 'https://www.linkedin.com/in/niels-wennesheimer/',
+      })
+    );
+  });
 });

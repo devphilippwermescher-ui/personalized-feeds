@@ -15,10 +15,13 @@ export interface FeedInfo {
   ownerId?: string;
   isShared?: boolean;
   accessRole?: 'reader' | 'editor';
+  previousAccessRole?: 'reader' | 'editor';
   ownerDisplayName?: string;
   ownerEmail?: string;
   ownerPhotoURL?: string;
   followedAt?: number;
+  followedFeedId?: string;
+  followedSortOrder?: number;
   isSystem?: boolean;
   systemType?: 'profileViewers';
   privateViewerCount?: number;

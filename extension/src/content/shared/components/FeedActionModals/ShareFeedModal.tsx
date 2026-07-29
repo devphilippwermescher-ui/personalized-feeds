@@ -11,6 +11,7 @@ interface ShareFeedModalProps {
   onUpdateShareRole: (targetUid: string, role: 'reader' | 'editor') => Promise<{ success: boolean; error?: string }>;
   onRemoveShare: (targetUid: string) => Promise<{ success: boolean; error?: string }>;
   onGetLink: () => Promise<{ success: boolean; url?: string; error?: string }>;
+  onNotify?: (message: string, tone?: 'success' | 'error') => void;
 }
 
 type ShareTab = 'email' | 'link';
@@ -23,6 +24,7 @@ export function ShareFeedModal({
   onUpdateShareRole,
   onRemoveShare,
   onGetLink,
+  onNotify,
 }: ShareFeedModalProps) {
   const [activeTab, setActiveTab] = useState<ShareTab>('email');
   const [email, setEmail] = useState('');
@@ -115,7 +117,7 @@ export function ShareFeedModal({
 
     try {
       await navigator.clipboard.writeText(shareLink);
-      setMessage('Link copied');
+      onNotify?.('Link copied', 'success');
       setError('');
     } catch {
       setError('Unable to copy link');
@@ -142,7 +144,6 @@ export function ShareFeedModal({
     }
 
     setShares((current) => current.map((share) => (share.targetUid === targetUid ? { ...share, role } : share)));
-    setMessage('Access role updated');
   };
 
   const handleRemoveShare = async (targetUid: string) => {

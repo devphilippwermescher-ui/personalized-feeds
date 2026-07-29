@@ -77,14 +77,36 @@ export async function createNewFeed(
 export async function moveFeed(
   dragFeedId: string,
   targetFeedId: string,
-  deps: Pick<FeedActionDeps, 'getFeeds' | 'setFeeds' | 'sendMsg' | 'showToast' | 'renderSidebarContent'>
+  deps: Pick<
+    FeedActionDeps,
+    | 'getFeeds'
+    | 'setFeeds'
+    | 'getSharedFeeds'
+    | 'setSharedFeeds'
+    | 'getActiveFeedTab'
+    | 'sendMsg'
+    | 'showToast'
+    | 'renderSidebarContent'
+  >
 ): Promise<void> {
-  const { getFeeds, setFeeds, sendMsg, showToast, renderSidebarContent } = deps;
+  const {
+    getFeeds,
+    setFeeds,
+    getSharedFeeds,
+    setSharedFeeds,
+    getActiveFeedTab,
+    sendMsg,
+    showToast,
+    renderSidebarContent,
+  } = deps;
   if (dragFeedId === targetFeedId) {
     return;
   }
 
-  const currentFeeds = getFeeds();
+  const isSharedReorder = getActiveFeedTab() === 'shared';
+  const currentFeeds = isSharedReorder
+    ? getSharedFeeds()
+    : getFeeds().filter((feed) => !feed.isShared);
   const fromIndex = currentFeeds.findIndex((feed) => feed.id === dragFeedId);
   const toIndex = currentFeeds.findIndex((feed) => feed.id === targetFeedId);
 
@@ -101,31 +123,48 @@ export async function moveFeed(
   const [movedFeed] = reorderedFeeds.splice(fromIndex, 1);
   reorderedFeeds.splice(toIndex, 0, movedFeed);
   let manualSortOrder = 0;
-  setFeeds(
-    reorderedFeeds.map((feed) => {
-      if (feed.isSystem) {
-        return feed;
-      }
+  const nextFeeds = reorderedFeeds.map((feed) => {
+    if (feed.isSystem) {
+      return feed;
+    }
 
-      const nextFeed = {
-        ...feed,
-        sortOrder: manualSortOrder,
-      };
-      manualSortOrder += 1;
-      return nextFeed;
-    })
-  );
-  renderSidebarContent();
-
-  const response = await sendMsg({
-    type: 'FEEDS_REORDER',
-    feedIds: reorderedFeeds.filter((feed) => !feed.isSystem).map((feed) => feed.id),
+    const nextFeed = {
+      ...feed,
+      sortOrder: isSharedReorder ? feed.sortOrder : manualSortOrder,
+      followedSortOrder: isSharedReorder ? manualSortOrder : feed.followedSortOrder,
+    };
+    manualSortOrder += 1;
+    return nextFeed;
   });
 
+  if (isSharedReorder) {
+    setSharedFeeds(nextFeeds);
+  } else {
+    setFeeds(nextFeeds);
+  }
+  renderSidebarContent();
+
+  const response = await sendMsg(isSharedReorder
+    ? {
+      type: 'FEEDS_REORDER_SHARED',
+      followedFeedIds: reorderedFeeds
+        .filter((feed) => !feed.isSystem)
+        .map((feed) => feed.followedFeedId)
+        .filter((followedFeedId): followedFeedId is string => Boolean(followedFeedId)),
+    }
+    : {
+      type: 'FEEDS_REORDER',
+      feedIds: reorderedFeeds.filter((feed) => !feed.isSystem).map((feed) => feed.id),
+    });
+
   if (!response?.success) {
-    setFeeds(previousFeeds);
+    if (isSharedReorder) {
+      setSharedFeeds(previousFeeds);
+    } else {
+      setFeeds(previousFeeds);
+    }
     renderSidebarContent();
-    showToast((response?.error as string) || 'Failed to reorder feeds', 'error');
+    showToast((response?.error as string) || (isSharedReorder ? 'Failed to reorder shared feeds' : 'Failed to reorder feeds'), 'error');
   }
 }
 
@@ -315,6 +354,7 @@ export function showShareFeedModal(feed: FeedInfo, deps: FeedActionDeps): void {
 
         return { success: true, url: response.url as string };
       },
+      onNotify: deps.showToast,
     }),
     deps
   );
@@ -347,35 +387,64 @@ export function showDuplicateSharedFeedModal(feed: FeedInfo, deps: FeedActionDep
 }
 
 export async function unfollowSharedFeed(feed: FeedInfo, deps: FeedActionDeps): Promise<void> {
-  const response = await deps.sendMsg({
-    type: 'FEEDS_UNFOLLOW_SHARED',
-    ownerId: feed.ownerId,
-    feedId: feed.id,
-  });
+  openFeedActionModal(
+    createElement(DeleteFeedModal, {
+      feedName: feed.name,
+      memberCount: feed.memberCount || 0,
+      title: 'Unfollow this feed?',
+      descriptionTitle: `Unfollow "${feed.name}"?`,
+      description: 'Are you sure you want to unfollow this shared feed? It will be removed from "Shared with me".',
+      cancelLabel: 'No',
+      confirmLabel: 'Yes',
+      submittingLabel: 'Unfollowing...',
+      confirmVariant: 'danger',
+      confirmLeadingIcon: null,
+      onClose: () => closeFeedActionModal(deps),
+      onDelete: async () => {
+        const response = await deps.sendMsg({
+          type: 'FEEDS_UNFOLLOW_SHARED',
+          ownerId: feed.ownerId,
+          feedId: feed.id,
+        });
 
-  if (!response?.success) {
-    deps.showToast((response?.error as string) || 'Failed to unfollow feed', 'error');
-    return;
-  }
+        if (!response?.success) {
+          deps.showToast((response?.error as string) || 'Failed to unfollow feed', 'error');
+          return { success: false };
+        }
 
-  deps.setSharedFeeds(deps.getSharedFeeds().filter((item) => !(item.id === feed.id && item.ownerId === feed.ownerId)));
-  if (deps.getExpandedFeedId() === feed.id) {
-    deps.setExpandedFeedId(null);
-  }
-  deps.renderSidebarContent();
-  deps.showToast(feedUnfollowedMessage(feed.name), 'success');
+        deps.setSharedFeeds(deps.getSharedFeeds().filter((item) => !(item.id === feed.id && item.ownerId === feed.ownerId)));
+        if (deps.getExpandedFeedId() === feed.id) {
+          deps.setExpandedFeedId(null);
+        }
+        deps.renderSidebarContent();
+        deps.showToast(feedUnfollowedMessage(feed.name), 'success');
+        return { success: true };
+      },
+    }),
+    deps
+  );
 }
 
-export function showSharedFeedFollowedModal(feedName: string, ownerName: string, deps: FeedActionDeps): void {
+export function showSharedFeedFollowedModal(
+  feedName: string,
+  ownerName: string,
+  deps: FeedActionDeps,
+  options: { mode?: 'followed' | 'roleChanged'; role?: 'reader' | 'editor' } = {}
+): void {
   openFeedActionModal(
     createElement(SharedFeedFollowedModal, {
       feedName,
       ownerName,
+      mode: options.mode,
+      role: options.role,
       onClose: () => closeFeedActionModal(deps),
       onViewSharedFeeds: () => {
         closeFeedActionModal(deps);
+        deps.openSidebar();
         deps.renderSidebarContent();
-        document.getElementById('lfa-tab-shared')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        requestAnimationFrame(() => {
+          document.getElementById('lfa-tab-shared')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        });
       },
     }),
     deps

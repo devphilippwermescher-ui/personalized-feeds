@@ -99,6 +99,8 @@ export const CONTENT_COPY = {
     sharedRemovingAction: 'Removing...',
     followedTitle: `You're now following this feed!`,
     followedHint: 'You can find this feed in your "Shared with me" section.',
+    roleChangedTitle: 'Your access role was updated',
+    roleChangedHint: (feedName: string) => `Your role in "${feedName}" was changed.`,
     duplicateTitle: 'Duplicate this feed?',
   },
 };

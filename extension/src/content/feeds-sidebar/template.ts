@@ -8,6 +8,15 @@ function escapeHtml(text: string): string {
   return div.innerHTML;
 }
 
+function renderSupportFooter(): string {
+  return `
+    <div class="lfa-support-footer">
+      <span class="lfa-support-label">Support &amp; Feedback :</span>
+      <a class="lfa-support-link" href="mailto:dev.philipp.wermescher@gmail.com">dev.philipp.wermescher@gmail.com</a>
+    </div>
+  `;
+}
+
 function renderSettingsToggleRow(
   key: keyof UserFeatureSettings,
   label: string,
@@ -78,7 +87,7 @@ export function renderSidebarHeader(params: {
     </div>
     <div class="lfa-header-right">
       ${planToggleHtml}
-      <button class="lfa-header-control lfa-header-dashboard-btn lfa-header-dashboard-control" id="lfa-header-dashboard-btn" type="button">Dashboard</button>
+      <!-- <button class="lfa-header-control lfa-header-dashboard-btn lfa-header-dashboard-control" id="lfa-header-dashboard-btn" type="button">Dashboard</button> -->
       ${currentUser && isPremium ? `
       <div class="lfa-settings-menu-wrap">
         <button class="lfa-header-control lfa-settings-btn lfa-header-settings-control" id="lfa-settings-btn" type="button" aria-label="Settings">
@@ -101,7 +110,7 @@ export function renderSidebarHeader(params: {
           <div class="lfa-settings-section-title">${CONTENT_COPY.common.features}</div>
           ${renderSettingsToggleRow('messagingButtons', 'Messaging buttons', featureSettings.messagingButtons, 'Show MyFeedIn buttons inside LinkedIn messaging conversations')}
           ${renderSettingsToggleRow('postButtons', 'Post buttons', featureSettings.postButtons, 'Show MyFeedIn buttons on LinkedIn feed posts')}
-          ${renderSettingsToggleRow('speechToComment', 'Speech to comment', featureSettings.speechToComment, 'Show floating mic button on LinkedIn for voice comments')}
+          <!-- ${renderSettingsToggleRow('speechToComment', 'Speech to comment', featureSettings.speechToComment, 'Show floating mic button on LinkedIn for voice comments')} -->
           ${renderSettingsToggleRow('hideProfileViewers', 'Hide Profile Visitors', featureSettings.hideProfileViewers, 'Hide the Profile Visitors list in the sidebar. Background collection will continue.')}
         </div>
       </div>` : ''}
@@ -253,14 +262,14 @@ export function renderSidebarBody(params: SidebarBodyParams): string {
       <div class="lfa-toolbar">
         <input type="text" class="lfa-search" placeholder="${activeFeedTab === 'owned' ? CONTENT_COPY.sidebar.searchFeedsPlaceholder : CONTENT_COPY.sidebar.searchSharedFeedsPlaceholder}" id="lfa-search" value="${escapeHtml(sidebarSearchQuery)}" />
         ${activeFeedTab === 'owned' ? `
-          <button class="lfa-toolbar-dashboard-btn" id="lfa-toolbar-dashboard-btn" type="button" aria-label="${CONTENT_COPY.common.openDashboard}" title="${CONTENT_COPY.common.openDashboard}">
+          <!-- <button class="lfa-toolbar-dashboard-btn" id="lfa-toolbar-dashboard-btn" type="button" aria-label="${CONTENT_COPY.common.openDashboard}" title="${CONTENT_COPY.common.openDashboard}">
             <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
               <rect x="3" y="3" width="7" height="7" rx="1.5"></rect>
               <rect x="14" y="3" width="7" height="7" rx="1.5"></rect>
               <rect x="3" y="14" width="7" height="7" rx="1.5"></rect>
               <rect x="14" y="14" width="7" height="7" rx="1.5"></rect>
             </svg>
-          </button>
+          </button> -->
           <button class="lfa-add-feed-btn" id="lfa-add-feed-btn">+ Feed</button>
         ` : ''}
       </div>
@@ -271,9 +280,10 @@ export function renderSidebarBody(params: SidebarBodyParams): string {
           `<div class="lfa-empty">
              <p>${emptyCopy.title}</p>
              <p class="lfa-empty-hint">${emptyCopy.hint}</p>
-           </div>`
+          </div>`
         }
       </div>
+      ${renderSupportFooter()}
     </div>
     ${editorOverlayHtml}
   `;

@@ -197,7 +197,26 @@ function getRelationshipDomSignature(root: ParentNode): string {
     )
     .sort();
   const degree = root.querySelector('.dist-value')?.textContent?.replace(/\s+/g, ' ').trim().toLowerCase() || '';
-  return `${degree}::${buttons.join('::')}`;
+  const premiumBadge = Array.from(root.querySelectorAll<HTMLElement>('*'))
+    .map((element) =>
+      [
+        element.getAttribute('aria-label'),
+        element.getAttribute('title'),
+        element.getAttribute('type'),
+        element.getAttribute('data-test-icon'),
+        element.getAttribute('href'),
+        element.getAttribute('xlink:href'),
+        element.id,
+        element.className,
+      ].map((value) => String(value || '')).join(' ')
+    )
+    .some((value) =>
+      /\b(?:linkedin\s+premium|premium\s+profile|premium\s+member|profile\s+enhanced\s+with\s+premium)\b/i.test(value) ||
+      /(?:linkedin-bug|premium-badge|premium_profile|premium-profile)/i.test(value)
+    )
+    ? 'premium'
+    : '';
+  return `${degree}::${premiumBadge}::${buttons.join('::')}`;
 }
 
 function scheduleProfileRelationshipSync(root: HTMLElement): void {

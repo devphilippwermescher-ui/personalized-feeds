@@ -14,6 +14,7 @@ function mergeProfileViewer(existing: ProfileViewerInput, incoming: ProfileViewe
     ...existing,
     displayName: chooseProfileViewerDisplayName(incoming.displayName, existing.displayName, existing.linkedinUsername),
     profileImageUrl: chooseProfileViewerImageUrl(incoming.profileImageUrl, existing.profileImageUrl),
+    isPremium: incoming.isPremium === true ? true : existing.isPremium,
     sourceIndex:
       existing.sourceIndex === undefined
         ? incoming.sourceIndex

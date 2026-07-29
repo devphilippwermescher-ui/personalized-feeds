@@ -4,6 +4,7 @@ import { chooseProfileViewerDisplayName, humanizeLinkedInUsername } from 'shared
 import { mergeProfileViewerCandidates } from './profile-viewers-parser-merge';
 import { extractProfileViewerReferences } from './profile-viewers-references';
 import { extractProfileViewerImageUrls } from './profile-viewers-rsc-images';
+import { hasExplicitProfileViewerPremiumSignal } from './profile-viewers-premium';
 
 function decodeHtmlEntities(value: string): string {
   return value
@@ -125,6 +126,7 @@ function extractProfileViewerFromAnchor(
     connectionDegree,
     viewedAgoText,
     mutualConnectionsText,
+    isPremium: hasExplicitProfileViewerPremiumSignal(anchorHtml) || undefined,
     sourceIndex,
   };
 }
@@ -204,6 +206,30 @@ function scoreProfileSlugMatch(value: string, linkedinUsername: string): number 
     .split(/[-_]+/)
     .filter((part) => part.length > 2 && !/^\d+$/.test(part))
     .reduce((score, part) => score + (normalizedValue.includes(part) ? 1 : 0), 0);
+}
+
+function getMeaningfulSlugParts(linkedinUsername: string): string[] {
+  return linkedinUsername
+    .split(/[-_]+/)
+    .filter((part) => part.length > 2 && !/^\d+$/.test(part));
+}
+
+function chooseDisplayNameForProfileContext(
+  displayNameCandidate: string,
+  linkedinUsername: string
+): string {
+  const displayName = chooseProfileViewerDisplayName(
+    displayNameCandidate,
+    undefined,
+    linkedinUsername
+  );
+  const slugParts = getMeaningfulSlugParts(linkedinUsername);
+
+  if (slugParts.length >= 2 && scoreProfileSlugMatch(displayName, linkedinUsername) === 0) {
+    return humanizeLinkedInUsername(linkedinUsername);
+  }
+
+  return displayName;
 }
 
 function isTechnicalLinkedInString(value: string): boolean {
@@ -327,9 +353,8 @@ function parseProfileViewersFromRscPayload(payload: string): ProfileViewerInput[
     const displayNameCandidate =
       pickDisplayNameFromStrings(referenceStrings, profile.linkedinUsername) ||
       humanizeLinkedInUsername(profile.linkedinUsername);
-    const displayName = chooseProfileViewerDisplayName(
+    const displayName = chooseDisplayNameForProfileContext(
       displayNameCandidate,
-      undefined,
       profile.linkedinUsername
     );
 
@@ -353,6 +378,7 @@ function parseProfileViewersFromRscPayload(payload: string): ProfileViewerInput[
       connectionDegree,
       viewedAgoText,
       mutualConnectionsText,
+      isPremium: hasExplicitProfileViewerPremiumSignal(referenceContext) || undefined,
       sourceIndex: profile.index,
     });
   }

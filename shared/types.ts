@@ -109,14 +109,18 @@ export interface FollowedFeed {
   feedId: string;
   role: FeedShareRole;
   followedAt: number;
+  sortOrder?: number;
 }
 
 export interface SharedFeedSummary extends Feed {
   role: FeedShareRole;
+  previousRole?: FeedShareRole;
   ownerDisplayName: string;
   ownerEmail: string;
   ownerPhotoURL?: string;
   followedAt: number;
+  followedFeedId?: string;
+  followedSortOrder?: number;
 }
 
 export interface FeedMember {

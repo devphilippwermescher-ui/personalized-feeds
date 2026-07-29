@@ -13,7 +13,8 @@ interface FeedMembersDeps {
   fetchStatusesProgressively: (
     members: FeedMemberInfo[],
     onProgress: (member: FeedMemberInfo) => void,
-    signal: AbortSignal
+    signal: AbortSignal,
+    options?: { preserveExistingPremium?: boolean }
   ) => Promise<void>;
   persistResolvedMemberState: (feedId: string, member: FeedMemberInfo) => Promise<void>;
   updateRenderedMemberState: (feedId: string, member: FeedMemberInfo) => boolean;
@@ -36,6 +37,8 @@ function startBackgroundStatusRefresh(
   members: FeedMemberInfo[],
   deps: FeedMembersDeps
 ): void {
+  const feed = deps.getFeeds().find((item) => item.id === feedId);
+  const isProfileViewers = feed?.systemType === 'profileViewers';
   const profileMembers = members.some((member) => member.itemType && member.itemType !== 'profile')
     ? members.filter((member) => !member.itemType || member.itemType === 'profile')
     : members;
@@ -55,27 +58,13 @@ function startBackgroundStatusRefresh(
         deps.renderSidebarContent();
       }
     },
-    controller.signal
+    controller.signal,
+    isProfileViewers ? { preserveExistingPremium: true } : undefined
   ).finally(() => {
     if (deps.getStatusFetchController() === controller) {
       deps.setStatusFetchController(null);
     }
   });
-}
-
-function queueProfileViewersStatusRefresh(
-  members: FeedMemberInfo[],
-  deps: Pick<FeedMembersDeps, 'sendMsg'>
-): void {
-  const priorityUsernames = members
-    .filter((member) => !member.itemType || member.itemType === 'profile')
-    .map((member) => member.linkedinUsername)
-    .filter((username): username is string => Boolean(username));
-
-  void deps.sendMsg({
-    type: 'PROFILE_VIEWERS_STATUS_SYNC_QUEUE',
-    priorityUsernames,
-  }).catch(() => undefined);
 }
 
 function profileViewerToMember(viewer: Partial<FeedMemberInfo> | ProfileViewerListItem): FeedMemberInfo | null {
@@ -160,7 +149,7 @@ export async function loadFeedMembers(feedId: string, deps: FeedMembersDeps): Pr
     });
     deps.setLoadingMembersFeedId(null);
     deps.renderSidebarContent();
-    queueProfileViewersStatusRefresh(nextMembers, deps);
+    startBackgroundStatusRefresh(feedId, nextMembers, deps);
     return;
   }
 

@@ -16,11 +16,11 @@ const FEATURE_ITEMS = [
     title: 'Post buttons',
     description: 'Show MyFeedIn buttons on LinkedIn feed posts',
   },
-  {
-    key: 'speechToComment',
-    title: 'Speech to comment',
-    description: 'Show floating mic button on LinkedIn for voice comments',
-  },
+  // {
+  //   key: 'speechToComment',
+  //   title: 'Speech to comment',
+  //   description: 'Show floating mic button on LinkedIn for voice comments',
+  // },
   {
     key: 'hideProfileViewers',
     title: 'Hide Profile Visitors',

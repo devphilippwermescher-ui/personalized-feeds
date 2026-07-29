@@ -1,5 +1,6 @@
-import type { ChangeEventHandler, ReactNode, Ref } from 'react';
-import { useEffect, useId, useRef, useState } from 'react';
+import type { ChangeEventHandler, CSSProperties, ReactNode, Ref } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { LfsDropdownOption } from './dropdown';
 
 function cx(...parts: Array<string | false | null | undefined>): string {
@@ -131,17 +132,53 @@ export function LfsDropdown({
   onChange,
 }: LfsDropdownProps) {
   const [open, setOpen] = useState(false);
+  const [menuStyle, setMenuStyle] = useState<CSSProperties | undefined>();
   const wrapperRef = useRef<HTMLDivElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
   const id = useId();
   const selectedOption = options.find((option) => option.value === value);
 
+  const positionMenu = () => {
+    const trigger = triggerRef.current;
+    const menu = menuRef.current;
+    if (!trigger || !menu) {
+      return;
+    }
+
+    const rect = trigger.getBoundingClientRect();
+    const gap = 4;
+    const viewportPadding = 12;
+    const menuHeight = Math.min(menu.scrollHeight || 0, 200);
+    const availableBelow = window.innerHeight - rect.bottom - viewportPadding;
+    const availableAbove = rect.top - viewportPadding;
+    const openUpward = availableBelow < menuHeight && availableAbove > availableBelow;
+    const top = openUpward
+      ? Math.max(viewportPadding, rect.top - menuHeight - gap)
+      : Math.min(rect.bottom + gap, window.innerHeight - viewportPadding - menuHeight);
+
+    setMenuStyle({
+      position: 'fixed',
+      top,
+      left: rect.left,
+      right: 'auto',
+      width: rect.width,
+      display: 'block',
+      visibility: 'visible',
+      boxSizing: 'border-box',
+      zIndex: 100002,
+    });
+  };
+
   useEffect(() => {
     if (!open) {
+      setMenuStyle(undefined);
       return;
     }
 
     const handlePointerDown = (event: MouseEvent) => {
-      if (!wrapperRef.current?.contains(event.target as Node)) {
+      const target = event.target as Node;
+      if (!wrapperRef.current?.contains(target) && !menuRef.current?.contains(target)) {
         setOpen(false);
       }
     };
@@ -154,17 +191,62 @@ export function LfsDropdown({
 
     document.addEventListener('mousedown', handlePointerDown);
     window.addEventListener('keydown', handleEscape);
+    window.addEventListener('resize', positionMenu);
+    window.addEventListener('scroll', positionMenu, true);
     return () => {
       document.removeEventListener('mousedown', handlePointerDown);
       window.removeEventListener('keydown', handleEscape);
+      window.removeEventListener('resize', positionMenu);
+      window.removeEventListener('scroll', positionMenu, true);
     };
   }, [open]);
+
+  useLayoutEffect(() => {
+    if (open) {
+      positionMenu();
+    }
+  }, [open, options.length]);
+
+  const menu = (
+    <div
+      ref={menuRef}
+      id={id}
+      className="lfs-dropdown__menu"
+      role="listbox"
+      style={menuStyle || { position: 'fixed', top: 0, left: 0, width: 0, display: 'block', visibility: 'hidden' }}
+    >
+      {options.map((option) => {
+        const selected = option.value === value;
+        return (
+          <button
+            key={option.value}
+            type="button"
+            className={cx('lfs-dropdown__option', selected && 'lfs-dropdown__option--selected')}
+            role="option"
+            aria-selected={selected}
+            onClick={() => {
+              onChange(option.value);
+              setOpen(false);
+            }}
+          >
+            <span className={cx('lfs-dropdown__check', !selected && 'lfs-dropdown__check--hidden')}>
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <path d="M3.5 8.5L6.5 11.5L12.5 4.5" />
+              </svg>
+            </span>
+            <span>{option.label}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
 
   return (
     <div className={cx('lfs-field', className)}>
       {label ? <span className="lfs-field__label">{label}</span> : null}
       <div ref={wrapperRef} className={cx('lfs-dropdown', open && 'lfs-dropdown--open')}>
         <button
+          ref={triggerRef}
           type="button"
           className="lfs-dropdown__trigger"
           aria-haspopup="listbox"
@@ -179,32 +261,8 @@ export function LfsDropdown({
             <path d="M4 6l4 4 4-4" />
           </svg>
         </button>
-        <div id={id} className="lfs-dropdown__menu" role="listbox">
-          {options.map((option) => {
-            const selected = option.value === value;
-            return (
-              <button
-                key={option.value}
-                type="button"
-                className={cx('lfs-dropdown__option', selected && 'lfs-dropdown__option--selected')}
-                role="option"
-                aria-selected={selected}
-                onClick={() => {
-                  onChange(option.value);
-                  setOpen(false);
-                }}
-              >
-                <span className={cx('lfs-dropdown__check', !selected && 'lfs-dropdown__check--hidden')}>
-                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                    <path d="M3.5 8.5L6.5 11.5L12.5 4.5" />
-                  </svg>
-                </span>
-                <span>{option.label}</span>
-              </button>
-            );
-          })}
-        </div>
       </div>
+      {open ? createPortal(menu, document.body) : null}
       {helper ? <span className="lfs-field__helper">{helper}</span> : null}
     </div>
   );

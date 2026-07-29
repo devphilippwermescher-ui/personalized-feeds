@@ -155,11 +155,6 @@ export async function persistResolvedMemberState(
     updates.profileImageUrl = member.profileImageUrl;
   }
 
-  // Always write isPremium after a full GraphQL/HTML status resolution.
-  // Writing false when not detected ensures a stale `true` from a prior Premium
-  // session is cleared — the GraphQL path is the authoritative source for this flag.
-  updates.isPremium = member.isPremium === true;
-
   if (member.status === 'connected') {
     updates.connectionDegree = '1st';
   } else if (
@@ -173,6 +168,15 @@ export async function persistResolvedMemberState(
   }
 
   const feed = deps.getFeeds().find((item) => item.id === feedId);
+  if (typeof member.isPremium === 'boolean') {
+    updates.isPremium = member.isPremium;
+  } else if (!isProfileViewersFeed(feed)) {
+    // Regular feeds use the relationship resolver as the authoritative source.
+    // Profile Visitors can receive Premium from WVMP, so an unresolved status
+    // refresh must not clear that separate signal.
+    updates.isPremium = false;
+  }
+
   if (isProfileViewersFeed(feed)) {
     updates.statusResolvedAt = Date.now();
     member.statusResolvedAt = updates.statusResolvedAt;
