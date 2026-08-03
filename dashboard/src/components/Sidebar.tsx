@@ -1,7 +1,17 @@
 import { useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import type { User } from 'firebase/auth';
-import { HiOutlineRss, HiOutlineArrowRightOnRectangle, HiOutlineCog6Tooth, HiOutlineCreditCard } from 'react-icons/hi2';
+import type { IconType } from 'react-icons';
+import {
+  HiOutlineArrowRightOnRectangle,
+  HiOutlineChatBubbleLeft,
+  HiOutlineCog6Tooth,
+  HiOutlineCreditCard,
+  HiOutlineDocumentText,
+  HiOutlineKey,
+  HiOutlineRss,
+  HiOutlineUser,
+} from 'react-icons/hi2';
 import projectLogo from '../../../extension/src/icons/icon48.png';
 
 interface SidebarProps {
@@ -9,8 +19,43 @@ interface SidebarProps {
   onLogout: () => void;
 }
 
+interface SidebarNavItem {
+  to: string;
+  label: string;
+  icon: IconType;
+  end?: boolean;
+}
+
+interface SidebarNavSection {
+  label: string;
+  items: SidebarNavItem[];
+}
+
 export default function Sidebar({ user, onLogout }: SidebarProps) {
   const [avatarError, setAvatarError] = useState(false);
+
+  const navSections: SidebarNavSection[] = [
+    {
+      label: 'Analytics',
+      items: [
+        { to: '/analytics/profile', label: 'Profile Analytics', icon: HiOutlineUser },
+        { to: '/analytics/content', label: 'Content Analytics', icon: HiOutlineDocumentText },
+        { to: '/analytics/comments', label: 'Comment Analytics', icon: HiOutlineChatBubbleLeft },
+      ],
+    },
+    {
+      label: 'Settings',
+      items: [
+        { to: '/settings/profile', label: 'Manage account', icon: HiOutlineCog6Tooth },
+        { to: '/subscription', label: 'Subscription', icon: HiOutlineCreditCard },
+        { to: '/settings/api-extension', label: 'API & Extension', icon: HiOutlineKey },
+      ],
+    },
+    {
+      label: 'Feeds',
+      items: [{ to: '/', label: 'Feeds', icon: HiOutlineRss, end: true }],
+    },
+  ];
 
   return (
     <aside className="sidebar">
@@ -22,18 +67,28 @@ export default function Sidebar({ user, onLogout }: SidebarProps) {
       </div>
 
       <nav className="sidebar-nav">
-        <NavLink to="/" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`} end>
-          <HiOutlineRss />
-          <span>Feeds</span>
-        </NavLink>
-        <NavLink to="/settings/profile" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
-          <HiOutlineCog6Tooth />
-          <span>Manage account</span>
-        </NavLink>
-        <NavLink to="/subscription" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
-          <HiOutlineCreditCard />
-          <span>Subscription</span>
-        </NavLink>
+        {navSections.map((section) => (
+          <div className="sidebar-nav-section" key={section.label}>
+            <div className="sidebar-nav-section-label">{section.label}</div>
+            <div className="sidebar-nav-section-items">
+              {section.items.map((item) => {
+                const Icon = item.icon;
+
+                return (
+                  <NavLink
+                    key={item.to}
+                    to={item.to}
+                    className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}
+                    end={item.end}
+                  >
+                    <Icon />
+                    <span>{item.label}</span>
+                  </NavLink>
+                );
+              })}
+            </div>
+          </div>
+        ))}
       </nav>
 
       <div className="sidebar-footer">

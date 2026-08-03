@@ -9,6 +9,8 @@ export interface ProfileData {
   company?: string;
   location?: string;
   connectionDegree?: string;
+  connectionsCount?: number;
+  followersCount?: number;
   memberId?: string;
   canMessage?: boolean;
   canFollow?: boolean;

@@ -9,7 +9,8 @@
     "scripting",
     "offscreen",
     "alarms",
-    "cookies"
+    "cookies",
+    "webRequest"
   ],
   "host_permissions": [
     "https://www.linkedin.com/*"
@@ -23,11 +24,30 @@
   "content_scripts": [
     {
       "matches": [
+        "https://www.linkedin.com/*"
+      ],
+      "js": [
+        "linkedin-invite-network-hook.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": [
         "https://www.linkedin.com/feed*",
         "https://www.linkedin.com/feed/*"
       ],
       "js": [
         "sharefeed-capture.js"
+      ],
+      "run_at": "document_start"
+    },    {
+      "matches": [
+        "https://linkedin-feed-sorter.web.app/*",
+        "http://localhost/*"
+      ],
+      "js": [
+        "dashboard-extension-bridge.js"
       ],
       "run_at": "document_start"
     },
@@ -65,7 +85,8 @@
   "web_accessible_resources": [
     {
       "resources": [
-        "icons/*"
+        "icons/*",
+        "linkedin-invite-network-hook.js"
       ],
       "matches": [
         "https://www.linkedin.com/*"

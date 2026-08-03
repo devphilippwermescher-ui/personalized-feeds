@@ -1,6 +1,7 @@
 import type { User } from 'firebase/auth';
 import {
   getProfileViewers,
+  markConnectionInviteAccepted,
   updateProfileViewer,
 } from 'shared/firestore-service';
 import { normalizeLinkedInUsername } from 'shared/linkedin-identity';
@@ -320,6 +321,11 @@ export async function runProfileViewersStatusSync(
           username,
           buildStatusUpdate(viewer, resolution, Date.now())
         );
+        if (resolution.status === 'connected') {
+          await markConnectionInviteAccepted(user.uid, username).catch((error) => {
+            console.warn('[profile-viewers-status-sync] failed to mark connection invite accepted', error);
+          });
+        }
         updatedCount += 1;
       } catch (error) {
         failedCount += 1;

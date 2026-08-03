@@ -9,6 +9,14 @@ import {
   queueProfileViewersStatusSync,
   runProfileViewersStatusSync,
 } from './profile-viewers-status-sync';
+import {
+  CONNECTION_INVITES_STATUS_ALARM_NAME,
+  queueConnectionInvitesStatusSync,
+  runConnectionInvitesStatusSync,
+} from './connection-invites-sync';
+import { initNativeInviteNetworkObserver } from './native-invite-network-observer';
+
+initNativeInviteNetworkObserver();
 
 chrome.runtime.onInstalled.addListener((details) => {
   const trigger: ProfileViewersSyncTrigger = details.reason === 'install' ? 'install' : 'update';
@@ -19,6 +27,7 @@ chrome.runtime.onInstalled.addListener((details) => {
   });
   void queueProfileViewersSync(trigger);
   void queueProfileViewersStatusSync({ trigger });
+  void queueConnectionInvitesStatusSync(trigger);
 });
 
 chrome.runtime.onStartup.addListener(() => {
@@ -28,9 +37,15 @@ chrome.runtime.onStartup.addListener(() => {
   });
   void queueProfileViewersSync('chrome_startup');
   void queueProfileViewersStatusSync({ trigger: 'chrome_startup' });
+  void queueConnectionInvitesStatusSync('chrome_startup');
 });
 
 chrome.alarms?.onAlarm.addListener((alarm) => {
+  if (alarm.name === CONNECTION_INVITES_STATUS_ALARM_NAME) {
+    void runConnectionInvitesStatusSync('alarm');
+    return;
+  }
+
   if (alarm.name === PROFILE_VIEWERS_STATUS_ALARM_NAME) {
     void runProfileViewersStatusSync('alarm');
     return;
@@ -54,6 +69,7 @@ void appendProfileViewersWakeEvent({
 });
 void queueProfileViewersSync('service_worker');
 void queueProfileViewersStatusSync({ trigger: 'service_worker' });
+void queueConnectionInvitesStatusSync('service_worker');
 
 import './external-message-handler';
 import './auth-settings-message-handler';

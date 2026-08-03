@@ -5,6 +5,8 @@ import DashboardPage from './pages/DashboardPage';
 import FeedDetailPage from './pages/FeedDetailPage';
 import SettingsPage from './pages/SettingsPage';
 import SubscriptionPage from './pages/SubscriptionPage';
+import BlankDashboardPage from './pages/BlankDashboardPage';
+import ProfileAnalyticsPage from './pages/ProfileAnalyticsPage';
 import Sidebar from './components/Sidebar';
 
 function App() {
@@ -62,7 +64,11 @@ function App() {
           <Routes>
             <Route path="/" element={<DashboardPage userId={user.uid} />} />
             <Route path="/feed/:feedId" element={<FeedDetailPage userId={user.uid} />} />
+            <Route path="/analytics/profile" element={<ProfileAnalyticsPage userId={user.uid} />} />
+            <Route path="/analytics/content" element={<BlankDashboardPage title="Content Analytics" />} />
+            <Route path="/analytics/comments" element={<BlankDashboardPage title="Comment Analytics" />} />
             <Route path="/settings/profile" element={<SettingsPage userId={user.uid} />} />
+            <Route path="/settings/api-extension" element={<BlankDashboardPage title="API & Extension" />} />
             <Route path="/subscription" element={<SubscriptionPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

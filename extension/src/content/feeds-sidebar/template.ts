@@ -87,7 +87,7 @@ export function renderSidebarHeader(params: {
     </div>
     <div class="lfa-header-right">
       ${planToggleHtml}
-      <!-- <button class="lfa-header-control lfa-header-dashboard-btn lfa-header-dashboard-control" id="lfa-header-dashboard-btn" type="button">Dashboard</button> -->
+      <button class="lfa-header-control lfa-header-dashboard-btn lfa-header-dashboard-control" id="lfa-header-dashboard-btn" type="button">Dashboard</button>
       ${currentUser && isPremium ? `
       <div class="lfa-settings-menu-wrap">
         <button class="lfa-header-control lfa-settings-btn lfa-header-settings-control" id="lfa-settings-btn" type="button" aria-label="Settings">

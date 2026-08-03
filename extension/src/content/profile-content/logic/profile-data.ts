@@ -118,6 +118,66 @@ function extractModernLocation(root: ParentNode): string {
   return '';
 }
 
+function cleanTopCardCompanyText(value: string): string {
+  return value
+    .replace(/\s+/g, ' ')
+    .replace(/^Current company\s*:?\s*/i, '')
+    .replace(/\.\s*Click to view.*$/i, '')
+    .replace(/\s*logo$/i, '')
+    .trim();
+}
+
+function isLikelyCompanyText(value: string, displayName: string, headline: string, location: string): boolean {
+  const normalized = cleanTopCardCompanyText(value);
+  if (!normalized || normalized.length > 80 || normalized.includes('|') || /[<>/@{}[\]#$]/.test(normalized)) {
+    return false;
+  }
+
+  const lower = normalized.toLowerCase();
+  const excluded = [displayName, headline, location]
+    .map((item) => item.replace(/\s+/g, ' ').trim().toLowerCase())
+    .filter(Boolean);
+  if (excluded.includes(lower)) {
+    return false;
+  }
+
+  return !/\b(?:connections?|followers?|contact info|open to|add section|enhance profile|message|connect|follow|university|school|college|profile language|public profile)\b/i.test(normalized);
+}
+
+function extractModernCompany(
+  root: ParentNode,
+  displayName: string,
+  headline: string,
+  location: string
+): string {
+  const selectors = [
+    'button[aria-label*="Current company" i]',
+    'a[aria-label*="Current company" i]',
+    'button[aria-label*="company" i]',
+    'a[href*="/company/"]',
+    '.pv-top-card--experience-list-item',
+  ];
+
+  for (const selector of selectors) {
+    const elements = Array.from(root.querySelectorAll<HTMLElement>(selector));
+    for (const element of elements) {
+      const candidates = [
+        element.getAttribute('aria-label') || '',
+        element.querySelector('[aria-hidden="true"]')?.textContent || '',
+        element.textContent || '',
+      ];
+      for (const candidate of candidates) {
+        const company = cleanTopCardCompanyText(candidate);
+        if (isLikelyCompanyText(company, displayName, headline, location)) {
+          return company;
+        }
+      }
+    }
+  }
+
+  return '';
+}
+
 function extractConnectionDegree(root: ParentNode): string {
   const explicit = firstNonEmptyText(['.dist-value'], root);
   if (explicit) {
@@ -127,6 +187,49 @@ function extractConnectionDegree(root: ParentNode): string {
   const text = root.textContent || '';
   const match = text.match(/(?:^|\u00b7|\s)(1st|2nd|3rd\+?|3rd)(?:$|\s)/i);
   return match?.[1] || '';
+}
+
+function parseLinkedInCount(value: string): number | undefined {
+  const normalized = value.replace(/,/g, '').trim();
+  const match = normalized.match(/(\d+(?:\.\d+)?)([kKmM])?\+?/);
+  if (!match) {
+    return undefined;
+  }
+
+  const base = Number(match[1]);
+  if (!Number.isFinite(base)) {
+    return undefined;
+  }
+
+  const suffix = (match[2] || '').toLowerCase();
+  if (suffix === 'k') {
+    return Math.round(base * 1000);
+  }
+  if (suffix === 'm') {
+    return Math.round(base * 1000000);
+  }
+  return Math.round(base);
+}
+
+function extractCountBeforeLabel(root: ParentNode, label: 'connections' | 'followers'): number | undefined {
+  const text = root.textContent?.replace(/\s+/g, ' ') || '';
+  const pattern = new RegExp(`([\\d,.]+(?:[kKmM])?\\+?)\\s+${label}\\b`, 'gi');
+  let match: RegExpExecArray | null;
+
+  while ((match = pattern.exec(text))) {
+    const contextStart = Math.max(0, match.index - 30);
+    const context = text.slice(contextStart, match.index).toLowerCase();
+    if (label === 'connections' && /mutual\s+$/.test(context)) {
+      continue;
+    }
+
+    const count = parseLinkedInCount(match[1]);
+    if (typeof count === 'number') {
+      return count;
+    }
+  }
+
+  return undefined;
 }
 
 function extractProfileUrnFromPage(): string {
@@ -265,16 +368,18 @@ export function extractProfileData(): ProfileData | null {
 
   const profileImageUrl = extractPrimaryProfileImage(section, username);
 
-  const company =
-    firstNonEmptyText([
-      'button[aria-label*="Current company"] span.hoverable-link-text, .pv-top-card--experience-list-item'
-    ], section);
-
   const location =
     firstNonEmptyText(['.text-body-small.inline.t-black--light.break-words'], section) ||
     extractModernLocation(section);
+  const company =
+    firstNonEmptyText([
+      'button[aria-label*="Current company" i] span.hoverable-link-text, .pv-top-card--experience-list-item'
+    ], section) ||
+    extractModernCompany(section, displayName, headline, location);
 
   const connectionDegree = extractConnectionDegree(section);
+  const connectionsCount = extractCountBeforeLabel(section, 'connections');
+  const followersCount = extractCountBeforeLabel(section, 'followers');
   const memberId = section.getAttribute('data-member-id') || undefined;
   const profileUrn = extractProfileUrnFromPage() || undefined;
   const memberNumericId = extractMemberNumericIdFromPage(section) || memberId;
@@ -290,6 +395,8 @@ export function extractProfileData(): ProfileData | null {
     company,
     location,
     connectionDegree,
+    connectionsCount,
+    followersCount,
     memberId,
   };
 }

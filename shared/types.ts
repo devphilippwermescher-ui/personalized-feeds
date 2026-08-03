@@ -160,9 +160,92 @@ export interface LinkedInProfileData {
   company?: string;
   location?: string;
   connectionDegree?: string;
+  connectionsCount?: number;
+  followersCount?: number;
   memberId?: string;
 }
 
 export type FeedWithMembers = Feed & {
   members: FeedMember[];
 };
+
+export interface ProfileAnalyticsBreakdownItem {
+  label: string;
+  value?: number;
+}
+
+export interface ProfileAnalyticsProfileSnapshot {
+  linkedinUrl: string;
+  linkedinUsername: string;
+  profileUrn?: string;
+  memberNumericId?: string;
+  displayName: string;
+  headline?: string;
+  profileImageUrl?: string;
+  backgroundImageUrl?: string;
+  company?: string;
+  location?: string;
+  connectionsCount?: number;
+  followersCount?: number;
+  updatedAt: number;
+  sourceUrl: string;
+}
+
+export interface ProfileAnalyticsSearchAppearancesSnapshot {
+  totalCount?: number;
+  periodLabel?: string;
+  topCompanies?: ProfileAnalyticsBreakdownItem[];
+  topJobTitles?: ProfileAnalyticsBreakdownItem[];
+  keywords?: ProfileAnalyticsBreakdownItem[];
+  updatedAt: number;
+  sourceUrl: string;
+}
+
+export interface ProfileAnalyticsSsiSnapshot {
+  score?: number;
+  updatedAt: number;
+  sourceUrl: string;
+}
+
+export interface ProfileAnalyticsAcceptanceSnapshot {
+  sentCount: number;
+  acceptedCount: number;
+  rate: number;
+  updatedAt: number;
+  source: 'tracked_invites';
+}
+
+export interface ProfileAnalyticsConnectionInvite {
+  id: string;
+  kind: 'connectionInvite';
+  linkedinUsername: string;
+  linkedinUrl: string;
+  displayName?: string;
+  profileUrn?: string;
+  memberNumericId?: string;
+  sentAt: number;
+  acceptedAt?: number;
+  status: 'sent' | 'accepted';
+  source: 'sidebar_connect_action' | 'linkedin_native_connect_action' | 'linkedin_sent_invitations_sync';
+}
+
+export interface ProfileAnalyticsSnapshot {
+  profile?: ProfileAnalyticsProfileSnapshot;
+  searchAppearances?: ProfileAnalyticsSearchAppearancesSnapshot;
+  socialSellingIndex?: ProfileAnalyticsSsiSnapshot;
+  acceptanceRate?: ProfileAnalyticsAcceptanceSnapshot;
+  updatedAt: number;
+}
+
+export interface ProfileAnalyticsDailySnapshot {
+  id: string;
+  date: string;
+  sampleKind?: 'daily' | 'sample';
+  connectionsCount?: number;
+  followersCount?: number;
+  searchAppearancesCount?: number;
+  socialSellingIndexScore?: number;
+  acceptanceRate?: number;
+  profileViewsCount?: number;
+  updatedAt: number;
+}

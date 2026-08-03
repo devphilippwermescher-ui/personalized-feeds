@@ -7,15 +7,57 @@ import {
   persistFeatureSettingsToStorage,
   startOffscreenAuth,
 } from './feeds-auth';
+import { syncProfileAnalyticsFromLinkedInTabs } from './profile-analytics-sync';
 
-const DASHBOARD_ORIGINS = new Set([
-  'https://linkedin-feed-sorter.web.app',
-  'http://localhost:5173',
-]);
+const DASHBOARD_ORIGIN = 'https://linkedin-feed-sorter.web.app';
 
+function isDashboardOrigin(urlValue: string | undefined): boolean {
+  if (!urlValue) {
+    return false;
+  }
+
+  try {
+    const url = new URL(urlValue);
+    return url.origin === DASHBOARD_ORIGIN || (url.protocol === 'http:' && url.hostname === 'localhost');
+  } catch {
+    return false;
+  }
+}
+
+function syncProfileAnalyticsForDashboard(sendResponse: (response: unknown) => void): void {
+  syncProfileAnalyticsFromLinkedInTabs()
+    .then((result) => {
+      sendResponse({ success: true, result });
+    })
+    .catch((error) => {
+      sendResponse({
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
+}
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type !== 'DASHBOARD_EXTENSION_BRIDGE_REQUEST') {
+    return false;
+  }
+
+  if (!isDashboardOrigin(sender.tab?.url || sender.url)) {
+    sendResponse({ success: false, error: 'Unauthorized dashboard origin' });
+    return false;
+  }
+
+  const dashboardMessage = message.dashboardMessage as { type?: string } | undefined;
+  if (dashboardMessage?.type !== 'DASHBOARD_PROFILE_ANALYTICS_SYNC_NOW') {
+    sendResponse({ success: false, error: 'Unsupported dashboard message' });
+    return false;
+  }
+
+  syncProfileAnalyticsForDashboard(sendResponse);
+  return true;
+});
 chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => {
-  const senderOrigin = sender.url ? new URL(sender.url).origin : null;
-  if (!senderOrigin || !DASHBOARD_ORIGINS.has(senderOrigin)) {
+  if (!isDashboardOrigin(sender.url)) {
     sendResponse({ success: false, error: 'Unauthorized origin' });
     return true;
   }
@@ -82,6 +124,11 @@ chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => 
       .catch((error) => {
         sendResponse({ success: false, error: error instanceof Error ? error.message : String(error) });
       });
+    return true;
+  }
+
+  if (message.type === 'DASHBOARD_PROFILE_ANALYTICS_SYNC_NOW') {
+    syncProfileAnalyticsForDashboard(sendResponse);
     return true;
   }
 

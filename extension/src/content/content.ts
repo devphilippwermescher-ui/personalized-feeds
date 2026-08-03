@@ -12,6 +12,8 @@ import '../runtime/set-public-path';
  */
 
 import { loadFeatureSettings, onFeatureSettingsChange } from './feature-settings';
+import { initNativeInviteTracking } from './native-invite-tracking';
+import { collectProfileAnalyticsFromCurrentPage } from './profile-analytics/collector';
 import { destroyPostButtons, initPostButtons } from './post-buttons';
 import { destroySpeechToCommentButton } from './speech-to-comment';
 import type { UserFeatureSettings } from 'shared/types';
@@ -49,6 +51,27 @@ function applyFeatureSettings(nextSettings: UserFeatureSettings): void {
 
 void loadFeatureSettings().then(applyFeatureSettings);
 onFeatureSettingsChange(applyFeatureSettings);
+initNativeInviteTracking();
+
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message.type !== 'PROFILE_ANALYTICS_COLLECT_PAGE') {
+    return false;
+  }
+
+  try {
+    sendResponse({
+      success: true,
+      data: collectProfileAnalyticsFromCurrentPage(),
+    });
+  } catch (error) {
+    sendResponse({
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+
+  return true;
+});
 
 // ── Bootstrap ────────────────────────────────────────────────────────
 

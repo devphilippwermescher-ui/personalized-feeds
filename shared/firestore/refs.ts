@@ -9,6 +9,9 @@ import type {
   Feed,
   FeedMember,
   FeedShareAccess,
+  ProfileAnalyticsDailySnapshot,
+  ProfileAnalyticsConnectionInvite,
+  ProfileAnalyticsSnapshot,
   ProfileViewer,
   ProfileViewerSearch,
 } from '../types';
@@ -39,6 +42,26 @@ export function profileViewerSearchesCollection(userId: string) {
 
 export function profileViewerSummaryDoc(userId: string) {
   return doc(getFirebaseDb(), 'users', userId, 'profileViewerMetadata', 'summary');
+}
+
+export function profileAnalyticsDoc(userId: string) {
+  return doc(getFirebaseDb(), 'users', userId, 'profileViewerMetadata', 'profileAnalytics');
+}
+
+export function profileAnalyticsDailyCollection(userId: string) {
+  return collection(getFirebaseDb(), 'users', userId, 'profileViewerMetadata');
+}
+
+export function profileAnalyticsDailyDoc(userId: string, date: string) {
+  return doc(getFirebaseDb(), 'users', userId, 'profileViewerMetadata', `profileAnalyticsDaily_${date}`);
+}
+
+export function profileAnalyticsSampleDoc(userId: string, timestamp: number) {
+  return doc(getFirebaseDb(), 'users', userId, 'profileViewerMetadata', `profileAnalyticsSample_${timestamp}`);
+}
+
+export function profileConnectionInviteDoc(userId: string, linkedinUsername: string) {
+  return doc(getFirebaseDb(), 'users', userId, 'profileViewerMetadata', `connectionInvite_${linkedinUsername}`);
 }
 
 export function emailIndexCollection() {
@@ -77,6 +100,24 @@ export function docToProfileViewerSearch(
   d: QueryDocumentSnapshot<DocumentData, DocumentData>
 ): ProfileViewerSearch {
   return { id: d.id, ...d.data() } as ProfileViewerSearch;
+}
+
+export function docToProfileAnalyticsSnapshot(
+  d: QueryDocumentSnapshot<DocumentData, DocumentData>
+): ProfileAnalyticsSnapshot {
+  return d.data() as ProfileAnalyticsSnapshot;
+}
+
+export function docToProfileAnalyticsDailySnapshot(
+  d: QueryDocumentSnapshot<DocumentData, DocumentData>
+): ProfileAnalyticsDailySnapshot {
+  return { id: d.id, ...d.data() } as ProfileAnalyticsDailySnapshot;
+}
+
+export function docToProfileAnalyticsConnectionInvite(
+  d: QueryDocumentSnapshot<DocumentData, DocumentData>
+): ProfileAnalyticsConnectionInvite {
+  return { id: d.id, ...d.data() } as ProfileAnalyticsConnectionInvite;
 }
 
 export function normalizeEmail(email: string): string {
