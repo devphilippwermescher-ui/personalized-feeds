@@ -7,12 +7,18 @@ interface PassiveAnalyticsCapture {
   capturedAt: number;
   connectionsCount?: number;
   followersCount?: number;
+  followersExact?: boolean;
+  socialSellingIndexScore?: number;
 }
 
 let activeWrite: Promise<void> = Promise.resolve();
 
 function normalizeCount(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : undefined;
+}
+
+function normalizeSsiScore(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 100 ? value : undefined;
 }
 
 function normalizeCapture(value: unknown): PassiveAnalyticsCapture | null {
@@ -22,36 +28,77 @@ function normalizeCapture(value: unknown): PassiveAnalyticsCapture | null {
   if (!sourceUrl.startsWith('https://www.linkedin.com/')) return null;
   const connectionsCount = normalizeCount(input.connectionsCount);
   const followersCount = normalizeCount(input.followersCount);
-  if (connectionsCount === undefined && followersCount === undefined) return null;
+  const socialSellingIndexScore = normalizeSsiScore(input.socialSellingIndexScore);
+  if (connectionsCount === undefined && followersCount === undefined && socialSellingIndexScore === undefined) {
+    return null;
+  }
   const capturedAt =
     typeof input.capturedAt === 'number' && Number.isFinite(input.capturedAt) ? input.capturedAt : Date.now();
-  return { sourceUrl, capturedAt, connectionsCount, followersCount };
+  return {
+    sourceUrl,
+    capturedAt,
+    connectionsCount,
+    followersCount,
+    followersExact: input.followersExact === true,
+    socialSellingIndexScore,
+  };
 }
 
 async function persistPassiveCapture(capture: PassiveAnalyticsCapture): Promise<void> {
   const user = await getAuthenticatedFeedsUser();
   if (!user) return;
   const current = await getProfileAnalyticsSnapshot(user.uid);
-  if (!current?.profile) return;
+  const currentProfile = current?.profile;
 
   const connectionsChanged =
-    typeof capture.connectionsCount === 'number' && capture.connectionsCount !== current.profile.connectionsCount;
+    Boolean(currentProfile) &&
+    typeof capture.connectionsCount === 'number' &&
+    capture.connectionsCount !== currentProfile?.connectionsCount;
   const followersChanged =
-    typeof capture.followersCount === 'number' && capture.followersCount !== current.profile.followersCount;
-  if (!connectionsChanged && !followersChanged) return;
+    Boolean(currentProfile) &&
+    typeof capture.followersCount === 'number' &&
+    capture.followersCount !== currentProfile?.followersCount;
+  const followersExactChanged =
+    Boolean(currentProfile) &&
+    typeof capture.followersCount === 'number' &&
+    capture.followersExact &&
+    currentProfile?.followersCountExact !== true;
+  const socialSellingIndexChanged =
+    typeof capture.socialSellingIndexScore === 'number' &&
+    capture.socialSellingIndexScore !== current?.socialSellingIndex?.score;
+  if (!connectionsChanged && !followersChanged && !followersExactChanged && !socialSellingIndexChanged) return;
 
-  const profile: ProfileAnalyticsProfileSnapshot = {
-    ...current.profile,
-    ...(connectionsChanged ? { connectionsCount: capture.connectionsCount } : {}),
-    ...(followersChanged ? { followersCount: capture.followersCount } : {}),
-    // A zero-traffic passive observation must not make the full six-hour
-    // analytics cycle look fresh; only the observed totals are newer.
-    updatedAt: current.profile.updatedAt,
-  };
-  await upsertProfileAnalyticsSnapshot(user.uid, { profile }, { updatedAt: capture.capturedAt });
+  const profile: ProfileAnalyticsProfileSnapshot | undefined = currentProfile
+    ? {
+        ...currentProfile,
+        ...(connectionsChanged ? { connectionsCount: capture.connectionsCount } : {}),
+        ...(followersChanged ? { followersCount: capture.followersCount } : {}),
+        ...(followersExactChanged ? { followersCountExact: true } : {}),
+        // A zero-traffic passive observation must not make the full six-hour
+        // analytics cycle look fresh; only the observed totals are newer.
+        updatedAt: currentProfile.updatedAt,
+      }
+    : undefined;
+  await upsertProfileAnalyticsSnapshot(
+    user.uid,
+    {
+      ...(profile && (connectionsChanged || followersChanged || followersExactChanged) ? { profile } : {}),
+      ...(socialSellingIndexChanged
+        ? {
+            socialSellingIndex: {
+              score: capture.socialSellingIndexScore,
+              updatedAt: capture.capturedAt,
+              sourceUrl: capture.sourceUrl,
+            },
+          }
+        : {}),
+    },
+    { updatedAt: capture.capturedAt }
+  );
   console.info('[profile-analytics] passive LinkedIn response captured', {
     connectionsCount: connectionsChanged ? capture.connectionsCount : undefined,
     followersCount: followersChanged ? capture.followersCount : undefined,
+    socialSellingIndexScore: socialSellingIndexChanged ? capture.socialSellingIndexScore : undefined,
     sourceUrl: capture.sourceUrl,
   });
 }

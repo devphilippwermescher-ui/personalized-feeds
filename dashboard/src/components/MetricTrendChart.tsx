@@ -27,6 +27,10 @@ const PLOT_WIDTH = PLOT_RIGHT - PLOT_LEFT;
 const PLOT_HEIGHT = PLOT_BOTTOM - PLOT_TOP;
 
 function getNiceChartMax(value: number, minimumMax: number): number {
+  if (minimumMax > 0 && value <= minimumMax) {
+    return minimumMax;
+  }
+
   const base = Math.max(value, minimumMax);
   if (base <= 10) {
     return 10;

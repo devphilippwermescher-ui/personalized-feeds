@@ -64,11 +64,11 @@ export default function ProfileAnalyticsPage({ userId }: ProfileAnalyticsPagePro
         />
         <MetricCard
           icon={<HiOutlineHeart />}
-          value={formatNumber(analytics.followersInRange)}
+          value={formatNumber(analytics.followersCurrentTotal)}
           label="Followers"
-          rangeLabel={dateRange.rangeLabel}
+          rangeLabel="Current total"
           tone="cyan"
-          tooltip="Latest total. The chart tracks values saved by future syncs."
+          tooltip="Current total. Past totals are reconstructed from LinkedIn follower growth."
         />
         <MetricCard
           icon={<HiOutlinePercentBadge />}
@@ -76,13 +76,19 @@ export default function ProfileAnalyticsPage({ userId }: ProfileAnalyticsPagePro
           label="Acceptance Rate"
           rangeLabel={dateRange.rangeLabel}
           tone="mint"
+          tooltip={
+            analytics.acceptanceRate.sentCount
+              ? `${analytics.acceptanceRate.acceptedCount} of ${analytics.acceptanceRate.sentCount} tracked invites accepted. Only invites sent while the extension is active count.`
+              : 'Accepted invites divided by invites sent while the extension is active.'
+          }
         />
         <MetricCard
           icon={<HiOutlineEye />}
           value={formatNumber(analytics.profileViewsInRange)}
-          label="Profile Views"
+          label="Profile Visitors"
           rangeLabel={dateRange.rangeLabel}
           tone="sky"
+          tooltip="Visible visitors first recorded during the selected period."
         />
         <MetricCard
           icon={<HiOutlineMagnifyingGlass />}
@@ -96,7 +102,7 @@ export default function ProfileAnalyticsPage({ userId }: ProfileAnalyticsPagePro
           value={
             typeof analytics.socialSellingIndexInRange === 'number' ? `${analytics.socialSellingIndexInRange}/100` : '-'
           }
-          label="Social Selling Index"
+          label="Social Selling Index (SSI)"
           rangeLabel={dateRange.rangeLabel}
           tone="amber"
         />
@@ -106,7 +112,11 @@ export default function ProfileAnalyticsPage({ userId }: ProfileAnalyticsPagePro
         <ConnectionsFollowersChart points={analytics.connectionsFollowersPoints} rangeLabel={dateRange.rangeLabel} />
         <MetricTrendChart
           title="Acceptance Rate"
-          summary={`${analytics.acceptanceRate.sentCount ? formatPercent(analytics.acceptanceRate.rate) : '-'} total`}
+          summary={
+            analytics.acceptanceRate.sentCount
+              ? `${analytics.acceptanceRate.acceptedCount} accepted · ${analytics.acceptanceRate.sentCount} sent`
+              : 'No tracked invitations'
+          }
           rangeLabel={dateRange.rangeLabel}
           icon={<HiOutlinePercentBadge />}
           points={analytics.acceptanceRatePoints}
@@ -117,14 +127,14 @@ export default function ProfileAnalyticsPage({ userId }: ProfileAnalyticsPagePro
           emptyLabel="No invitation trend yet"
         />
         <MetricTrendChart
-          title="Profile Views"
-          summary={`${formatNumber(analytics.profileViewsInRange)} total`}
+          title="Profile Visitors"
+          summary={`${formatNumber(analytics.profileViewsTotal)} total`}
           rangeLabel={dateRange.rangeLabel}
           icon={<HiOutlineEye />}
           points={analytics.profileViewsPoints}
           color="#0A66C2"
           gradientId="profileViewsAreaGradient"
-          emptyLabel="No profile view trend yet"
+          emptyLabel="No profile visitors in this period"
         />
         <MetricTrendChart
           title="Search Appearances"
@@ -138,9 +148,9 @@ export default function ProfileAnalyticsPage({ userId }: ProfileAnalyticsPagePro
         />
         <MetricTrendChart
           title="Social Selling Index (SSI)"
-          summary={`${
+          summary={`(${
             typeof analytics.socialSellingIndexInRange === 'number' ? `${analytics.socialSellingIndexInRange}/100` : '-'
-          } total`}
+          } total)`}
           rangeLabel={dateRange.rangeLabel}
           icon={<HiOutlineTrophy />}
           points={analytics.socialSellingIndexPoints}

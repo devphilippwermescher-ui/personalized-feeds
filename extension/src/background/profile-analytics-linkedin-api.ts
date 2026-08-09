@@ -120,6 +120,7 @@ export async function fetchLinkedInMeProfileSnapshot(
     knownConnectionIds?: string[];
     currentConnectionsCount?: number;
     currentFollowersCount?: number;
+    currentFollowersCountExact?: boolean;
   } = {}
 ): Promise<LinkedInProfileAnalyticsResult | null> {
   const csrfToken = await getLinkedInCsrfToken();
@@ -186,6 +187,8 @@ export async function fetchLinkedInMeProfileSnapshot(
     });
     return null;
   });
+  const followerDailyGrowth = analyticsFollowersSnapshot?.followerDailyGrowth || [];
+  const followerGrowthByDate = Object.fromEntries(followerDailyGrowth.map((point) => [point.date, point.count]));
 
   const snapshot: ProfileAnalyticsProfileSnapshot = {
     ...networkInfoSnapshot,
@@ -202,6 +205,16 @@ export async function fetchLinkedInMeProfileSnapshot(
     // Audience Analytics exposes LinkedIn's precise "Total followers" value.
     // The older Curation Hub and networkinfo totals remain fallbacks.
     followersCount: followersCount,
+    followersCountExact:
+      typeof analyticsFollowersSnapshot?.followersCount === 'number' ? true : options.currentFollowersCountExact,
+    ...(followerDailyGrowth.length > 0
+      ? {
+          followerGrowthByDate,
+          followerGrowthStartDate: followerDailyGrowth[0].date,
+          followerGrowthEndDate: followerDailyGrowth[followerDailyGrowth.length - 1].date,
+          followerGrowthUpdatedAt: collectedAt,
+        }
+      : {}),
     updatedAt: collectedAt,
   };
   console.info('[profile-analytics] profile detail parsed fields', {

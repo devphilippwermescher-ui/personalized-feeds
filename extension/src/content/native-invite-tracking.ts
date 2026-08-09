@@ -85,7 +85,7 @@ function isInviteSubmitElement(element: Element): boolean {
 function getNearestProfileContextRoot(element: Element): Element {
   return (
     element.closest(
-      'li, [data-view-name], .entity-result, .reusable-search__result-container, .mn-connection-card, .artdeco-card, section'
+      'li, article, [role="listitem"], [data-view-name], .entity-result, .reusable-search__result-container, .mn-connection-card, .artdeco-card, section'
     ) || document.body
   );
 }
@@ -192,9 +192,9 @@ function isPendingInviteVisible(context: ConnectClickContext): boolean {
   });
 }
 
-function shouldSendFallbackInvite(context: ConnectClickContext): boolean {
+function shouldSendFallbackInvite(context: NativeInvitePayload): boolean {
   const now = Date.now();
-  const key = context.linkedinUsername || context.linkedinUrl;
+  const key = context.linkedinUsername || context.linkedinUrl || context.profileUrn || context.memberNumericId || '';
   if (!key || (key === lastFallbackInviteKey && now - lastFallbackInviteAt < FALLBACK_INVITE_DEDUPLICATION_MS)) {
     return false;
   }
@@ -225,20 +225,23 @@ function confirmInviteFromUi(): void {
     return;
   }
 
-  // The final Send click only confirms the UI flow. The background observer records an invite after LinkedIn returns 2xx.
-  window.setTimeout(() => {
-    if (!shouldSendFallbackInvite(context)) {
-      return;
-    }
+  INVITE_UI_CONFIRMATION_DELAYS_MS.forEach((delay) => {
+    window.setTimeout(() => {
+      const pendingVisible = isPendingInviteVisible(context);
+      console.info('[connection-invites] native invite submit captured', {
+        linkedinUsername: context.linkedinUsername,
+        pendingVisible,
+      });
+      reportNativeInviteDiagnostic('invite_submit_captured', context);
 
-    const pendingVisible = isPendingInviteVisible(context);
-    console.info('[connection-invites] native invite submit captured', {
-      linkedinUsername: context.linkedinUsername,
-      pendingVisible,
-    });
-    reportNativeInviteDiagnostic('invite_submit_captured', context);
-
-  }, INVITE_UI_CONFIRMATION_DELAYS_MS[0]);
+      // A visible Pending state is LinkedIn UI confirmation that the request
+      // succeeded. It is a safe fallback when LinkedIn changes the request URL
+      // and neither network observer recognizes it.
+      if (pendingVisible) {
+        sendNativeInviteToBackground(context);
+      }
+    }, delay);
+  });
 }
 
 function sendNativeInviteToBackground(invite: NativeInvitePayload): void {
@@ -254,6 +257,17 @@ function sendNativeInviteToBackground(invite: NativeInvitePayload): void {
 
   if (!linkedinUsername && !invite.profileUrn && !invite.memberNumericId) {
     console.info('[connection-invites] native invite ignored because profile identity was not found');
+    return;
+  }
+
+  const deduplicationContext: NativeInvitePayload = {
+    linkedinUsername,
+    linkedinUrl,
+    displayName,
+    profileUrn: invite.profileUrn,
+    memberNumericId: invite.memberNumericId,
+  };
+  if (!shouldSendFallbackInvite(deduplicationContext)) {
     return;
   }
 
@@ -288,8 +302,16 @@ export function initNativeInviteTracking(): void {
 
   document.addEventListener('click', (event) => {
     captureConnectClickContext(event.target);
-    if (event.target instanceof Element && isInviteSubmitElement(event.target)) {
-      confirmInviteFromUi();
+    if (event.target instanceof Element) {
+      const actionElement = event.target.closest('button, a, [role="button"], [role="menuitem"]');
+      if (actionElement && isConnectIntentElement(actionElement)) {
+        // Some LinkedIn surfaces (for example People you may know) send the
+        // invitation immediately without opening a confirmation dialog.
+        confirmInviteFromUi();
+      }
+      if (isInviteSubmitElement(event.target)) {
+        confirmInviteFromUi();
+      }
     }
   }, true);
   window.addEventListener('message', (event) => {

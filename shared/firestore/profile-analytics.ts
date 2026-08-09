@@ -1,4 +1,5 @@
-import { getDoc, getDocs, limit, onSnapshot, orderBy, query, setDoc } from 'firebase/firestore';
+import { getDoc, getDocs, limit, onSnapshot, orderBy, query, writeBatch } from 'firebase/firestore';
+import { getFirebaseDb } from '../firebase-config';
 import type { ProfileAnalyticsDailySnapshot, ProfileAnalyticsSnapshot } from '../types';
 import {
   docToProfileAnalyticsDailySnapshot,
@@ -42,6 +43,9 @@ function buildDailySnapshotPatch(
       : {}),
     ...(typeof snapshot.profile?.followersCount === 'number'
       ? { followersCount: snapshot.profile.followersCount }
+      : {}),
+    ...(typeof snapshot.profile?.followersCountExact === 'boolean'
+      ? { followersCountExact: snapshot.profile.followersCountExact }
       : {}),
     ...(typeof snapshot.searchAppearances?.totalCount === 'number'
       ? { searchAppearancesCount: snapshot.searchAppearances.totalCount }
@@ -109,15 +113,15 @@ export async function upsertProfileAnalyticsSnapshot(
     updatedAt,
   };
 
-  await setDoc(profileAnalyticsDoc(userId), patch, { merge: true });
-
   const dailyPatch = buildDailySnapshotPatch(snapshot, date, updatedAt);
-  await setDoc(profileAnalyticsDailyDoc(userId, date), dailyPatch, { merge: true });
-
   const samplePatch = buildSampleSnapshotPatch(snapshot, updatedAt);
+  const batch = writeBatch(getFirebaseDb());
+  batch.set(profileAnalyticsDoc(userId), patch, { merge: true });
+  batch.set(profileAnalyticsDailyDoc(userId, date), dailyPatch, { merge: true });
   if (hasRangeMetric(samplePatch)) {
-    await setDoc(profileAnalyticsSampleDoc(userId, updatedAt), samplePatch, { merge: true });
+    batch.set(profileAnalyticsSampleDoc(userId, updatedAt), samplePatch, { merge: true });
   }
+  await batch.commit();
 
   const next = await getProfileAnalyticsSnapshot(userId);
   return next || ({ updatedAt } as ProfileAnalyticsSnapshot);

@@ -5,6 +5,8 @@ export interface PassiveAnalyticsCapture {
   capturedAt: number;
   connectionsCount?: number;
   followersCount?: number;
+  followersExact?: boolean;
+  socialSellingIndexScore?: number;
 }
 
 function parseSafeCount(value: string | undefined): number | undefined {
@@ -22,6 +24,7 @@ export function isPassiveAnalyticsUrl(url: string): boolean {
     }
   })();
   return (
+    normalizedUrl.includes('/sales-api/salesapissi') ||
     normalizedUrl.includes('/flagship-web/mynetwork/invite-connect/connections') ||
     normalizedUrl.includes('connectionslist') ||
     (normalizedUrl.includes('mynetwork') && normalizedUrl.includes('connection')) ||
@@ -38,7 +41,17 @@ export function parsePassiveAnalyticsResponse(
 ): PassiveAnalyticsCapture | null {
   if (!sourceUrl || !payload || !isPassiveAnalyticsUrl(sourceUrl)) return null;
   const capture: PassiveAnalyticsCapture = { sourceUrl, capturedAt };
-  if (
+  if (sourceUrl.toLowerCase().includes('/sales-api/salesapissi')) {
+    try {
+      const parsed = JSON.parse(payload) as { memberScore?: { overall?: unknown } };
+      const overall = parsed?.memberScore?.overall;
+      if (typeof overall === 'number' && Number.isFinite(overall) && overall >= 0 && overall <= 100) {
+        capture.socialSellingIndexScore = Math.round(overall);
+      }
+    } catch {
+      return null;
+    }
+  } else if (
     sourceUrl.includes('/flagship-web/mynetwork/invite-connect/connections') ||
     sourceUrl.toLowerCase().includes('connectionslist') ||
     (sourceUrl.toLowerCase().includes('mynetwork') && sourceUrl.toLowerCase().includes('connection'))
@@ -50,6 +63,7 @@ export function parsePassiveAnalyticsResponse(
     );
   } else if (sourceUrl.toLowerCase().includes('audienceanalyticsfollowersmodule')) {
     capture.followersCount = extractFollowersTotalFromAnalyticsRsc(payload);
+    capture.followersExact = typeof capture.followersCount === 'number';
   } else {
     capture.followersCount = parseSafeCount(
       payload.match(/"totalResultCount"\s*:\s*(\d+)/)?.[1] ||
@@ -57,5 +71,9 @@ export function parsePassiveAnalyticsResponse(
         payload.match(/\b([\d,]+)\s+people are following you\b/i)?.[1]
     );
   }
-  return typeof capture.connectionsCount === 'number' || typeof capture.followersCount === 'number' ? capture : null;
+  return typeof capture.connectionsCount === 'number' ||
+    typeof capture.followersCount === 'number' ||
+    typeof capture.socialSellingIndexScore === 'number'
+    ? capture
+    : null;
 }

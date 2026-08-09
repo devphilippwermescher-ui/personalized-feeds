@@ -54,6 +54,14 @@ function mergeProfileSnapshot(
         ? next.recentConnectionIds
         : current?.recentConnectionIds,
     followersCount: next.followersCount ?? current?.followersCount,
+    followersCountExact: next.followersCountExact ?? current?.followersCountExact,
+    followerGrowthByDate:
+      next.followerGrowthByDate && Object.keys(next.followerGrowthByDate).length > 0
+        ? next.followerGrowthByDate
+        : current?.followerGrowthByDate,
+    followerGrowthStartDate: next.followerGrowthStartDate || current?.followerGrowthStartDate,
+    followerGrowthEndDate: next.followerGrowthEndDate || current?.followerGrowthEndDate,
+    followerGrowthUpdatedAt: next.followerGrowthUpdatedAt ?? current?.followerGrowthUpdatedAt,
   };
 }
 
@@ -84,6 +92,7 @@ export async function syncProfileAnalyticsFromLinkedInTabs(options: ProfileAnaly
     knownConnectionIds: currentSnapshot?.profile?.recentConnectionIds,
     currentConnectionsCount: currentSnapshot?.profile?.connectionsCount,
     currentFollowersCount: currentSnapshot?.profile?.followersCount,
+    currentFollowersCountExact: currentSnapshot?.profile?.followersCountExact,
   });
   if (!linkedInResult) {
     throw new Error('LinkedIn profile analytics request did not return profile data.');
@@ -140,7 +149,6 @@ export async function syncProfileAnalyticsFromLinkedInTabs(options: ProfileAnaly
     collected: {
       profile: true,
       searchAppearances: Boolean(searchAppearances),
-      // SSI remains in Firestore until its request-driven collector is added.
       socialSellingIndex: false,
     },
     diagnostics: linkedInResult.diagnostics,

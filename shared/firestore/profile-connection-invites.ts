@@ -1,4 +1,4 @@
-import { collection, getDoc, getDocs, serverTimestamp, setDoc } from 'firebase/firestore';
+import { collection, getDoc, getDocs, onSnapshot, query, serverTimestamp, setDoc, where } from 'firebase/firestore';
 import { getFirebaseDb } from '../firebase-config';
 import type { ProfileAnalyticsAcceptanceSnapshot, ProfileAnalyticsConnectionInvite } from '../types';
 import { extractProfileToken, normalizeLinkedInUsername, normalizeMemberNumericId } from '../linkedin-identity';
@@ -145,10 +145,29 @@ export async function markConnectionInviteChecked(
 }
 
 export async function getConnectionInvites(userId: string): Promise<ProfileAnalyticsConnectionInvite[]> {
-  const snapshot = await getDocs(collection(getFirebaseDb(), 'users', userId, 'profileViewerMetadata'));
-  return snapshot.docs
-    .map(docToProfileAnalyticsConnectionInvite)
-    .filter((invite) => invite.kind === 'connectionInvite');
+  const invitesQuery = query(
+    collection(getFirebaseDb(), 'users', userId, 'profileViewerMetadata'),
+    where('kind', '==', 'connectionInvite')
+  );
+  const snapshot = await getDocs(invitesQuery);
+  return snapshot.docs.map(docToProfileAnalyticsConnectionInvite);
+}
+
+export function subscribeToConnectionInvites(
+  userId: string,
+  onValue: (invites: ProfileAnalyticsConnectionInvite[]) => void,
+  onError?: (error: Error) => void
+): () => void {
+  const invitesQuery = query(
+    collection(getFirebaseDb(), 'users', userId, 'profileViewerMetadata'),
+    where('kind', '==', 'connectionInvite')
+  );
+
+  return onSnapshot(
+    invitesQuery,
+    (snapshot) => onValue(snapshot.docs.map(docToProfileAnalyticsConnectionInvite)),
+    (error) => onError?.(error)
+  );
 }
 
 export async function getConnectionInviteAcceptanceSnapshot(

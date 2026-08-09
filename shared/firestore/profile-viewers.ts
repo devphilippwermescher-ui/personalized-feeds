@@ -1,11 +1,14 @@
 import {
   deleteDoc,
   doc,
+  type DocumentData,
   getCountFromServer,
   getDoc,
   getDocs,
+  onSnapshot,
   orderBy,
   query,
+  type QuerySnapshot,
   setDoc,
   updateDoc,
   writeBatch,
@@ -235,6 +238,39 @@ export async function getProfileViewers(userId: string): Promise<ProfileViewer[]
 export async function getProfileViewerCount(userId: string): Promise<number> {
   const snapshot = await getCountFromServer(profileViewersCollection(userId));
   return snapshot.data().count;
+}
+
+function getChronologicalProfileViewersQuery(userId: string) {
+  return query(profileViewersCollection(userId), orderBy('firstSeenAt', 'asc'));
+}
+
+function getValidProfileViewersFromSnapshot(
+  snapshot: QuerySnapshot<DocumentData>
+): ProfileViewer[] {
+  return snapshot.docs
+    .map(docToProfileViewer)
+    .filter((viewer) => isValidLinkedInProfileUsername(viewer.linkedinUsername || viewer.id));
+}
+
+/**
+ * Read-only chronological data source for dashboard analytics. Unlike the
+ * sidebar loader, it never performs cleanup writes from the dashboard.
+ */
+export async function getChronologicalProfileViewers(userId: string): Promise<ProfileViewer[]> {
+  const snapshot = await getDocs(getChronologicalProfileViewersQuery(userId));
+  return getValidProfileViewersFromSnapshot(snapshot);
+}
+
+export function subscribeToChronologicalProfileViewers(
+  userId: string,
+  onValue: (viewers: ProfileViewer[]) => void,
+  onError?: (error: Error) => void
+): () => void {
+  return onSnapshot(
+    getChronologicalProfileViewersQuery(userId),
+    (snapshot) => onValue(getValidProfileViewersFromSnapshot(snapshot)),
+    (error) => onError?.(error)
+  );
 }
 
 export async function upsertProfileViewerSearches(

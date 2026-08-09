@@ -1,4 +1,4 @@
-import type { ProfileAnalyticsConnectionInvite, ProfileAnalyticsDailySnapshot } from 'shared/types';
+import type { ProfileAnalyticsConnectionInvite, ProfileAnalyticsDailySnapshot, ProfileViewer } from 'shared/types';
 import type { MetricTrendPoint } from '../../../components/MetricTrendChart';
 import { addDays, endOfDay, getDateKey, parseDate, startOfDay, type DateRange } from '../../../utils/date';
 import type { ChartKey, ConnectionsFollowersPoint } from '../types';
@@ -44,6 +44,8 @@ export function buildConnectionsFollowersPoints({
   connectionDateCountsUpdatedAt,
   currentConnectionsCount,
   currentFollowersCount,
+  currentFollowersCountExact,
+  followerGrowthByDate,
 }: {
   snapshots: ProfileAnalyticsDailySnapshot[];
   range: DateRange;
@@ -52,6 +54,8 @@ export function buildConnectionsFollowersPoints({
   connectionDateCountsUpdatedAt?: number;
   currentConnectionsCount?: number;
   currentFollowersCount?: number;
+  currentFollowersCountExact?: boolean;
+  followerGrowthByDate?: Record<string, number>;
 }): ConnectionsFollowersPoint[] {
   const valuesByDate = indexLatestSnapshots(snapshots);
   const today = startOfDay(new Date());
@@ -66,6 +70,7 @@ export function buildConnectionsFollowersPoints({
       ...(currentSnapshot || { id: `current-${todayKey}`, date: todayKey, updatedAt: Date.now() }),
       connectionsCount: currentConnectionsCount ?? currentSnapshot?.connectionsCount,
       followersCount: currentFollowersCount ?? currentSnapshot?.followersCount,
+      followersCountExact: currentFollowersCountExact ?? currentSnapshot?.followersCountExact,
     });
   }
 
@@ -106,6 +111,41 @@ export function buildConnectionsFollowersPoints({
     return Math.max(0, historyBaselineCount - connectionsAddedLater);
   }
 
+  const followerGrowth = Object.entries(followerGrowthByDate || {})
+    .filter(([, count]) => Number.isFinite(count) && count >= 0)
+    .sort(([left], [right]) => left.localeCompare(right));
+  const exactFollowerAnchors = Array.from(valuesByDate.entries())
+    .filter(([, snapshot]) => snapshot.followersCountExact === true && typeof snapshot.followersCount === 'number')
+    .map(([dateKey, snapshot]) => ({ dateKey, count: snapshot.followersCount as number }))
+    .sort((left, right) => left.dateKey.localeCompare(right.dateKey));
+  if (exactFollowerAnchors.length === 0 && typeof currentFollowersCount === 'number') {
+    exactFollowerAnchors.push({ dateKey: todayKey, count: currentFollowersCount });
+  }
+
+  function getFollowerGrowthBetween(startExclusive: string, endInclusive: string): number {
+    return followerGrowth.reduce(
+      (total, [dateKey, count]) => total + (dateKey > startExclusive && dateKey <= endInclusive ? count : 0),
+      0
+    );
+  }
+
+  function getReconstructedFollowers(dateKey: string): number | undefined {
+    if (followerGrowth.length === 0 || exactFollowerAnchors.length === 0) return undefined;
+    const exactAnchor = exactFollowerAnchors.find((anchor) => anchor.dateKey === dateKey);
+    if (exactAnchor) return exactAnchor.count;
+
+    const futureAnchor = exactFollowerAnchors.find((anchor) => anchor.dateKey > dateKey);
+    if (futureAnchor) {
+      return Math.max(0, futureAnchor.count - getFollowerGrowthBetween(dateKey, futureAnchor.dateKey));
+    }
+
+    const previousAnchor = [...exactFollowerAnchors].reverse().find((anchor) => anchor.dateKey < dateKey);
+    if (previousAnchor) {
+      return Math.max(0, previousAnchor.count + getFollowerGrowthBetween(previousAnchor.dateKey, dateKey));
+    }
+    return undefined;
+  }
+
   const points: ConnectionsFollowersPoint[] = [];
 
   for (let cursor = start; cursor.getTime() <= end.getTime(); cursor = addDays(cursor, 1)) {
@@ -119,7 +159,10 @@ export function buildConnectionsFollowersPoints({
     } else if (typeof latestConnections !== 'number') {
       latestConnections = getBackfilledConnections(dateKey);
     }
-    if (typeof snapshot?.followersCount === 'number') {
+    const reconstructedFollowers = getReconstructedFollowers(dateKey);
+    if (typeof reconstructedFollowers === 'number') {
+      latestFollowers = reconstructedFollowers;
+    } else if (typeof snapshot?.followersCount === 'number') {
       latestFollowers = snapshot.followersCount;
     }
 
@@ -153,7 +196,10 @@ export function buildDailyMetricPoints({
     const currentSnapshot = valuesByDate.get(todayKey);
     valuesByDate.set(todayKey, {
       ...(currentSnapshot || { id: `current-${todayKey}`, date: todayKey, updatedAt: Date.now() }),
-      [dataKey]: currentSnapshot?.[dataKey] ?? currentValue,
+      // The root snapshot is updated live and is authoritative for today.
+      // A daily query can briefly contain the previous value while Firestore
+      // listeners settle, so it must not override a newer current metric.
+      [dataKey]: currentValue,
     });
   }
 
@@ -201,5 +247,35 @@ export function buildAcceptanceRatePoints(
       value: sentCount > 0 ? (acceptedCount / sentCount) * 100 : undefined,
     });
   }
+  return points;
+}
+
+export function buildProfileVisitorPoints(viewers: ProfileViewer[], range: DateRange): MetricTrendPoint[] {
+  const start = startOfDay(range.start);
+  const end = startOfDay(range.end);
+  const rangeEnd = endOfDay(range.end).getTime();
+  const firstSeenCountsByDate = new Map<string, number>();
+
+  viewers.forEach((viewer) => {
+    if (
+      typeof viewer.firstSeenAt !== 'number' ||
+      viewer.firstSeenAt < start.getTime() ||
+      viewer.firstSeenAt > rangeEnd
+    ) {
+      return;
+    }
+    const dateKey = getDateKey(new Date(viewer.firstSeenAt));
+    firstSeenCountsByDate.set(dateKey, (firstSeenCountsByDate.get(dateKey) || 0) + 1);
+  });
+
+  const points: MetricTrendPoint[] = [];
+  let cumulativeCount = viewers.filter(
+    (viewer) => typeof viewer.firstSeenAt === 'number' && viewer.firstSeenAt < start.getTime()
+  ).length;
+  for (let cursor = start; cursor.getTime() <= end.getTime(); cursor = addDays(cursor, 1)) {
+    cumulativeCount += firstSeenCountsByDate.get(getDateKey(cursor)) || 0;
+    points.push({ date: new Date(cursor), value: cumulativeCount });
+  }
+
   return points;
 }

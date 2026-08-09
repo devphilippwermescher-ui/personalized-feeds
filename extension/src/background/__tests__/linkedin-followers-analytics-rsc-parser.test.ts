@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  extractFollowersDailyGrowthFromAnalyticsRsc,
   extractFollowersHistoryFromAnalyticsRsc,
   extractFollowersTotalFromAnalyticsRsc,
 } from '../../linkedin/followers-analytics-rsc-parser';
@@ -24,6 +25,31 @@ describe('LinkedIn Audience Analytics followers RSC parsing', () => {
     expect(extractFollowersHistoryFromAnalyticsRsc(payload)).toEqual([
       { date: '2026-07-01', count: 44 },
       { date: '2026-08-06', count: 86 },
+    ]);
+  });
+
+  it('selects the cumulative series when LinkedIn returns Daily and Cumulative charts together', () => {
+    const daily =
+      '13:["$","Chart",null,{"series":[{"name":"New followers","data":[' +
+      '{"y":0,"tooltipPercentageText":null,"x":1782864000000},' +
+      '{"y":3,"tooltipPercentageText":null,"x":1782950400000},' +
+      '{"y":1,"tooltipPercentageText":null,"x":1783036800000}],"dashStyle":"Solid"}],"seriesBoundsModels":null}]';
+    const cumulative =
+      '16:["$","Chart",null,{"series":[{"name":"New followers","data":[' +
+      '{"y":0,"tooltipPercentageText":null,"x":1782864000000},' +
+      '{"y":3,"tooltipPercentageText":null,"x":1782950400000},' +
+      '{"y":4,"tooltipPercentageText":null,"x":1783036800000}],"dashStyle":"Solid"}],"seriesBoundsModels":null}]';
+    const payload = `${daily}\n${cumulative}`;
+
+    expect(extractFollowersHistoryFromAnalyticsRsc(payload)).toEqual([
+      { date: '2026-07-01', count: 0 },
+      { date: '2026-07-02', count: 3 },
+      { date: '2026-07-03', count: 4 },
+    ]);
+    expect(extractFollowersDailyGrowthFromAnalyticsRsc(payload)).toEqual([
+      { date: '2026-07-01', count: 0 },
+      { date: '2026-07-02', count: 3 },
+      { date: '2026-07-03', count: 1 },
     ]);
   });
 

@@ -195,6 +195,13 @@ export interface ProfileAnalyticsProfileSnapshot {
   /** Recent identifiers used to stop incremental pagination at known data. */
   recentConnectionIds?: string[];
   followersCount?: number;
+  /** True when the total came from LinkedIn Audience Analytics or an equivalent exact response. */
+  followersCountExact?: boolean;
+  /** LinkedIn's daily new-follower counts for the rolling 365-day window. */
+  followerGrowthByDate?: Record<string, number>;
+  followerGrowthStartDate?: string;
+  followerGrowthEndDate?: string;
+  followerGrowthUpdatedAt?: number;
   updatedAt: number;
   sourceUrl: string;
 }
@@ -264,6 +271,7 @@ export interface ProfileAnalyticsDailySnapshot {
   sampleKind?: 'daily' | 'sample';
   connectionsCount?: number;
   followersCount?: number;
+  followersCountExact?: boolean;
   searchAppearancesCount?: number;
   socialSellingIndexScore?: number;
   acceptanceRate?: number;

@@ -2,6 +2,26 @@ import { describe, expect, it } from 'vitest';
 import { parsePassiveAnalyticsResponse } from '../linkedin-analytics-passive-parser';
 
 describe('LinkedIn analytics passive response parsing', () => {
+  it('captures the rounded member SSI and ignores group ranks', () => {
+    const result = parsePassiveAnalyticsResponse(
+      'https://www.linkedin.com/sales-api/salesApiSsi',
+      JSON.stringify({
+        groupScore: [
+          { rank: 85, groupType: 'INDUSTRY' },
+          { rank: 94, groupType: 'NETWORK' },
+        ],
+        memberScore: { overall: 15.683752 },
+      }),
+      123
+    );
+
+    expect(result).toEqual({
+      sourceUrl: 'https://www.linkedin.com/sales-api/salesApiSsi',
+      capturedAt: 123,
+      socialSellingIndexScore: 16,
+    });
+  });
+
   it('captures the exact connections total from LinkedIn RSC', () => {
     const result = parsePassiveAnalyticsResponse(
       'https://www.linkedin.com/flagship-web/mynetwork/invite-connect/connections',

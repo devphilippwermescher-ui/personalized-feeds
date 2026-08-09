@@ -13,33 +13,38 @@ import type { ProfileAnalyticsConnectionInvite } from 'shared/types';
 async function getVerifiedConnectionInvite(input: Record<string, unknown>) {
   const submittedUsername = typeof input.linkedinUsername === 'string' ? input.linkedinUsername : '';
   const submittedProfileUrn = typeof input.profileUrn === 'string' ? input.profileUrn.trim() : '';
-  const identity = await resolveLinkedInProfileIdentity(submittedUsername);
-  if (!identity) {
-    throw new Error('LinkedIn profile identity was not found for the invitation target.');
-  }
+  const submittedMemberNumericId = typeof input.memberNumericId === 'string' ? input.memberNumericId.trim() : '';
+  const identityLookup = submittedUsername || submittedMemberNumericId;
+  const identity = identityLookup ? await resolveLinkedInProfileIdentity(identityLookup).catch(() => null) : null;
 
-  if (submittedProfileUrn && submittedProfileUrn !== identity.profileUrn) {
+  if (identity && submittedProfileUrn && submittedProfileUrn !== identity.profileUrn) {
     throw new Error('LinkedIn invitation target did not match the selected profile identity.');
   }
 
+  if (!identity && !submittedProfileUrn && !submittedMemberNumericId) {
+    throw new Error('LinkedIn profile identity was not found for the invitation target.');
+  }
+
   console.info('[connection-invites] invitation identity verified', {
-    linkedinUsername: identity.linkedinUsername,
-    profileUrn: identity.profileUrn,
+    linkedinUsername: identity?.linkedinUsername || submittedUsername,
+    profileUrn: identity?.profileUrn || submittedProfileUrn,
     matchedNetworkTarget: Boolean(submittedProfileUrn),
   });
 
   return {
-    linkedinUsername: identity.linkedinUsername,
+    linkedinUsername: identity?.linkedinUsername || submittedUsername,
     linkedinUrl:
       typeof input.linkedinUrl === 'string' && input.linkedinUrl.trim()
         ? input.linkedinUrl
-        : `https://www.linkedin.com/in/${identity.linkedinUsername}/`,
+        : identity?.linkedinUsername
+          ? `https://www.linkedin.com/in/${identity.linkedinUsername}/`
+          : '',
     displayName:
       typeof input.displayName === 'string' && input.displayName.trim()
         ? input.displayName
-        : identity.displayName || '',
-    profileUrn: identity.profileUrn,
-    memberNumericId: typeof input.memberNumericId === 'string' ? input.memberNumericId : '',
+        : identity?.displayName || '',
+    profileUrn: identity?.profileUrn || submittedProfileUrn,
+    memberNumericId: submittedMemberNumericId,
   };
 }
 

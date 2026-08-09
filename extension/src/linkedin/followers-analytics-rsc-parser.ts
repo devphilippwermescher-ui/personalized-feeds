@@ -112,18 +112,59 @@ export interface LinkedInFollowerHistoryPoint {
   count: number;
 }
 
-export function extractFollowersHistoryFromAnalyticsRsc(payload: string): LinkedInFollowerHistoryPoint[] {
-  const seriesStart = payload.indexOf('"name":"New followers","data":[');
-  if (seriesStart < 0) return [];
-  const seriesEnd = payload.indexOf('],"dashStyle"', seriesStart);
-  const seriesPayload = payload.slice(seriesStart, seriesEnd > seriesStart ? seriesEnd : undefined);
-  const points: LinkedInFollowerHistoryPoint[] = [];
-  const pointPattern = /\{"y":(\d+),[\s\S]*?"x":(\d+)\}/g;
-  for (const match of seriesPayload.matchAll(pointPattern)) {
-    const count = Number(match[1]);
-    const timestamp = Number(match[2]);
-    if (!Number.isSafeInteger(count) || count < 0 || !Number.isFinite(timestamp)) continue;
-    points.push({ date: new Date(timestamp).toISOString().slice(0, 10), count });
+function extractFollowerSeriesCandidates(payload: string): LinkedInFollowerHistoryPoint[][] {
+  const marker = '"name":"New followers","data":[';
+  const candidates: LinkedInFollowerHistoryPoint[][] = [];
+  let searchFrom = 0;
+
+  while (searchFrom < payload.length) {
+    const seriesStart = payload.indexOf(marker, searchFrom);
+    if (seriesStart < 0) break;
+    const boundsStart = payload.indexOf('"seriesBoundsModels"', seriesStart);
+    const nextSeriesStart = payload.indexOf(marker, seriesStart + marker.length);
+    const seriesEnd =
+      boundsStart > seriesStart && (nextSeriesStart < 0 || boundsStart < nextSeriesStart)
+        ? boundsStart
+        : nextSeriesStart > seriesStart
+          ? nextSeriesStart
+          : Math.min(payload.length, seriesStart + 100_000);
+    const seriesPayload = payload.slice(seriesStart, seriesEnd);
+    const points: LinkedInFollowerHistoryPoint[] = [];
+    const pointPattern = /\{"y":(\d+),[\s\S]*?,"x":(\d+)\}/g;
+    for (const match of seriesPayload.matchAll(pointPattern)) {
+      const count = Number(match[1]);
+      const timestamp = Number(match[2]);
+      if (!Number.isSafeInteger(count) || count < 0 || !Number.isFinite(timestamp)) continue;
+      points.push({ date: new Date(timestamp).toISOString().slice(0, 10), count });
+    }
+    if (points.length > 0) candidates.push(points);
+    searchFrom = seriesStart + marker.length;
   }
+
+  return candidates;
+}
+
+function isCumulativeSeries(points: LinkedInFollowerHistoryPoint[]): boolean {
+  return points.every((point, index) => index === 0 || point.count >= points[index - 1].count);
+}
+
+export function extractFollowersHistoryFromAnalyticsRsc(payload: string): LinkedInFollowerHistoryPoint[] {
+  const candidates = extractFollowerSeriesCandidates(payload);
+  const cumulativeCandidates = candidates.filter(isCumulativeSeries);
+  const rankedCandidates = cumulativeCandidates.length > 0 ? cumulativeCandidates : candidates;
+  return (
+    rankedCandidates.sort(
+      (left, right) => (right[right.length - 1]?.count || 0) - (left[left.length - 1]?.count || 0)
+    )[0] || []
+  );
+}
+
+export function extractFollowersDailyGrowthFromAnalyticsRsc(payload: string): LinkedInFollowerHistoryPoint[] {
+  const cumulative = extractFollowersHistoryFromAnalyticsRsc(payload);
+  const points: LinkedInFollowerHistoryPoint[] = [];
+  cumulative.forEach((point, index) => {
+    const previousCount = index > 0 ? cumulative[index - 1].count : 0;
+    points.push({ date: point.date, count: Math.max(0, point.count - previousCount) });
+  });
   return points;
 }

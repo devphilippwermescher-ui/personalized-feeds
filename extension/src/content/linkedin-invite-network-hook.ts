@@ -1,3 +1,10 @@
+import {
+  isInviteCreationRequest,
+  isPotentialInviteRequest,
+  isSuccessfulInviteCreationResponse,
+  parseNativeInviteNetworkResult,
+} from './native-invite-network-parser';
+
 (() => {
   const marker = '__mfpLinkedInInviteNetworkHookInstalled';
   const postMessageType = 'MFP_LINKEDIN_NATIVE_INVITE_SENT';
@@ -20,32 +27,6 @@
     }
   });
 
-  function getLinkedInRequestUrl(rawUrl: string): URL | null {
-    try {
-      return new URL(rawUrl, window.location.origin);
-    } catch {
-      return null;
-    }
-  }
-
-  function isPotentialInviteRequest(rawUrl: string): boolean {
-    const url = getLinkedInRequestUrl(rawUrl);
-    return Boolean(url && /\/voyager\/api\//i.test(url.pathname) && /(?:relationship|invitation|invite)/i.test(url.pathname));
-  }
-
-  function isInviteCreationUrl(rawUrl: string, requestBody = ''): boolean {
-    const url = getLinkedInRequestUrl(rawUrl);
-    if (!url) {
-      return false;
-    }
-
-    const isKnownCreateEndpoint =
-      /\/voyager\/api\/voyagerRelationshipsDashMemberRelationships$/i.test(url.pathname) &&
-      url.searchParams.get('action') === 'verifyQuotaAndCreateV2';
-    const hasInvitePayload = /(?:inviteeUnion|memberProfile|invitee)/i.test(requestBody);
-    return isKnownCreateEndpoint || (isPotentialInviteRequest(rawUrl) && hasInvitePayload);
-  }
-
   function normalizeLinkedInUrl(rawUrl: string): string {
     try {
       return new URL(rawUrl, window.location.origin).href;
@@ -54,37 +35,15 @@
     }
   }
 
-  function extractProfileUrn(text: string): string {
-    return text.match(/urn:li:fsd_profile:[A-Za-z0-9_-]+/)?.[0] || '';
-  }
-
-  function extractMemberNumericId(text: string): string {
-    return text.match(/urn:li:member:(\d+)/)?.[1] || '';
-  }
-
-  function extractLinkedInUsername(text: string): string {
-    const publicIdentifierMatch = text.match(/"publicIdentifier"\s*:\s*"([^"]+)"/);
-    if (publicIdentifierMatch?.[1]) {
-      return publicIdentifierMatch[1];
-    }
-
-    const profileUrlMatch = text.match(/linkedin\.com\/in\/([^/?#"\\]+)/i) || text.match(/\/in\/([^/?#"\\]+)/i);
-    return profileUrlMatch?.[1] || '';
-  }
-
   function postInvite(url: string, requestBody: string, responseText: string): void {
-    const profileUrn = extractProfileUrn(`${requestBody}\n${responseText}`);
-    const memberNumericId = extractMemberNumericId(`${requestBody}\n${responseText}`);
-    const linkedinUsername = extractLinkedInUsername(responseText);
+    const parsed = parseNativeInviteNetworkResult(requestBody, responseText);
 
     window.postMessage(
       {
         type: postMessageType,
         invite: {
           requestUrl: normalizeLinkedInUrl(url),
-          profileUrn,
-          memberNumericId,
-          linkedinUsername,
+          ...parsed,
         },
       },
       window.location.origin
@@ -141,7 +100,7 @@
         requestBodyPromise,
         response.clone().text().catch(() => ''),
       ]).then(([requestBody, responseText]) => {
-        if (isInviteCreationUrl(url, requestBody)) {
+        if (isInviteCreationRequest(url, requestBody) && isSuccessfulInviteCreationResponse(url, responseText)) {
           postInvite(url, requestBody, responseText);
         }
       });
@@ -176,11 +135,17 @@
 
     if (shouldInspect) {
       this.addEventListener('load', function onLoad() {
-        if (this.status < 200 || this.status >= 300 || !isInviteCreationUrl(requestUrl, requestBody)) {
+        const responseText = typeof this.responseText === 'string' ? this.responseText : '';
+        if (
+          this.status < 200 ||
+          this.status >= 300 ||
+          !isInviteCreationRequest(requestUrl, requestBody) ||
+          !isSuccessfulInviteCreationResponse(requestUrl, responseText)
+        ) {
           return;
         }
 
-        postInvite(requestUrl, requestBody, typeof this.responseText === 'string' ? this.responseText : '');
+        postInvite(requestUrl, requestBody, responseText);
       });
     }
 

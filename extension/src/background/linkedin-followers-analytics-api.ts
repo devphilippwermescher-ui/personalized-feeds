@@ -1,4 +1,8 @@
-import { extractFollowersTotalFromAnalyticsRsc } from '../linkedin/followers-analytics-rsc-parser';
+import {
+  extractFollowersDailyGrowthFromAnalyticsRsc,
+  extractFollowersTotalFromAnalyticsRsc,
+  type LinkedInFollowerHistoryPoint,
+} from '../linkedin/followers-analytics-rsc-parser';
 import {
   collectFollowersAnalyticsRscInLinkedInPage,
   type LinkedInFollowersAnalyticsRscResponse,
@@ -75,7 +79,14 @@ export async function fetchFollowersAnalyticsFromLinkedInTab(
   linkedInTabId: number | undefined,
   csrfToken: string,
   collectedAt: number
-): Promise<(LinkedInFollowersAnalyticsRscResponse & { followersCount?: number; sourceUrl?: string }) | null> {
+): Promise<
+  | (LinkedInFollowersAnalyticsRscResponse & {
+      followersCount?: number;
+      followerDailyGrowth?: LinkedInFollowerHistoryPoint[];
+      sourceUrl?: string;
+    })
+  | null
+> {
   if (typeof linkedInTabId !== 'number') return null;
 
   const request = createFollowersAnalyticsRequest(collectedAt);
@@ -97,6 +108,7 @@ export async function fetchFollowersAnalyticsFromLinkedInTab(
     ? {
         ...result,
         followersCount: result.payload ? extractFollowersTotalFromAnalyticsRsc(result.payload) : undefined,
+        followerDailyGrowth: result.payload ? extractFollowersDailyGrowthFromAnalyticsRsc(result.payload) : undefined,
         sourceUrl: request.url,
       }
     : null;

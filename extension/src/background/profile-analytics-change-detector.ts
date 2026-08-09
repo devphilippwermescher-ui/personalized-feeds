@@ -1,4 +1,8 @@
-import type { ProfileAnalyticsProfileSnapshot, ProfileAnalyticsSearchAppearancesSnapshot } from 'shared/types';
+import type {
+  ProfileAnalyticsProfileSnapshot,
+  ProfileAnalyticsSearchAppearancesSnapshot,
+  ProfileAnalyticsSsiSnapshot,
+} from 'shared/types';
 
 function canonicalize(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(canonicalize);
@@ -21,8 +25,18 @@ export function hasProfileSnapshotChanged(
   next: ProfileAnalyticsProfileSnapshot
 ): boolean {
   if (!current) return true;
-  const { updatedAt: _currentUpdatedAt, sourceUrl: _currentSourceUrl, ...currentValues } = current;
-  const { updatedAt: _nextUpdatedAt, sourceUrl: _nextSourceUrl, ...nextValues } = next;
+  const {
+    updatedAt: _currentUpdatedAt,
+    sourceUrl: _currentSourceUrl,
+    followerGrowthUpdatedAt: _currentFollowerGrowthUpdatedAt,
+    ...currentValues
+  } = current;
+  const {
+    updatedAt: _nextUpdatedAt,
+    sourceUrl: _nextSourceUrl,
+    followerGrowthUpdatedAt: _nextFollowerGrowthUpdatedAt,
+    ...nextValues
+  } = next;
   return !isEqual(currentValues, nextValues);
 }
 
@@ -34,4 +48,12 @@ export function hasSearchAppearancesChanged(
   const { updatedAt: _currentUpdatedAt, sourceUrl: _currentSourceUrl, ...currentValues } = current;
   const { updatedAt: _nextUpdatedAt, sourceUrl: _nextSourceUrl, ...nextValues } = next;
   return !isEqual(currentValues, nextValues);
+}
+
+export function hasSocialSellingIndexChanged(
+  current: ProfileAnalyticsSsiSnapshot | undefined,
+  next: ProfileAnalyticsSsiSnapshot
+): boolean {
+  if (!current) return true;
+  return current.score !== next.score;
 }

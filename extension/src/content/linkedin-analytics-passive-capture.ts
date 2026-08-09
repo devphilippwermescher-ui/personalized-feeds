@@ -7,6 +7,7 @@ interface PassiveAnalyticsWindowMessage {
   capturedAt?: unknown;
   connectionsCount?: unknown;
   followersCount?: unknown;
+  followersExact?: unknown;
 }
 
 export function initLinkedInAnalyticsPassiveCapture(): void {
@@ -19,6 +20,7 @@ export function initLinkedInAnalyticsPassiveCapture(): void {
         capturedAt: event.data.capturedAt,
         connectionsCount: event.data.connectionsCount,
         followersCount: event.data.followersCount,
+        followersExact: event.data.followersExact,
       },
     });
   });
