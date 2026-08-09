@@ -186,6 +186,14 @@ export interface ProfileAnalyticsProfileSnapshot {
   company?: string;
   location?: string;
   connectionsCount?: number;
+  /** Number of connections added on each LinkedIn connection date (YYYY-MM-DD). */
+  connectionDateCounts?: Record<string, number>;
+  /** True only after every connection page was read successfully. */
+  connectionDateCountsComplete?: boolean;
+  connectionDateCountsUpdatedAt?: number;
+  connectionDateCountsError?: string;
+  /** Recent identifiers used to stop incremental pagination at known data. */
+  recentConnectionIds?: string[];
   followersCount?: number;
   updatedAt: number;
   sourceUrl: string;
@@ -207,6 +215,15 @@ export interface ProfileAnalyticsSsiSnapshot {
   sourceUrl: string;
 }
 
+export interface ProfileAnalyticsProfileViewsSnapshot {
+  visibleCount: number;
+  privateCount: number;
+  recruiterCount?: number;
+  totalCount: number;
+  updatedAt: number;
+  source: 'profile_viewers';
+}
+
 export interface ProfileAnalyticsAcceptanceSnapshot {
   sentCount: number;
   acceptedCount: number;
@@ -225,12 +242,16 @@ export interface ProfileAnalyticsConnectionInvite {
   memberNumericId?: string;
   sentAt: number;
   acceptedAt?: number;
+  lastCheckedAt?: number;
+  nextCheckAt?: number;
+  checkAttempts?: number;
   status: 'sent' | 'accepted';
   source: 'sidebar_connect_action' | 'linkedin_native_connect_action' | 'linkedin_sent_invitations_sync';
 }
 
 export interface ProfileAnalyticsSnapshot {
   profile?: ProfileAnalyticsProfileSnapshot;
+  profileViews?: ProfileAnalyticsProfileViewsSnapshot;
   searchAppearances?: ProfileAnalyticsSearchAppearancesSnapshot;
   socialSellingIndex?: ProfileAnalyticsSsiSnapshot;
   acceptanceRate?: ProfileAnalyticsAcceptanceSnapshot;

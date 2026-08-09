@@ -1,15 +1,5 @@
-import {
-  getDoc,
-  getDocs,
-  limit,
-  orderBy,
-  query,
-  setDoc,
-} from 'firebase/firestore';
-import type {
-  ProfileAnalyticsDailySnapshot,
-  ProfileAnalyticsSnapshot,
-} from '../types';
+import { getDoc, getDocs, limit, onSnapshot, orderBy, query, setDoc } from 'firebase/firestore';
+import type { ProfileAnalyticsDailySnapshot, ProfileAnalyticsSnapshot } from '../types';
 import {
   docToProfileAnalyticsDailySnapshot,
   profileAnalyticsDailyCollection,
@@ -24,9 +14,7 @@ function getUtcDateKey(timestamp: number): string {
 
 function stripUndefinedDeep<T>(value: T): T {
   if (Array.isArray(value)) {
-    return value
-      .map((item) => stripUndefinedDeep(item))
-      .filter((item) => item !== undefined) as T;
+    return value.map((item) => stripUndefinedDeep(item)).filter((item) => item !== undefined) as T;
   }
 
   if (!value || typeof value !== 'object') {
@@ -61,8 +49,9 @@ function buildDailySnapshotPatch(
     ...(typeof snapshot.socialSellingIndex?.score === 'number'
       ? { socialSellingIndexScore: snapshot.socialSellingIndex.score }
       : {}),
-    ...(typeof snapshot.acceptanceRate?.rate === 'number'
-      ? { acceptanceRate: snapshot.acceptanceRate.rate }
+    ...(typeof snapshot.acceptanceRate?.rate === 'number' ? { acceptanceRate: snapshot.acceptanceRate.rate } : {}),
+    ...(typeof snapshot.profileViews?.totalCount === 'number'
+      ? { profileViewsCount: snapshot.profileViews.totalCount }
       : {}),
   };
 }
@@ -88,11 +77,21 @@ function hasRangeMetric(snapshot: Partial<ProfileAnalyticsDailySnapshot>): boole
   ].some((value) => typeof value === 'number');
 }
 
-export async function getProfileAnalyticsSnapshot(
-  userId: string
-): Promise<ProfileAnalyticsSnapshot | null> {
+export async function getProfileAnalyticsSnapshot(userId: string): Promise<ProfileAnalyticsSnapshot | null> {
   const snapshot = await getDoc(profileAnalyticsDoc(userId));
   return snapshot.exists() ? (snapshot.data() as ProfileAnalyticsSnapshot) : null;
+}
+
+export function subscribeToProfileAnalyticsSnapshot(
+  userId: string,
+  onValue: (snapshot: ProfileAnalyticsSnapshot | null) => void,
+  onError?: (error: Error) => void
+): () => void {
+  return onSnapshot(
+    profileAnalyticsDoc(userId),
+    (snapshot) => onValue(snapshot.exists() ? (snapshot.data() as ProfileAnalyticsSnapshot) : null),
+    (error) => onError?.(error)
+  );
 }
 
 export async function upsertProfileAnalyticsSnapshot(
@@ -128,11 +127,7 @@ export async function getProfileAnalyticsDailySnapshots(
   userId: string,
   maxCount = 90
 ): Promise<ProfileAnalyticsDailySnapshot[]> {
-  const q = query(
-    profileAnalyticsDailyCollection(userId),
-    orderBy('date', 'desc'),
-    limit(maxCount)
-  );
+  const q = query(profileAnalyticsDailyCollection(userId), orderBy('date', 'desc'), limit(maxCount));
   const snapshot = await getDocs(q);
   return snapshot.docs
     .map(docToProfileAnalyticsDailySnapshot)

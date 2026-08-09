@@ -1,55 +1,35 @@
-import type {
-  ProfileAnalyticsSnapshot,
-  ProfileAnalyticsProfileSnapshot,
-  ProfileAnalyticsSearchAppearancesSnapshot,
-  ProfileAnalyticsSsiSnapshot,
-} from 'shared/types';
-import {
-  upsertProfileAnalyticsSnapshot,
-} from 'shared/firestore-service';
+import { getProfileAnalyticsSnapshot, upsertProfileAnalyticsSnapshot } from 'shared/firestore-service';
+import type { ProfileAnalyticsProfileSnapshot, ProfileAnalyticsSnapshot } from 'shared/types';
 import { getAuthenticatedFeedsUser } from './feeds-auth';
-import { syncTrackedConnectionInviteAcceptance } from './connection-invites-sync';
-import { fetchLinkedInMeProfileSnapshot } from './profile-analytics-linkedin-api';
+import { fetchLinkedInConnectionsSnapshot } from './linkedin-connections-api';
+import { fetchLinkedInMeProfileSnapshot, type LinkedInProfileAnalyticsResult } from './profile-analytics-linkedin-api';
+import { getLinkedInCsrfToken } from './profile-viewers-api-client';
+import { markTrackedConnectionsAccepted } from './connection-invite-lifecycle';
+import { fetchSearchAppearancesSnapshot } from './profile-analytics-search-appearances-api';
+import { SEARCH_APPEARANCES_SYNC_TTL_MS } from './profile-analytics-sync-policy';
+import { hasProfileSnapshotChanged, hasSearchAppearancesChanged } from './profile-analytics-change-detector';
 
-interface ProfileAnalyticsPageCollection {
-  profile?: ProfileAnalyticsProfileSnapshot;
-  searchAppearances?: ProfileAnalyticsSearchAppearancesSnapshot;
-  socialSellingIndex?: ProfileAnalyticsSsiSnapshot;
-  selfProfileUrl?: string;
-  pageUrl: string;
-  collectedAt: number;
-}
-
-type CollectPageResponse =
-  | {
-      success: true;
-      data: ProfileAnalyticsPageCollection;
-    }
-  | {
-      success: false;
-      error: string;
-    };
-
-function sendCollectMessage(tabId: number): Promise<CollectPageResponse> {
-  return chrome.tabs.sendMessage(tabId, { type: 'PROFILE_ANALYTICS_COLLECT_PAGE' }) as Promise<CollectPageResponse>;
-}
-
-function mergeCollectionIntoSnapshot(
-  snapshot: Partial<ProfileAnalyticsSnapshot>,
-  collection: ProfileAnalyticsPageCollection
-): void {
-  if (collection.searchAppearances) {
-    snapshot.searchAppearances = collection.searchAppearances;
-  }
-  if (collection.socialSellingIndex) {
-    snapshot.socialSellingIndex = collection.socialSellingIndex;
-  }
+interface ProfileAnalyticsSyncOptions {
+  preferredTabId?: number;
+  currentSnapshot?: ProfileAnalyticsSnapshot | null;
+  forceCurrentMetrics?: boolean;
 }
 
 function mergeProfileSnapshot(
   current: ProfileAnalyticsProfileSnapshot | undefined,
   next: ProfileAnalyticsProfileSnapshot
 ): ProfileAnalyticsProfileSnapshot {
+  const refreshedConnectionHistory = typeof next.connectionDateCountsUpdatedAt === 'number';
+  const shouldReplaceConnectionHistory = next.connectionDateCountsComplete === true || !current?.connectionDateCounts;
+  const mergedConnectionDateCounts = shouldReplaceConnectionHistory
+    ? next.connectionDateCounts
+    : { ...current.connectionDateCounts };
+  if (!shouldReplaceConnectionHistory && mergedConnectionDateCounts) {
+    Object.entries(next.connectionDateCounts || {}).forEach(([date, count]) => {
+      mergedConnectionDateCounts[date] = Math.max(mergedConnectionDateCounts[date] || 0, count);
+    });
+  }
+
   return {
     ...current,
     ...next,
@@ -59,11 +39,25 @@ function mergeProfileSnapshot(
     company: next.company || current?.company,
     location: next.location || current?.location,
     connectionsCount: next.connectionsCount ?? current?.connectionsCount,
+    connectionDateCounts: mergedConnectionDateCounts,
+    connectionDateCountsComplete: refreshedConnectionHistory
+      ? next.connectionDateCountsComplete
+      : current?.connectionDateCountsComplete,
+    connectionDateCountsUpdatedAt: refreshedConnectionHistory
+      ? next.connectionDateCountsUpdatedAt
+      : current?.connectionDateCountsUpdatedAt,
+    connectionDateCountsError: refreshedConnectionHistory
+      ? next.connectionDateCountsError
+      : current?.connectionDateCountsError,
+    recentConnectionIds:
+      next.recentConnectionIds && next.recentConnectionIds.length > 0
+        ? next.recentConnectionIds
+        : current?.recentConnectionIds,
     followersCount: next.followersCount ?? current?.followersCount,
   };
 }
 
-export async function syncProfileAnalyticsFromLinkedInTabs(): Promise<{
+export async function syncProfileAnalyticsFromLinkedInTabs(options: ProfileAnalyticsSyncOptions = {}): Promise<{
   snapshot: ProfileAnalyticsSnapshot;
   collectedPages: string[];
   collected: {
@@ -71,54 +65,121 @@ export async function syncProfileAnalyticsFromLinkedInTabs(): Promise<{
     searchAppearances: boolean;
     socialSellingIndex: boolean;
   };
+  diagnostics: LinkedInProfileAnalyticsResult['diagnostics'];
 }> {
   const user = await getAuthenticatedFeedsUser();
   if (!user) {
     throw new Error('myFeedPilot authentication is required before profile analytics can be synchronized.');
   }
-  await syncTrackedConnectionInviteAcceptance(user.uid).catch(() => undefined);
-  const linkedInMeProfile = await fetchLinkedInMeProfileSnapshot(Date.now()).catch(() => null);
+
+  const currentSnapshot =
+    options.currentSnapshot === undefined ? await getProfileAnalyticsSnapshot(user.uid) : options.currentSnapshot;
   const tabs = await chrome.tabs.query({ url: 'https://www.linkedin.com/*' });
   const linkedInTabs = tabs.filter((tab): tab is chrome.tabs.Tab & { id: number } => typeof tab.id === 'number');
-  const pageResults = await Promise.allSettled(linkedInTabs.map((tab) => sendCollectMessage(tab.id)));
-  const snapshot: Partial<ProfileAnalyticsSnapshot> = {};
-  const collectedPages: string[] = [];
-
-  if (linkedInMeProfile) {
-    snapshot.profile = mergeProfileSnapshot(snapshot.profile, linkedInMeProfile);
-    collectedPages.push(linkedInMeProfile.sourceUrl);
+  const preferredTab = linkedInTabs.find((tab) => tab.id === options.preferredTabId);
+  const activeLinkedInTab = preferredTab || linkedInTabs.find((tab) => tab.active) || linkedInTabs[0];
+  const collectedAt = Date.now();
+  const linkedInResult = await fetchLinkedInMeProfileSnapshot(collectedAt, activeLinkedInTab?.id, {
+    includeConnectionHistory: false,
+    knownConnectionIds: currentSnapshot?.profile?.recentConnectionIds,
+    currentConnectionsCount: currentSnapshot?.profile?.connectionsCount,
+    currentFollowersCount: currentSnapshot?.profile?.followersCount,
+  });
+  if (!linkedInResult) {
+    throw new Error('LinkedIn profile analytics request did not return profile data.');
+  }
+  const linkedInProfile = linkedInResult.profile;
+  if (linkedInProfile.recentConnectionIds?.length) {
+    await markTrackedConnectionsAccepted(user.uid, linkedInProfile.recentConnectionIds, collectedAt);
   }
 
-  pageResults.forEach((result) => {
-    if (result.status !== 'fulfilled' || !result.value.success) {
-      return;
-    }
+  const profile = mergeProfileSnapshot(currentSnapshot?.profile, linkedInProfile);
+  const shouldCollectSearchAppearances =
+    options.forceCurrentMetrics === true ||
+    typeof currentSnapshot?.searchAppearances?.updatedAt !== 'number' ||
+    collectedAt - currentSnapshot.searchAppearances.updatedAt >= SEARCH_APPEARANCES_SYNC_TTL_MS;
+  const searchAppearances = shouldCollectSearchAppearances
+    ? await fetchSearchAppearancesSnapshot(collectedAt).catch((error) => {
+        console.warn('[profile-analytics] Search Appearances collector failed independently', error);
+        return null;
+      })
+    : null;
+  const profileChanged = hasProfileSnapshotChanged(currentSnapshot?.profile, profile);
+  const searchAppearancesChanged =
+    searchAppearances !== null && hasSearchAppearancesChanged(currentSnapshot?.searchAppearances, searchAppearances);
+  const nextSnapshot =
+    profileChanged || searchAppearancesChanged || !currentSnapshot
+      ? await upsertProfileAnalyticsSnapshot(
+          user.uid,
+          {
+            ...(profileChanged ? { profile } : {}),
+            ...(searchAppearancesChanged && searchAppearances ? { searchAppearances } : {}),
+          },
+          { updatedAt: collectedAt }
+        )
+      : currentSnapshot;
 
-    const collection = result.value.data;
-    if (!collection.searchAppearances && !collection.socialSellingIndex) {
-      return;
-    }
-
-    collectedPages.push(collection.pageUrl);
-    mergeCollectionIntoSnapshot(snapshot, collection);
+  console.info('[profile-analytics] current values verified', {
+    profileChanged,
+    searchAppearancesChanged,
+    connectionsCount: profile.connectionsCount,
+    followersCount: profile.followersCount,
   });
 
-  if (!snapshot.profile && !snapshot.searchAppearances && !snapshot.socialSellingIndex) {
-    throw new Error(
-      'No profile analytics data was found. Open your LinkedIn profile, Search appearances, or SSI page, then try syncing again.'
-    );
+  if (!linkedInResult.diagnostics.connectionsExact || !linkedInResult.diagnostics.followersExact) {
+    const missing = [
+      !linkedInResult.diagnostics.connectionsExact ? 'exact Connections total' : '',
+      !linkedInResult.diagnostics.followersExact ? 'exact Followers total' : '',
+    ].filter(Boolean);
+    throw new Error(`LinkedIn did not return ${missing.join(' and ')}; current Firestore values were preserved.`);
   }
-
-  const updatedAt = Date.now();
-  const nextSnapshot = await upsertProfileAnalyticsSnapshot(user.uid, snapshot, { updatedAt });
 
   return {
     snapshot: nextSnapshot,
-    collectedPages,
+    collectedPages: [linkedInProfile.sourceUrl, ...(searchAppearances ? [searchAppearances.sourceUrl] : [])],
     collected: {
-      profile: Boolean(snapshot.profile),
-      searchAppearances: Boolean(snapshot.searchAppearances),
-      socialSellingIndex: Boolean(snapshot.socialSellingIndex),
+      profile: true,
+      searchAppearances: Boolean(searchAppearances),
+      // SSI remains in Firestore until its request-driven collector is added.
+      socialSellingIndex: false,
     },
+    diagnostics: linkedInResult.diagnostics,
   };
+}
+
+/** Runs the one-time connection history backfill without repeating the other analytics requests. */
+export async function syncConnectionHistoryFromLinkedIn(preferredTabId?: number): Promise<ProfileAnalyticsSnapshot> {
+  const user = await getAuthenticatedFeedsUser();
+  if (!user) throw new Error('myFeedPilot authentication is required before connection history can be synchronized.');
+
+  const currentSnapshot = await getProfileAnalyticsSnapshot(user.uid);
+  if (!currentSnapshot?.profile)
+    throw new Error('Current profile analytics must be collected before connection history.');
+
+  const tabs = await chrome.tabs.query({ url: 'https://www.linkedin.com/*' });
+  const linkedInTabs = tabs.filter((tab): tab is chrome.tabs.Tab & { id: number } => typeof tab.id === 'number');
+  const preferredTab = linkedInTabs.find((tab) => tab.id === preferredTabId);
+  const activeLinkedInTab = preferredTab || linkedInTabs.find((tab) => tab.active) || linkedInTabs[0];
+  const csrfToken = await getLinkedInCsrfToken();
+  if (!csrfToken) throw new Error('LinkedIn CSRF token is unavailable.');
+
+  const collectedAt = Date.now();
+  const history = await fetchLinkedInConnectionsSnapshot(csrfToken, activeLinkedInTab?.id, {
+    includeHistory: true,
+  });
+  if (history.recentConnectionIds?.length) {
+    await markTrackedConnectionsAccepted(user.uid, history.recentConnectionIds, collectedAt);
+  }
+
+  const profile = mergeProfileSnapshot(currentSnapshot.profile, {
+    ...currentSnapshot.profile,
+    connectionsCount: history.connectionsCount ?? currentSnapshot.profile.connectionsCount,
+    connectionDateCounts: history.connectionDateCounts,
+    connectionDateCountsComplete: history.connectionDateCountsComplete,
+    connectionDateCountsUpdatedAt: collectedAt,
+    connectionDateCountsError: history.error || '',
+    recentConnectionIds: history.recentConnectionIds,
+    updatedAt: collectedAt,
+  });
+  return upsertProfileAnalyticsSnapshot(user.uid, { profile }, { updatedAt: collectedAt });
 }

@@ -1,21 +1,23 @@
 import {
+  CONNECTION_INVITE_FIRST_CHECK_DELAY_MS,
   getConnectionInvites,
-  markConnectionInviteAccepted,
+  markConnectionInviteChecked,
 } from 'shared/firestore-service';
 import { normalizeLinkedInUsername } from 'shared/linkedin-identity';
+import type { ProfileAnalyticsConnectionInvite } from 'shared/types';
+import { markTrackedConnectionAccepted } from './connection-invite-lifecycle';
 import { getAuthenticatedFeedsUser } from './feeds-auth';
 import { resolveLinkedInRelationshipStatusInBackground } from './linkedin-relationship-status-resolver';
 
 export const CONNECTION_INVITES_STATUS_ALARM_NAME = 'connection-invites-status-sync';
 
 const CONNECTION_INVITES_SYNC_STATE_KEY = 'mfp_connection_invites_status_sync_v1';
-const CONNECTION_INVITES_SYNC_INTERVAL_MS = 30 * 60 * 1000;
-const CONNECTION_INVITES_SYNC_URGENT_DELAY_MS = 15 * 1000;
-const CONNECTION_INVITES_SYNC_PENDING_RETRY_MS = 2 * 60 * 1000;
+const CONNECTION_INVITES_SYNC_INTERVAL_MS = 60 * 60 * 1000;
+const CONNECTION_INVITES_SYNC_BATCH_COOLDOWN_MS = 5 * 60 * 1000;
+const CONNECTION_INVITES_RESTRICTION_BACKOFF_MS = 12 * 60 * 60 * 1000;
 const CONNECTION_INVITES_SYNC_LEASE_MS = 2 * 60 * 1000;
 const CONNECTION_INVITES_SYNC_BATCH_LIMIT = 20;
 const CONNECTION_INVITES_SYNC_REQUEST_DELAY_MS = 5_000;
-const CONNECTION_INVITES_ACCEPTANCE_GRACE_MS = 0;
 
 type ConnectionInvitesStatusSyncTrigger =
   | 'install'
@@ -24,7 +26,6 @@ type ConnectionInvitesStatusSyncTrigger =
   | 'service_worker'
   | 'alarm'
   | 'invite_sent'
-  | 'profile_analytics'
   | 'manual';
 
 interface ConnectionInvitesStatusSyncState {
@@ -47,124 +48,99 @@ export interface ConnectionInvitesStatusSyncResult {
   error?: string;
 }
 
-function getStoredConnectionInvitesSyncState(): Promise<ConnectionInvitesStatusSyncState | null> {
-  return new Promise((resolve) => {
-    chrome.storage.local.get(CONNECTION_INVITES_SYNC_STATE_KEY, (stored) => {
-      const value = stored[CONNECTION_INVITES_SYNC_STATE_KEY];
-      resolve(value && typeof value === 'object' ? value as ConnectionInvitesStatusSyncState : null);
-    });
-  });
+function getInviteNextCheckAt(invite: ProfileAnalyticsConnectionInvite): number {
+  return typeof invite.nextCheckAt === 'number'
+    ? invite.nextCheckAt
+    : invite.sentAt + CONNECTION_INVITE_FIRST_CHECK_DELAY_MS;
 }
 
-function setStoredConnectionInvitesSyncState(state: ConnectionInvitesStatusSyncState): Promise<void> {
-  return chrome.storage.local.set({
-    [CONNECTION_INVITES_SYNC_STATE_KEY]: state,
-  });
+function isRestrictionSignal(error: unknown): boolean {
+  const status = (error as { httpStatus?: unknown })?.httpStatus;
+  const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+  return status === 429 || status === 999 || message.includes('temporarily restricted');
 }
 
-function scheduleConnectionInvitesStatusAlarmAt(scheduledAt: number): Promise<void> {
-  if (!chrome.alarms?.create) {
-    return Promise.resolve();
-  }
+async function getStoredState(): Promise<ConnectionInvitesStatusSyncState | null> {
+  const stored = await chrome.storage.local.get(CONNECTION_INVITES_SYNC_STATE_KEY);
+  const value = stored[CONNECTION_INVITES_SYNC_STATE_KEY];
+  return value && typeof value === 'object' ? (value as ConnectionInvitesStatusSyncState) : null;
+}
 
+function setStoredState(state: ConnectionInvitesStatusSyncState): Promise<void> {
+  return chrome.storage.local.set({ [CONNECTION_INVITES_SYNC_STATE_KEY]: state });
+}
+
+function scheduleAlarm(scheduledAt: number): Promise<void> {
+  if (!chrome.alarms?.create) return Promise.resolve();
   return chrome.alarms.create(CONNECTION_INVITES_STATUS_ALARM_NAME, {
     when: Math.max(Date.now() + 1_000, scheduledAt),
   });
 }
 
-function waitBetweenInviteStatusRequests(): Promise<void> {
-  return new Promise((resolve) => {
-    setTimeout(resolve, CONNECTION_INVITES_SYNC_REQUEST_DELAY_MS);
-  });
+function waitBetweenRequests(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, CONNECTION_INVITES_SYNC_REQUEST_DELAY_MS));
 }
 
 export async function queueConnectionInvitesStatusSync(
   trigger: ConnectionInvitesStatusSyncTrigger,
-  options: { urgent?: boolean } = {}
+  _options: { urgent?: boolean } = {}
 ): Promise<void> {
   const user = await getAuthenticatedFeedsUser();
-  if (!user) {
-    return;
-  }
+  if (!user) return;
 
   const now = Date.now();
-  const state = await getStoredConnectionInvitesSyncState();
-  const nextDueAt = options.urgent
-    ? now + CONNECTION_INVITES_SYNC_URGENT_DELAY_MS
-    : state?.userId === user.uid && state.nextDueAt
-      ? Math.min(state.nextDueAt, now + CONNECTION_INVITES_SYNC_INTERVAL_MS)
-      : now + CONNECTION_INVITES_SYNC_INTERVAL_MS;
-
-  await setStoredConnectionInvitesSyncState({
+  const state = await getStoredState();
+  const requestedDueAt = now + CONNECTION_INVITES_SYNC_INTERVAL_MS;
+  const nextDueAt =
+    state?.userId === user.uid && state.nextDueAt ? Math.min(state.nextDueAt, requestedDueAt) : requestedDueAt;
+  await setStoredState({
     ...(state?.userId === user.uid ? state : {}),
     userId: user.uid,
     nextDueAt,
     updatedAt: now,
   });
-  await scheduleConnectionInvitesStatusAlarmAt(nextDueAt);
-  console.info('[connection-invites-sync] queued', {
-    trigger,
-    urgent: options.urgent === true,
-    nextDueAt,
-  });
+  await scheduleAlarm(nextDueAt);
+  console.info('[connection-invites-sync] queued', { trigger, nextDueAt });
 }
 
 export async function syncTrackedConnectionInviteAcceptance(
-  userId: string
+  userId: string,
+  now = Date.now()
 ): Promise<ConnectionInvitesStatusSyncResult> {
-  const now = Date.now();
   const invites = await getConnectionInvites(userId);
-  const pendingInvites = invites
+  const candidates = invites
     .filter((invite) => invite.status !== 'accepted')
     .filter((invite) => normalizeLinkedInUsername(invite.linkedinUsername))
-    .filter((invite) => now - invite.sentAt > CONNECTION_INVITES_ACCEPTANCE_GRACE_MS)
-    .sort((left, right) => left.sentAt - right.sentAt)
+    .filter((invite) => getInviteNextCheckAt(invite) <= now)
+    .sort((left, right) => getInviteNextCheckAt(left) - getInviteNextCheckAt(right))
     .slice(0, CONNECTION_INVITES_SYNC_BATCH_LIMIT);
-
-  console.info('[connection-invites-sync] checking tracked invitations', {
-    inviteCount: invites.length,
-    pendingCount: pendingInvites.length,
-    skippedWithoutUsername: invites.filter((invite) => invite.status !== 'accepted' && !normalizeLinkedInUsername(invite.linkedinUsername)).length,
-  });
-
   let acceptedCount = 0;
   let checkedCount = 0;
-  let stillPendingCount = 0;
 
-  for (let index = 0; index < pendingInvites.length; index += 1) {
-    const invite = pendingInvites[index];
+  for (let index = 0; index < candidates.length; index += 1) {
+    const invite = candidates[index];
     const username = normalizeLinkedInUsername(invite.linkedinUsername);
-    if (!username) {
-      continue;
-    }
+    if (!username) continue;
 
     try {
       const relationship = await resolveLinkedInRelationshipStatusInBackground(username, {
         allowHtmlFallback: false,
       });
       checkedCount += 1;
-      console.info('[connection-invites-sync] invitation relationship checked', {
-        username,
-        status: relationship?.status || 'unresolved',
-      });
-
       if (relationship?.status === 'connected') {
-        await markConnectionInviteAccepted(userId, username);
+        await markTrackedConnectionAccepted(userId, username);
         acceptedCount += 1;
       } else {
-        stillPendingCount += 1;
+        await markConnectionInviteChecked(userId, username);
       }
     } catch (error) {
-      stillPendingCount += 1;
-      console.warn('[connection-invites-sync] failed to resolve pending invite status', {
-        username,
-        error,
-      });
+      if (isRestrictionSignal(error)) throw error;
+      checkedCount += 1;
+      await markConnectionInviteChecked(userId, username).catch(() => undefined);
+      console.warn('[connection-invites-sync] invitation status failed', { username, error });
     }
 
-    if (index < pendingInvites.length - 1) {
-      await waitBetweenInviteStatusRequests();
-    }
+    if (index < candidates.length - 1) await waitBetweenRequests();
   }
 
   return {
@@ -172,37 +148,47 @@ export async function syncTrackedConnectionInviteAcceptance(
     success: true,
     checkedCount,
     acceptedCount,
-    pendingCount: stillPendingCount,
-    skippedCount: Math.max(0, invites.length - pendingInvites.length),
+    pendingCount: Math.max(0, invites.filter((invite) => invite.status !== 'accepted').length - acceptedCount),
+    skippedCount: Math.max(0, invites.length - candidates.length),
   };
+}
+
+function getNextDueAt(invites: ProfileAnalyticsConnectionInvite[], now: number): number {
+  const pending = invites.filter((invite) => invite.status !== 'accepted');
+  if (pending.length === 0) return now + CONNECTION_INVITES_SYNC_INTERVAL_MS;
+  const dueTimes = pending.map(getInviteNextCheckAt);
+  const hasDueBacklog = dueTimes.some((dueAt) => dueAt <= now);
+  if (hasDueBacklog) return now + CONNECTION_INVITES_SYNC_BATCH_COOLDOWN_MS;
+  return Math.min(now + CONNECTION_INVITES_SYNC_INTERVAL_MS, ...dueTimes);
 }
 
 export async function runConnectionInvitesStatusSync(
   trigger: ConnectionInvitesStatusSyncTrigger = 'alarm'
 ): Promise<ConnectionInvitesStatusSyncResult> {
   const user = await getAuthenticatedFeedsUser();
-  if (!user) {
-    return { ran: false, success: false, error: 'myFeedPilot authentication is required.' };
+  if (!user) return { ran: false, success: false, error: 'myFeedPilot authentication is required.' };
+
+  const linkedInTabs = await chrome.tabs.query({ url: 'https://www.linkedin.com/*' });
+  if (!linkedInTabs.some((tab) => typeof tab.id === 'number')) {
+    const nextDueAt = Date.now() + CONNECTION_INVITES_SYNC_INTERVAL_MS;
+    await scheduleAlarm(nextDueAt);
+    return { ran: false, success: true, nextDueAt };
   }
 
   const now = Date.now();
-  let state = await getStoredConnectionInvitesSyncState();
-  if (state?.userId && state.userId !== user.uid) {
-    state = null;
-  }
-
+  let state = await getStoredState();
+  if (state?.userId && state.userId !== user.uid) state = null;
   if (state?.inProgressUntil && now < state.inProgressUntil) {
-    await scheduleConnectionInvitesStatusAlarmAt(state.inProgressUntil);
+    await scheduleAlarm(state.inProgressUntil);
     return { ran: false, success: true, nextDueAt: state.inProgressUntil };
   }
-
-  if (trigger !== 'manual' && trigger !== 'profile_analytics' && state?.nextDueAt && now < state.nextDueAt) {
-    await scheduleConnectionInvitesStatusAlarmAt(state.nextDueAt);
+  if (trigger !== 'manual' && state?.nextDueAt && now < state.nextDueAt) {
+    await scheduleAlarm(state.nextDueAt);
     return { ran: false, success: true, nextDueAt: state.nextDueAt };
   }
 
   const startedAt = Date.now();
-  await setStoredConnectionInvitesSyncState({
+  await setStoredState({
     ...(state || {}),
     userId: user.uid,
     inProgressUntil: startedAt + CONNECTION_INVITES_SYNC_LEASE_MS,
@@ -212,12 +198,9 @@ export async function runConnectionInvitesStatusSync(
 
   try {
     const result = await syncTrackedConnectionInviteAcceptance(user.uid);
-    const nextDueAt = Date.now() + (
-      result.pendingCount && result.pendingCount > 0
-        ? CONNECTION_INVITES_SYNC_PENDING_RETRY_MS
-        : CONNECTION_INVITES_SYNC_INTERVAL_MS
-    );
-    await setStoredConnectionInvitesSyncState({
+    const remainingInvites = await getConnectionInvites(user.uid);
+    const nextDueAt = getNextDueAt(remainingInvites, Date.now());
+    await setStoredState({
       ...(state || {}),
       userId: user.uid,
       inProgressUntil: undefined,
@@ -226,18 +209,20 @@ export async function runConnectionInvitesStatusSync(
       nextDueAt,
       updatedAt: Date.now(),
     });
-    await scheduleConnectionInvitesStatusAlarmAt(nextDueAt);
+    await scheduleAlarm(nextDueAt);
     return { ...result, nextDueAt };
   } catch (error) {
-    const nextDueAt = Date.now() + CONNECTION_INVITES_SYNC_INTERVAL_MS;
-    await setStoredConnectionInvitesSyncState({
+    const nextDueAt =
+      Date.now() +
+      (isRestrictionSignal(error) ? CONNECTION_INVITES_RESTRICTION_BACKOFF_MS : CONNECTION_INVITES_SYNC_INTERVAL_MS);
+    await setStoredState({
       ...(state || {}),
       userId: user.uid,
       inProgressUntil: undefined,
       nextDueAt,
       updatedAt: Date.now(),
     });
-    await scheduleConnectionInvitesStatusAlarmAt(nextDueAt);
+    await scheduleAlarm(nextDueAt);
     return {
       ran: true,
       success: false,

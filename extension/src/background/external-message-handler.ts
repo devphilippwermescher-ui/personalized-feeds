@@ -7,15 +7,16 @@ import {
   persistFeatureSettingsToStorage,
   startOffscreenAuth,
 } from './feeds-auth';
-import { syncProfileAnalyticsFromLinkedInTabs } from './profile-analytics-sync';
 
 const DASHBOARD_ORIGIN = 'https://linkedin-feed-sorter.web.app';
 
-function isDashboardOrigin(urlValue: string | undefined): boolean {
-  if (!urlValue) {
-    return false;
-  }
+interface DashboardMessage {
+  type?: string;
+  settings?: Partial<UserFeatureSettings>;
+}
 
+function isDashboardOrigin(urlValue: string | undefined): boolean {
+  if (!urlValue) return false;
   try {
     const url = new URL(urlValue);
     return url.origin === DASHBOARD_ORIGIN || (url.protocol === 'http:' && url.hostname === 'localhost');
@@ -24,44 +25,7 @@ function isDashboardOrigin(urlValue: string | undefined): boolean {
   }
 }
 
-function syncProfileAnalyticsForDashboard(sendResponse: (response: unknown) => void): void {
-  syncProfileAnalyticsFromLinkedInTabs()
-    .then((result) => {
-      sendResponse({ success: true, result });
-    })
-    .catch((error) => {
-      sendResponse({
-        success: false,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    });
-}
-
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.type !== 'DASHBOARD_EXTENSION_BRIDGE_REQUEST') {
-    return false;
-  }
-
-  if (!isDashboardOrigin(sender.tab?.url || sender.url)) {
-    sendResponse({ success: false, error: 'Unauthorized dashboard origin' });
-    return false;
-  }
-
-  const dashboardMessage = message.dashboardMessage as { type?: string } | undefined;
-  if (dashboardMessage?.type !== 'DASHBOARD_PROFILE_ANALYTICS_SYNC_NOW') {
-    sendResponse({ success: false, error: 'Unsupported dashboard message' });
-    return false;
-  }
-
-  syncProfileAnalyticsForDashboard(sendResponse);
-  return true;
-});
-chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => {
-  if (!isDashboardOrigin(sender.url)) {
-    sendResponse({ success: false, error: 'Unauthorized origin' });
-    return true;
-  }
-
+function handleDashboardMessage(message: DashboardMessage, sendResponse: (response: unknown) => void): boolean {
   if (message.type === 'DASHBOARD_GET_EXTENSION_AUTH_STATE') {
     getAuthenticatedFeedsUser()
       .then((user) => {
@@ -79,9 +43,7 @@ chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => 
           }),
         });
       })
-      .catch(() => {
-        sendResponse({ success: true, isAuthenticated: false });
-      });
+      .catch(() => sendResponse({ success: true, isAuthenticated: false }));
     return true;
   }
 
@@ -92,20 +54,11 @@ chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => 
           sendResponse({ success: false, error: result.error });
           return;
         }
-
-        sendResponse({
-          success: true,
-          idToken: result.idToken,
-          accessToken: result.accessToken,
-        });
+        sendResponse({ success: true, idToken: result.idToken, accessToken: result.accessToken });
       })
       .catch((error) => {
-        sendResponse({
-          success: false,
-          error: error instanceof Error ? error.message : String(error),
-        });
+        sendResponse({ success: false, error: error instanceof Error ? error.message : String(error) });
       });
-
     return true;
   }
 
@@ -113,10 +66,9 @@ chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => 
     const user = getCurrentUser();
     if (!user) {
       sendResponse({ success: false, error: 'Not authenticated' });
-      return true;
+      return false;
     }
-
-    updateUserFeatureSettings(user.uid, (message.settings || {}) as Partial<UserFeatureSettings>)
+    updateUserFeatureSettings(user.uid, message.settings || {})
       .then(async (settings) => {
         await persistFeatureSettingsToStorage(settings);
         sendResponse({ success: true, settings });
@@ -127,11 +79,23 @@ chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => 
     return true;
   }
 
-  if (message.type === 'DASHBOARD_PROFILE_ANALYTICS_SYNC_NOW') {
-    syncProfileAnalyticsForDashboard(sendResponse);
-    return true;
-  }
+  sendResponse({ success: false, error: 'Unsupported dashboard message' });
+  return false;
+}
 
-  sendResponse({ success: false, error: 'Unsupported message' });
-  return true;
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type !== 'DASHBOARD_EXTENSION_BRIDGE_REQUEST') return false;
+  if (!isDashboardOrigin(sender.tab?.url || sender.url)) {
+    sendResponse({ success: false, error: 'Unauthorized dashboard origin' });
+    return false;
+  }
+  return handleDashboardMessage(message.dashboardMessage || {}, sendResponse);
+});
+
+chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => {
+  if (!isDashboardOrigin(sender.url)) {
+    sendResponse({ success: false, error: 'Unauthorized origin' });
+    return false;
+  }
+  return handleDashboardMessage(message || {}, sendResponse);
 });

@@ -16,11 +16,11 @@ import {
   setStoredFeedsAuthTokens,
   startOffscreenAuth,
 } from './feeds-auth';
-import {
-  appendProfileViewersWakeEvent,
-  clearProfileViewersAlarm,
-} from './profile-viewers-coordinator-storage';
+import { appendProfileViewersWakeEvent, clearProfileViewersAlarm } from './profile-viewers-coordinator-storage';
 import { queueProfileViewersSync } from './profile-viewers-coordinator';
+import { queueProfileViewersStatusSync } from './profile-viewers-status-sync';
+import { queueProfileAnalyticsSync } from './profile-analytics-sync-coordinator';
+import { queueConnectionInvitesStatusSync } from './connection-invites-sync';
 import { normalizeFeedsError } from './feeds-errors';
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'OFFSCREEN_AUTH_RESULT') {
@@ -86,6 +86,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           trigger: 'sign_in',
         });
         void queueProfileViewersSync('sign_in');
+        void queueProfileViewersStatusSync({ trigger: 'sign_in', urgent: true });
+        void queueConnectionInvitesStatusSync('manual');
+        void queueProfileAnalyticsSync('sign_in');
       })
       .catch((error) => {
         console.error('[feeds-auth] Sign-in error:', error);

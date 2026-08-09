@@ -1,0 +1,34 @@
+import type { ProfileAnalyticsDailySnapshot } from 'shared/types';
+import type { DateRange } from '../../utils/date';
+
+export type ChartKey = keyof Pick<
+  ProfileAnalyticsDailySnapshot,
+  | 'connectionsCount'
+  | 'followersCount'
+  | 'profileViewsCount'
+  | 'searchAppearancesCount'
+  | 'socialSellingIndexScore'
+  | 'acceptanceRate'
+>;
+
+export type TimeRangeKey = '30d' | '90d' | '6m' | '1y';
+export type ActiveRangeKey = TimeRangeKey | 'custom';
+export type DateRangeBoundary = 'start' | 'end';
+export type ConnectionsFollowersMode = 'both' | 'connections' | 'followers';
+
+export interface ConnectionsFollowersPoint {
+  date: Date;
+  dateKey: string;
+  connectionsCount?: number;
+  followersCount?: number;
+}
+
+export interface AnalyticsDateRangeState {
+  range: ActiveRangeKey;
+  rangeLabel: string;
+  selectedDateRange: DateRange;
+  customRange: DateRange;
+  isCustomPickerOpen: boolean;
+  activeCustomBoundary: DateRangeBoundary;
+  visibleMonth: Date;
+}

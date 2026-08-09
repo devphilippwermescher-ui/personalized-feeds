@@ -15,10 +15,7 @@ import {
   type ProfileViewersSyncState,
   type ProfileViewersSyncTrigger,
 } from './profile-viewers-sync-state';
-import {
-  getAuthenticatedFeedsUser,
-  getStoredFeedsAuthContext,
-} from './feeds-auth';
+import { getAuthenticatedFeedsUser, getStoredFeedsAuthContext } from './feeds-auth';
 import { ProfileViewersSyncError } from './profile-viewers-error';
 import { syncProfileViewersViaApi } from './profile-viewers-sync-service';
 import {
@@ -33,6 +30,8 @@ import {
   type ProfileViewersSyncCoordinatorResult,
 } from './profile-viewers-coordinator-storage';
 import { queueProfileViewersStatusSync } from './profile-viewers-status-sync';
+import { getProfileViewerCount } from 'shared/firestore-service';
+import { recordProfileViewsAnalytics } from './profile-viewers-analytics';
 
 const PROFILE_VIEWERS_SYNC_LOG_LIMIT = 50;
 const PROFILE_VIEWERS_SYNC_LOG_USERNAME_LIMIT = 50;
@@ -97,10 +96,7 @@ function appendProfileViewersSyncLog(
   };
 }
 
-function getProfileViewersSyncSkipReason(
-  state: ProfileViewersSyncState,
-  now: number
-): string {
+function getProfileViewersSyncSkipReason(state: ProfileViewersSyncState, now: number): string {
   if (!canMakeProfileViewersRequest(state, now)) {
     return 'request_rate_limit';
   }
@@ -172,15 +168,8 @@ async function runProfileViewersSyncCoordinator(
         hasStoredTokens: authContext.hasStoredTokens,
       });
     } else {
-      await setProfileViewersAuthRecoveryState(
-        recoveryState,
-        authRecoveryPlan.attempts,
-        authRecoveryPlan.scheduledAt
-      );
-      await scheduleProfileViewersAlarmAt(
-        authRecoveryPlan.scheduledAt,
-        authRecoveryPlan.reason
-      );
+      await setProfileViewersAuthRecoveryState(recoveryState, authRecoveryPlan.attempts, authRecoveryPlan.scheduledAt);
+      await scheduleProfileViewersAlarmAt(authRecoveryPlan.scheduledAt, authRecoveryPlan.reason);
       await appendProfileViewersWakeEvent({
         event:
           authRecoveryPlan.reason === 'preserve_next_due'
@@ -260,6 +249,16 @@ async function runProfileViewersSyncCoordinator(
       }
     );
     const finishedAt = Date.now();
+    const visibleViewerCount = await getProfileViewerCount(user.uid).catch(() => result.visibleCount);
+    await recordProfileViewsAnalytics({
+      userId: user.uid,
+      visibleCount: visibleViewerCount,
+      privateCount: result.privateViewerCount,
+      recruiterCount: result.recruiterViewerCount,
+      updatedAt: finishedAt,
+    }).catch((error) => {
+      console.warn('[profile-viewers-sync] Failed to update profile analytics total:', error);
+    });
     const scheduledIntervalMs = getProfileViewersScheduledIntervalMs();
     state = completeProfileViewersSyncSuccess(state, finishedAt, scheduledIntervalMs);
     const log: ProfileViewersSyncLog = {
@@ -270,10 +269,7 @@ async function runProfileViewersSyncCoordinator(
       trigger,
       runType,
       attemptNumber,
-      status: getProfileViewersSyncLogStatus(
-        undefined,
-        result.newCount + (result.newSearchCount || 0)
-      ),
+      status: getProfileViewersSyncLogStatus(undefined, result.newCount + (result.newSearchCount || 0)),
       httpStatus: result.httpStatus,
       responseLength: result.responseLength,
       requestCount: result.requestCount,
@@ -291,14 +287,8 @@ async function runProfileViewersSyncCoordinator(
       newCount: result.newCount,
       newSearchCount: result.newSearchCount,
       updatedCount: result.updatedCount,
-      visibleProfileUsernames: result.visibleProfileUsernames.slice(
-        0,
-        PROFILE_VIEWERS_SYNC_LOG_USERNAME_LIMIT
-      ),
-      newProfileUsernames: result.newProfileUsernames.slice(
-        0,
-        PROFILE_VIEWERS_SYNC_LOG_USERNAME_LIMIT
-      ),
+      visibleProfileUsernames: result.visibleProfileUsernames.slice(0, PROFILE_VIEWERS_SYNC_LOG_USERNAME_LIMIT),
+      newProfileUsernames: result.newProfileUsernames.slice(0, PROFILE_VIEWERS_SYNC_LOG_USERNAME_LIMIT),
       recoveredFromInterruptedAttempt: decision.recoveredFromInterruptedAttempt,
       requestCountInWindow: state.requestCountInWindow,
       rateLimitResetAt: getProfileViewersRateLimitResetAt(state),
@@ -313,8 +303,7 @@ async function runProfileViewersSyncCoordinator(
       trigger: 'profile_viewers_sync',
       priorityUsernames: result.newProfileUsernames,
       urgent:
-        trigger === 'manual' ||
-        (result.paginationMode === 'incremental' && result.newProfileUsernames.length > 0),
+        trigger === 'manual' || (result.paginationMode === 'incremental' && result.newProfileUsernames.length > 0),
     }).catch((error) => {
       console.warn('[profile-viewers-sync] Failed to queue profile viewer status sync:', error);
     });

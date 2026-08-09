@@ -1,4 +1,5 @@
 import { useState, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
+import { formatChartDate } from '../utils/format';
 
 export interface MetricTrendPoint {
   date: Date;
@@ -18,21 +19,12 @@ interface MetricTrendChartProps {
   emptyLabel: string;
 }
 
-const CHART_DATE_FORMATTER = new Intl.DateTimeFormat('en-GB', {
-  day: '2-digit',
-  month: 'short',
-});
-
 const PLOT_LEFT = 48;
 const PLOT_TOP = 14;
 const PLOT_RIGHT = 612;
 const PLOT_BOTTOM = 204;
 const PLOT_WIDTH = PLOT_RIGHT - PLOT_LEFT;
 const PLOT_HEIGHT = PLOT_BOTTOM - PLOT_TOP;
-
-function formatChartDate(value: Date): string {
-  return CHART_DATE_FORMATTER.format(value).replace(',', '');
-}
 
 function getNiceChartMax(value: number, minimumMax: number): number {
   const base = Math.max(value, minimumMax);
@@ -51,9 +43,9 @@ function getXAxisTickIndexes(points: MetricTrendPoint[]): number[] {
   }
 
   const tickCount = Math.min(6, Math.max(2, Math.ceil(points.length / 6)));
-  return Array.from({ length: tickCount }, (_, index) => (
+  return Array.from({ length: tickCount }, (_, index) =>
     Math.round((index / Math.max(1, tickCount - 1)) * (points.length - 1))
-  )).filter((value, index, values) => values.indexOf(value) === index);
+  ).filter((value, index, values) => values.indexOf(value) === index);
 }
 
 function getValuePath(points: MetricTrendPoint[], chartMax: number): string {
@@ -103,20 +95,20 @@ export function MetricTrendChart({
   emptyLabel,
 }: MetricTrendChartProps) {
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
-  const values = points
-    .map((point) => point.value)
-    .filter((value): value is number => typeof value === 'number');
+  const values = points.map((point) => point.value).filter((value): value is number => typeof value === 'number');
   const hasData = values.length > 0;
   const chartMax = getNiceChartMax(Math.max(...values, 0), minimumMax);
-  const yTicks = [chartMax, Math.round(chartMax * 0.5), Math.round(chartMax * 0.25), 0]
-    .filter((value, index, list) => list.indexOf(value) === index);
+  const yTicks = [chartMax, Math.round(chartMax * 0.5), Math.round(chartMax * 0.25), 0].filter(
+    (value, index, list) => list.indexOf(value) === index
+  );
   const xTicks = getXAxisTickIndexes(points);
   const maxIndex = Math.max(1, points.length - 1);
   const path = getValuePath(points, chartMax);
   const areaPath = getAreaPath(points, chartMax);
-  const singlePoint = values.length === 1
-    ? points.map((point, index) => ({ point, index })).find(({ point }) => typeof point.value === 'number') || null
-    : null;
+  const singlePoint =
+    values.length === 1
+      ? points.map((point, index) => ({ point, index })).find(({ point }) => typeof point.value === 'number') || null
+      : null;
   const hoveredPoint = hoveredIndex === null ? null : points[hoveredIndex];
 
   function getX(index: number): number {
@@ -188,17 +180,41 @@ export function MetricTrendChart({
                 </g>
               );
             })}
-            <line x1={PLOT_LEFT} x2={PLOT_RIGHT} y1={PLOT_BOTTOM} y2={PLOT_BOTTOM} className="profile-analytics-chart-axis-line" />
+            <line
+              x1={PLOT_LEFT}
+              x2={PLOT_RIGHT}
+              y1={PLOT_BOTTOM}
+              y2={PLOT_BOTTOM}
+              className="profile-analytics-chart-axis-line"
+            />
             {areaPath ? <path d={areaPath} fill={`url(#${gradientId})`} /> : null}
             {path ? <path d={path} className="profile-analytics-series" stroke={color} /> : null}
             {singlePoint && typeof singlePoint.point.value === 'number' ? (
-              <circle cx={getX(singlePoint.index)} cy={getY(singlePoint.point.value)} r="4" fill={color} className="profile-analytics-chart-dot" />
+              <circle
+                cx={getX(singlePoint.index)}
+                cy={getY(singlePoint.point.value)}
+                r="4"
+                fill={color}
+                className="profile-analytics-chart-dot"
+              />
             ) : null}
             {hoveredPoint ? (
               <g>
-                <line x1={tooltipX} x2={tooltipX} y1={PLOT_TOP} y2={PLOT_BOTTOM} className="profile-analytics-chart-hover-line" />
+                <line
+                  x1={tooltipX}
+                  x2={tooltipX}
+                  y1={PLOT_TOP}
+                  y2={PLOT_BOTTOM}
+                  className="profile-analytics-chart-hover-line"
+                />
                 {typeof hoveredPoint.value === 'number' ? (
-                  <circle cx={tooltipX} cy={getY(hoveredPoint.value)} r="4" fill={color} className="profile-analytics-chart-dot" />
+                  <circle
+                    cx={tooltipX}
+                    cy={getY(hoveredPoint.value)}
+                    r="4"
+                    fill={color}
+                    className="profile-analytics-chart-dot"
+                  />
                 ) : null}
                 <g transform={`translate(${tooltipLeft} 76)`}>
                   <rect width="126" height="62" rx="6" className="profile-analytics-chart-tooltip-bg" />

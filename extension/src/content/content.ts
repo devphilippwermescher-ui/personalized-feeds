@@ -13,7 +13,7 @@ import '../runtime/set-public-path';
 
 import { loadFeatureSettings, onFeatureSettingsChange } from './feature-settings';
 import { initNativeInviteTracking } from './native-invite-tracking';
-import { collectProfileAnalyticsFromCurrentPage } from './profile-analytics/collector';
+import { initLinkedInAnalyticsPassiveCapture } from './linkedin-analytics-passive-capture';
 import { destroyPostButtons, initPostButtons } from './post-buttons';
 import { destroySpeechToCommentButton } from './speech-to-comment';
 import type { UserFeatureSettings } from 'shared/types';
@@ -52,35 +52,19 @@ function applyFeatureSettings(nextSettings: UserFeatureSettings): void {
 void loadFeatureSettings().then(applyFeatureSettings);
 onFeatureSettingsChange(applyFeatureSettings);
 initNativeInviteTracking();
-
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  if (message.type !== 'PROFILE_ANALYTICS_COLLECT_PAGE') {
-    return false;
-  }
-
-  try {
-    sendResponse({
-      success: true,
-      data: collectProfileAnalyticsFromCurrentPage(),
-    });
-  } catch (error) {
-    sendResponse({
-      success: false,
-      error: error instanceof Error ? error.message : String(error),
-    });
-  }
-
-  return true;
-});
+initLinkedInAnalyticsPassiveCapture();
 
 // ── Bootstrap ────────────────────────────────────────────────────────
 
 let linkedinActivityTimer: number | undefined;
 
-function notifyProfileViewersLinkedInActivity(): void {
+function notifyLinkedInActivity(): void {
   window.clearTimeout(linkedinActivityTimer);
   linkedinActivityTimer = window.setTimeout(() => {
     chrome.runtime.sendMessage({ type: 'PROFILE_VIEWERS_LINKEDIN_ACTIVITY' }).catch(() => {
+      /* background may be unavailable while the extension is reloading */
+    });
+    chrome.runtime.sendMessage({ type: 'PROFILE_ANALYTICS_LINKEDIN_ACTIVITY' }).catch(() => {
       /* background may be unavailable while the extension is reloading */
     });
   }, 500);
@@ -89,7 +73,7 @@ function notifyProfileViewersLinkedInActivity(): void {
 function onPageReady(): void {
   domReady = true;
   applyFeatureUI();
-  notifyProfileViewersLinkedInActivity();
+  notifyLinkedInActivity();
 }
 
 if (document.readyState === 'complete') {
@@ -111,7 +95,7 @@ function onRouteChange(): void {
 
   if (domReady) {
     window.setTimeout(applyFeatureUI, 300);
-    notifyProfileViewersLinkedInActivity();
+    notifyLinkedInActivity();
   }
 }
 

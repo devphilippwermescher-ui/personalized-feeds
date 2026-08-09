@@ -9,6 +9,7 @@ module.exports = {
     content: './src/content/content.ts',
     'dashboard-extension-bridge': './src/content/dashboard-extension-bridge.ts',
     'linkedin-invite-network-hook': './src/content/linkedin-invite-network-hook.ts',
+    'linkedin-analytics-network-hook': './src/content/linkedin-analytics-network-hook.ts',
     'profile-content': './src/content/profile-content/index.ts',
     'sharefeed-capture': './src/content/sharefeed-capture.ts',
     'feeds-sidebar': './src/content/feeds-sidebar/index.ts',

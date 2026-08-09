@@ -1,6 +1,10 @@
 const REQUEST_TYPE = 'MFP_DASHBOARD_EXTENSION_REQUEST';
 const RESPONSE_TYPE = 'MFP_DASHBOARD_EXTENSION_RESPONSE';
-const ALLOWED_MESSAGE_TYPE = 'DASHBOARD_PROFILE_ANALYTICS_SYNC_NOW';
+const ALLOWED_MESSAGE_TYPES = new Set([
+  'DASHBOARD_GET_EXTENSION_AUTH_STATE',
+  'DASHBOARD_SYNC_AUTH',
+  'DASHBOARD_SYNC_SETTINGS',
+]);
 
 interface DashboardBridgeRequest {
   type?: string;
@@ -11,11 +15,14 @@ interface DashboardBridgeRequest {
 }
 
 function respond(requestId: string, response: unknown): void {
-  window.postMessage({
-    type: RESPONSE_TYPE,
-    requestId,
-    response,
-  }, window.location.origin);
+  window.postMessage(
+    {
+      type: RESPONSE_TYPE,
+      requestId,
+      response,
+    },
+    window.location.origin
+  );
 }
 
 window.addEventListener('message', (event: MessageEvent<DashboardBridgeRequest>) => {
@@ -27,23 +34,27 @@ window.addEventListener('message', (event: MessageEvent<DashboardBridgeRequest>)
   if (
     request?.type !== REQUEST_TYPE ||
     !request.requestId ||
-    request.message?.type !== ALLOWED_MESSAGE_TYPE
+    !request.message?.type ||
+    !ALLOWED_MESSAGE_TYPES.has(request.message.type)
   ) {
     return;
   }
 
-  chrome.runtime.sendMessage({
-    type: 'DASHBOARD_EXTENSION_BRIDGE_REQUEST',
-    dashboardMessage: request.message,
-  }, (response) => {
-    if (chrome.runtime.lastError) {
-      respond(request.requestId || '', {
-        success: false,
-        error: chrome.runtime.lastError.message,
-      });
-      return;
-    }
+  chrome.runtime.sendMessage(
+    {
+      type: 'DASHBOARD_EXTENSION_BRIDGE_REQUEST',
+      dashboardMessage: request.message,
+    },
+    (response) => {
+      if (chrome.runtime.lastError) {
+        respond(request.requestId || '', {
+          success: false,
+          error: chrome.runtime.lastError.message,
+        });
+        return;
+      }
 
-    respond(request.requestId || '', response);
-  });
+      respond(request.requestId || '', response);
+    }
+  );
 });
