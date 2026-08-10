@@ -40,8 +40,9 @@ export function parsePassiveAnalyticsResponse(
   capturedAt = Date.now()
 ): PassiveAnalyticsCapture | null {
   if (!sourceUrl || !payload || !isPassiveAnalyticsUrl(sourceUrl)) return null;
+  const normalizedSourceUrl = sourceUrl.toLowerCase();
   const capture: PassiveAnalyticsCapture = { sourceUrl, capturedAt };
-  if (sourceUrl.toLowerCase().includes('/sales-api/salesapissi')) {
+  if (normalizedSourceUrl.includes('/sales-api/salesapissi')) {
     try {
       const parsed = JSON.parse(payload) as { memberScore?: { overall?: unknown } };
       const overall = parsed?.memberScore?.overall;
@@ -52,16 +53,20 @@ export function parsePassiveAnalyticsResponse(
       return null;
     }
   } else if (
-    sourceUrl.includes('/flagship-web/mynetwork/invite-connect/connections') ||
-    sourceUrl.toLowerCase().includes('connectionslist') ||
-    (sourceUrl.toLowerCase().includes('mynetwork') && sourceUrl.toLowerCase().includes('connection'))
+    normalizedSourceUrl.includes('/flagship-web/mynetwork/invite-connect/connections') ||
+    normalizedSourceUrl.includes('connectionslist') ||
+    (normalizedSourceUrl.includes('mynetwork') && normalizedSourceUrl.includes('connection'))
   ) {
+    // Pagination responses can contain unrelated `totalConnectionsCount`
+    // expression values for individual list items. Only initial/list bootstrap
+    // responses are authoritative for the account-wide Connections total.
+    if (normalizedSourceUrl.includes('/rsc-action/actions/pagination')) return null;
     capture.connectionsCount = parseSafeCount(
       payload.match(
         /"id"\s*:\s*"totalConnectionsCount"[\s\S]{0,500}?"(?:intValue|longValue|stringValue)"\s*:\s*"?([\d,]+)"?/
       )?.[1] || payload.match(/\b([\d,]+)\s+connections\b/i)?.[1]
     );
-  } else if (sourceUrl.toLowerCase().includes('audienceanalyticsfollowersmodule')) {
+  } else if (normalizedSourceUrl.includes('audienceanalyticsfollowersmodule')) {
     capture.followersCount = extractFollowersTotalFromAnalyticsRsc(payload);
     capture.followersExact = typeof capture.followersCount === 'number';
   } else {

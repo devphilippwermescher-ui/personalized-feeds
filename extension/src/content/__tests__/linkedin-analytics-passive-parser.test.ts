@@ -40,6 +40,16 @@ describe('LinkedIn analytics passive response parsing', () => {
     expect(result).toMatchObject({ connectionsCount: 1_086, capturedAt: 150 });
   });
 
+  it('ignores unrelated connections totals from pagination responses', () => {
+    const result = parsePassiveAnalyticsResponse(
+      'https://www.linkedin.com/flagship-web/rsc-action/actions/pagination?sduiid=com.linkedin.sdui.pagers.mynetwork.connectionsList',
+      'x{"id":"totalConnectionsCount","value":{"intValue":1}}y',
+      175
+    );
+
+    expect(result).toBeNull();
+  });
+
   it('captures the followers search result total', () => {
     const result = parsePassiveAnalyticsResponse(
       'https://www.linkedin.com/voyager/api/graphql?variables=FOLLOWERS',
