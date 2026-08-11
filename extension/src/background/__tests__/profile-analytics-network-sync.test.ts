@@ -34,6 +34,10 @@ describe('Profile Analytics light network sync', () => {
       linkedinUsername: 'example',
       displayName: 'Example User',
       connectionsCount: 90,
+      connectionsCountExact: true,
+      connectionsCountSource: 'connections_rsc' as const,
+      connectionDateCounts: { '2026-08-01': 90 },
+      connectionDateCountsComplete: true,
       recentConnectionIds: ['known-user'],
       followersCount: 91,
       followersCountExact: true,
@@ -48,9 +52,12 @@ describe('Profile Analytics light network sync', () => {
     mocks.getLinkedInCsrfToken.mockResolvedValue('csrf');
     mocks.fetchLinkedInConnectionsSnapshot.mockResolvedValue({
       connectionsCount: 92,
+      connectionsCountExact: true,
       connectionDateCounts: {},
       connectionDateCountsComplete: false,
       recentConnectionIds: ['new-user', 'known-user'],
+      newConnectionDateCounts: { '2026-08-11': 2 },
+      boundaryFound: true,
     });
     mocks.fetchFollowersAnalyticsFromLinkedInTab.mockResolvedValue({
       followersCount: 93,
@@ -83,6 +90,9 @@ describe('Profile Analytics light network sync', () => {
       {
         profile: expect.objectContaining({
           connectionsCount: 92,
+          connectionsCountExact: true,
+          connectionsCountSource: 'connections_rsc',
+          connectionDateCounts: { '2026-08-01': 90, '2026-08-11': 2 },
           followersCount: 93,
           followersCountExact: true,
         }),
@@ -122,6 +132,7 @@ describe('Profile Analytics light network sync', () => {
       })
       .mockResolvedValueOnce({
         connectionsCount: 94,
+        connectionsCountExact: true,
         connectionDateCounts: {},
         connectionDateCountsComplete: false,
         recentConnectionIds: ['new-user', 'known-user'],
@@ -144,5 +155,63 @@ describe('Profile Analytics light network sync', () => {
     expect(mocks.fetchFollowersAnalyticsFromLinkedInTab).toHaveBeenCalledWith(22, 'csrf', collectedAt);
     expect(result.connections).toMatchObject({ collected: true, value: 94 });
     expect(result.followers).toMatchObject({ collected: true, value: 95 });
+  });
+
+  it('accepts a real authoritative total decrease and schedules history repair', async () => {
+    mocks.fetchLinkedInConnectionsSnapshot.mockResolvedValue({
+      connectionsCount: 89,
+      connectionsCountExact: true,
+      connectionDateCounts: {},
+      connectionDateCountsComplete: false,
+      recentConnectionIds: ['known-user'],
+      newConnectionDateCounts: {},
+      boundaryFound: true,
+    });
+
+    const result = await syncProfileNetworkMetrics({
+      userId: 'user',
+      linkedInTabIds: [42],
+      currentSnapshot,
+      collectedAt,
+    });
+
+    expect(result.connections).toMatchObject({ collected: true, value: 89, repairNeeded: true });
+    expect(mocks.upsertProfileAnalyticsSnapshot).toHaveBeenCalledWith(
+      'user',
+      { profile: expect.objectContaining({ connectionsCount: 89, connectionDateCountsComplete: false }) },
+      { updatedAt: collectedAt }
+    );
+  });
+
+  it('does not merge partial dates when the known-id boundary is missing', async () => {
+    mocks.fetchLinkedInConnectionsSnapshot.mockResolvedValue({
+      connectionsCount: 95,
+      connectionsCountExact: true,
+      connectionDateCounts: { '2026-08-11': 3 },
+      connectionDateCountsComplete: false,
+      recentConnectionIds: ['unknown-a', 'unknown-b'],
+      newConnectionDateCounts: { '2026-08-11': 3 },
+      boundaryFound: false,
+    });
+
+    const result = await syncProfileNetworkMetrics({
+      userId: 'user',
+      linkedInTabIds: [42],
+      currentSnapshot,
+      collectedAt,
+    });
+
+    expect(result.connections.repairNeeded).toBe(true);
+    expect(mocks.upsertProfileAnalyticsSnapshot).toHaveBeenCalledWith(
+      'user',
+      {
+        profile: expect.objectContaining({
+          connectionsCount: 95,
+          connectionDateCounts: { '2026-08-01': 90 },
+          connectionDateCountsComplete: false,
+        }),
+      },
+      { updatedAt: collectedAt }
+    );
   });
 });

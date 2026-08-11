@@ -1,9 +1,7 @@
 import { getProfileAnalyticsSnapshot, upsertProfileAnalyticsSnapshot } from 'shared/firestore-service';
 import type { ProfileAnalyticsProfileSnapshot, ProfileAnalyticsSnapshot } from 'shared/types';
 import { getAuthenticatedFeedsUser } from './feeds-auth';
-import { fetchLinkedInConnectionsSnapshot } from './linkedin-connections-api';
 import { fetchLinkedInMeProfileSnapshot, type LinkedInProfileAnalyticsResult } from './profile-analytics-linkedin-api';
-import { getLinkedInCsrfToken } from './profile-viewers-api-client';
 import { markTrackedConnectionsAccepted } from './connection-invite-lifecycle';
 import { fetchSearchAppearancesSnapshot } from './profile-analytics-search-appearances-api';
 import { SEARCH_APPEARANCES_SYNC_TTL_MS } from './profile-analytics-sync-policy';
@@ -39,6 +37,9 @@ function mergeProfileSnapshot(
     company: next.company || current?.company,
     location: next.location || current?.location,
     connectionsCount: next.connectionsCount ?? current?.connectionsCount,
+    connectionsCountExact: next.connectionsCountExact ?? current?.connectionsCountExact,
+    connectionsCountUpdatedAt: next.connectionsCountUpdatedAt ?? current?.connectionsCountUpdatedAt,
+    connectionsCountSource: next.connectionsCountSource ?? current?.connectionsCountSource,
     connectionDateCounts: mergedConnectionDateCounts,
     connectionDateCountsComplete: refreshedConnectionHistory
       ? next.connectionDateCountsComplete
@@ -49,6 +50,7 @@ function mergeProfileSnapshot(
     connectionDateCountsError: refreshedConnectionHistory
       ? next.connectionDateCountsError
       : current?.connectionDateCountsError,
+    connectionHistoryKind: next.connectionHistoryKind ?? current?.connectionHistoryKind,
     recentConnectionIds:
       next.recentConnectionIds && next.recentConnectionIds.length > 0
         ? next.recentConnectionIds
@@ -153,41 +155,4 @@ export async function syncProfileAnalyticsFromLinkedInTabs(options: ProfileAnaly
     },
     diagnostics: linkedInResult.diagnostics,
   };
-}
-
-/** Runs the one-time connection history backfill without repeating the other analytics requests. */
-export async function syncConnectionHistoryFromLinkedIn(preferredTabId?: number): Promise<ProfileAnalyticsSnapshot> {
-  const user = await getAuthenticatedFeedsUser();
-  if (!user) throw new Error('myFeedPilot authentication is required before connection history can be synchronized.');
-
-  const currentSnapshot = await getProfileAnalyticsSnapshot(user.uid);
-  if (!currentSnapshot?.profile)
-    throw new Error('Current profile analytics must be collected before connection history.');
-
-  const tabs = await chrome.tabs.query({ url: 'https://www.linkedin.com/*' });
-  const linkedInTabs = tabs.filter((tab): tab is chrome.tabs.Tab & { id: number } => typeof tab.id === 'number');
-  const preferredTab = linkedInTabs.find((tab) => tab.id === preferredTabId);
-  const activeLinkedInTab = preferredTab || linkedInTabs.find((tab) => tab.active) || linkedInTabs[0];
-  const csrfToken = await getLinkedInCsrfToken();
-  if (!csrfToken) throw new Error('LinkedIn CSRF token is unavailable.');
-
-  const collectedAt = Date.now();
-  const history = await fetchLinkedInConnectionsSnapshot(csrfToken, activeLinkedInTab?.id, {
-    includeHistory: true,
-  });
-  if (history.recentConnectionIds?.length) {
-    await markTrackedConnectionsAccepted(user.uid, history.recentConnectionIds, collectedAt);
-  }
-
-  const profile = mergeProfileSnapshot(currentSnapshot.profile, {
-    ...currentSnapshot.profile,
-    connectionsCount: history.connectionsCount ?? currentSnapshot.profile.connectionsCount,
-    connectionDateCounts: history.connectionDateCounts,
-    connectionDateCountsComplete: history.connectionDateCountsComplete,
-    connectionDateCountsUpdatedAt: collectedAt,
-    connectionDateCountsError: history.error || '',
-    recentConnectionIds: history.recentConnectionIds,
-    updatedAt: collectedAt,
-  });
-  return upsertProfileAnalyticsSnapshot(user.uid, { profile }, { updatedAt: collectedAt });
 }

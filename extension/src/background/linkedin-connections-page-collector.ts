@@ -14,6 +14,7 @@ export async function collectConnectionsInLinkedInPage(
   sortNamespace: string,
   screenId: string,
   maxPages: number,
+  startIndex: number,
   knownConnectionIds: string[],
   paginationDelayMs: number,
   paginationBatchSize: number,
@@ -27,9 +28,14 @@ export async function collectConnectionsInLinkedInPage(
   let url = initialUrl;
   let body = initialBody;
   let total: number | undefined;
-  let expectedPages = maxPages;
   const knownIds = new Set(knownConnectionIds.map((value) => value.toLowerCase()));
   const recentConnectionIds: string[] = [];
+  const connectionRecordsById = new Map<string, { id: string; connectedDate: string }>();
+  const newConnectionDateCounts: Record<string, number> = {};
+  let boundaryFound = false;
+  let paginationComplete = false;
+  let nextStartIndex: number | undefined = startIndex > 0 ? startIndex : undefined;
+  let pagesFetched = 0;
   const randomHex = (size: number): string => {
     const bytes = new Uint8Array(size);
     crypto.getRandomValues(bytes);
@@ -65,40 +71,29 @@ export async function collectConnectionsInLinkedInPage(
     }),
   };
 
-  const addPageDates = (payload: string) => {
+  const readPageRecords = (payload: string): Array<{ id: string; connectedDate: string }> => {
     const datePattern = /Connected on ([A-Z][a-z]+ \d{1,2}, \d{4})/g;
+    const records = new Map<string, { id: string; connectedDate: string }>();
     for (const match of payload.matchAll(datePattern)) {
       const timestamp = Date.parse(`${match[1]} UTC`);
-      if (Number.isFinite(timestamp)) {
-        const key = new Date(timestamp).toISOString().slice(0, 10);
-        dateCounts[key] = (dateCounts[key] || 0) + 1;
+      if (!Number.isFinite(timestamp)) continue;
+      const connectedDate = new Date(timestamp).toISOString().slice(0, 10);
+      const dateIndex = match.index || 0;
+      const itemContext = payload.slice(Math.max(0, dateIndex - 2_000), dateIndex + match[0].length + 200);
+      const matches = Array.from(
+        itemContext.matchAll(/(?:https?:\\?\/\\?\/www\.linkedin\.com)?\\?\/in\\?\/([A-Za-z0-9_%.-]+)/g)
+      );
+      const rawId = matches[matches.length - 1]?.[1];
+      if (!rawId) continue;
+      let id: string;
+      try {
+        id = decodeURIComponent(rawId).toLowerCase();
+      } catch {
+        id = rawId.toLowerCase();
       }
+      if (!records.has(id)) records.set(id, { id, connectedDate });
     }
-  };
-  const addPageConnectionIds = (payload: string): string[] => {
-    const datePattern = /Connected on ([A-Z][a-z]+ \d{1,2}, \d{4})/g;
-    const ids = Array.from(
-      new Set(
-        Array.from(payload.matchAll(datePattern)).flatMap((dateMatch) => {
-          const dateIndex = dateMatch.index || 0;
-          const context = payload.slice(Math.max(0, dateIndex - 2_000), dateIndex + dateMatch[0].length + 200);
-          const matches = Array.from(
-            context.matchAll(/(?:https?:\\?\/\\?\/www\.linkedin\.com)?\\?\/in\\?\/([A-Za-z0-9_%.-]+)/g)
-          );
-          const rawId = matches[matches.length - 1]?.[1];
-          if (!rawId) return [];
-          try {
-            return [decodeURIComponent(rawId).toLowerCase()];
-          } catch {
-            return [rawId.toLowerCase()];
-          }
-        })
-      )
-    );
-    ids.forEach((id) => {
-      if (!recentConnectionIds.includes(id) && recentConnectionIds.length < 50) recentConnectionIds.push(id);
-    });
-    return ids;
+    return Array.from(records.values());
   };
 
   const createBody = (startIndex: number): string => {
@@ -145,7 +140,8 @@ export async function collectConnectionsInLinkedInPage(
   };
 
   try {
-    for (let page = 0; page < maxPages; page += 1) {
+    let currentStartIndex = 0;
+    while (pagesFetched < maxPages) {
       if (Date.now() - workStartedAt >= workTimeoutMs) {
         throw new Error(`LinkedIn connections tab work timed out after ${workTimeoutMs}ms`);
       }
@@ -199,31 +195,75 @@ export async function collectConnectionsInLinkedInPage(
           ? { 'x-li-pageforestid': response.headers.get('x-li-pageforestid') as string }
           : {}),
       };
-      addPageDates(payload);
-      const pageConnectionIds = addPageConnectionIds(payload);
       const totalMatch =
         payload.match(
           /"id"\s*:\s*"totalConnectionsCount"[\s\S]{0,500}?"(?:intValue|longValue|stringValue)"\s*:\s*"?([\d,]+)"?/
         ) || payload.match(/\b([\d,]+)\s+connections\b/i);
       const pageTotal = Number(totalMatch?.[1]?.replace(/,/g, ''));
-      if (page === 0 && Number.isSafeInteger(pageTotal)) {
+      if (currentStartIndex === 0 && Number.isSafeInteger(pageTotal)) {
         total = pageTotal;
-        expectedPages = Math.min(maxPages, Math.max(1, Math.ceil(pageTotal / 10)));
       }
-      if (page + 1 >= expectedPages) break;
-      if (pageConnectionIds.some((id) => knownIds.has(id))) break;
+
+      // A resumed batch fetches the initial page only to establish request
+      // context and refresh the authoritative total. Its records were already
+      // checkpointed by the first batch and must not be counted twice.
+      if (startIndex > 0 && currentStartIndex === 0) {
+        if (typeof total === 'number' && startIndex >= total) {
+          paginationComplete = true;
+          nextStartIndex = undefined;
+          break;
+        }
+        currentStartIndex = startIndex;
+        nextStartIndex = startIndex;
+        const spanBytes = new Uint8Array(8);
+        crypto.getRandomValues(spanBytes);
+        const parentSpanId = btoa(String.fromCharCode(...spanBytes));
+        url = `${paginationBaseUrl}&parentSpanId=${encodeURIComponent(parentSpanId)}`;
+        body = createBody(startIndex);
+        continue;
+      }
+
+      pagesFetched += 1;
+      const pageRecords = readPageRecords(payload);
+      for (const record of pageRecords) {
+        if (knownIds.has(record.id)) {
+          boundaryFound = true;
+          break;
+        }
+        const isNewRecord = !connectionRecordsById.has(record.id);
+        if (isNewRecord) {
+          connectionRecordsById.set(record.id, record);
+          dateCounts[record.connectedDate] = (dateCounts[record.connectedDate] || 0) + 1;
+        }
+        if (!recentConnectionIds.includes(record.id) && recentConnectionIds.length < 100) {
+          recentConnectionIds.push(record.id);
+        }
+        if (isNewRecord) {
+          newConnectionDateCounts[record.connectedDate] = (newConnectionDateCounts[record.connectedDate] || 0) + 1;
+        }
+      }
+      if (boundaryFound) break;
 
       const nextRequestIndex = payload.indexOf('"nextPageRequest"');
       const nextContext = nextRequestIndex >= 0 ? payload.slice(nextRequestIndex, nextRequestIndex + 2_000) : '';
       const responseStartIndex = Number(nextContext.match(/"startIndex":(\d+)/)?.[1]);
       const nextStart =
-        Number.isSafeInteger(responseStartIndex) && responseStartIndex > 0 ? responseStartIndex : (page + 1) * 10;
+        currentStartIndex === 0 && Number.isSafeInteger(responseStartIndex) && responseStartIndex > 0
+          ? responseStartIndex
+          : currentStartIndex + 10;
+      if (typeof total === 'number' && nextStart >= total) {
+        paginationComplete = true;
+        nextStartIndex = undefined;
+        break;
+      }
       if (visitedStarts.has(nextStart)) {
         throw new Error('LinkedIn returned a repeated connection page cursor.');
       }
       visitedStarts.add(nextStart);
+      nextStartIndex = nextStart;
+      if (pagesFetched >= maxPages) break;
       const delay =
-        paginationBatchSize > 0 && (page + 1) % paginationBatchSize === 0
+        paginationBatchSize > 0 && pagesFetched % paginationBatchSize === 0
           ? paginationBatchCooldownMs
           : paginationDelayMs;
       if (delay > 0) {
@@ -238,12 +278,20 @@ export async function collectConnectionsInLinkedInPage(
       const parentSpanId = btoa(String.fromCharCode(...spanBytes));
       url = `${paginationBaseUrl}&parentSpanId=${encodeURIComponent(parentSpanId)}`;
       body = createBody(nextStart);
+      currentStartIndex = nextStart;
     }
   } catch (error) {
     return {
       connectionsCount: total,
+      connectionsCountExact: typeof total === 'number',
       connectionDateCounts: dateCounts,
       connectionDateCountsComplete: false,
+      newConnectionDateCounts,
+      boundaryFound,
+      nextStartIndex,
+      paginationComplete: false,
+      pagesFetched,
+      connectionRecords: Array.from(connectionRecordsById.values()),
       ...(recentConnectionIds.length > 0 ? { recentConnectionIds } : {}),
       error: error instanceof Error ? error.message : String(error),
     };
@@ -253,10 +301,17 @@ export async function collectConnectionsInLinkedInPage(
   const connectionDateCountsComplete = typeof total === 'number' && collected === total;
   return {
     connectionsCount: total,
+    connectionsCountExact: typeof total === 'number',
     connectionDateCounts: dateCounts,
     connectionDateCountsComplete,
+    newConnectionDateCounts,
+    boundaryFound,
+    nextStartIndex,
+    paginationComplete,
+    pagesFetched,
+    connectionRecords: Array.from(connectionRecordsById.values()),
     ...(recentConnectionIds.length > 0 ? { recentConnectionIds } : {}),
-    ...(typeof total === 'number' && !connectionDateCountsComplete
+    ...(typeof total === 'number' && paginationComplete && !connectionDateCountsComplete && !boundaryFound
       ? { error: `LinkedIn returned ${collected} dated connections out of ${total}.` }
       : {}),
   };

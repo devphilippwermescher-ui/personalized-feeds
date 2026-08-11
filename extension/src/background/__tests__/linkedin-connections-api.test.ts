@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { parseLinkedInConnectionsRscPage } from '../linkedin-connections-api';
+import { collectConnectionsInLinkedInPage } from '../linkedin-connections-page-collector';
 
 describe('LinkedIn connections RSC parsing', () => {
   it('extracts the exact total, connection dates, and API pagination cursor', () => {
@@ -23,7 +24,85 @@ describe('LinkedIn connections RSC parsing', () => {
       },
       nextStartIndex: 10,
       connectionIds: ['new-connection'],
+      connectionRecords: [{ id: 'new-connection', connectedDate: '2026-08-04' }],
     });
+  });
+
+  it('keeps the authoritative first-page total when pagination contains 1 or 500', async () => {
+    const payloads = [
+      'x{"id":"totalConnectionsCount","value":{"intValue":1179}}' +
+        '"url":"https://www.linkedin.com/in/first/" Connected on August 10, 2026',
+      'x{"id":"totalConnectionsCount","value":{"intValue":1}}' +
+        '"url":"https://www.linkedin.com/in/second/" Connected on August 9, 2026',
+      'x{"id":"totalConnectionsCount","value":{"intValue":500}}' +
+        '"url":"https://www.linkedin.com/in/third/" Connected on August 8, 2026',
+    ];
+    const originalFetch = window.fetch;
+    window.fetch = async () => new Response(payloads.shift() || '', { status: 200 });
+
+    try {
+      const result = await collectConnectionsInLinkedInPage(
+        'csrf',
+        'https://www.linkedin.com/flagship-web/mynetwork/invite-connect/connections',
+        'https://www.linkedin.com/flagship-web/rsc-action/actions/pagination?sduiid=test',
+        '{}',
+        'pager',
+        'sort',
+        'namespace',
+        'screen',
+        3,
+        0,
+        [],
+        0,
+        10,
+        0,
+        1_000,
+        5_000
+      );
+
+      expect(result.connectionsCount).toBe(1179);
+      expect(result.connectionsCountExact).toBe(true);
+      expect(result.pagesFetched).toBe(3);
+    } finally {
+      window.fetch = originalFetch;
+    }
+  });
+
+  it('stops incremental pagination at the first known connection id', async () => {
+    const payloads = [
+      'x{"id":"totalConnectionsCount","value":{"intValue":20}}' +
+        '"url":"https://www.linkedin.com/in/new-user/" Connected on August 10, 2026',
+      'x"url":"https://www.linkedin.com/in/known-user/" Connected on August 9, 2026',
+    ];
+    const originalFetch = window.fetch;
+    window.fetch = async () => new Response(payloads.shift() || '', { status: 200 });
+
+    try {
+      const result = await collectConnectionsInLinkedInPage(
+        'csrf',
+        'https://www.linkedin.com/flagship-web/mynetwork/invite-connect/connections',
+        'https://www.linkedin.com/flagship-web/rsc-action/actions/pagination?sduiid=test',
+        '{}',
+        'pager',
+        'sort',
+        'namespace',
+        'screen',
+        3,
+        0,
+        ['known-user'],
+        0,
+        10,
+        0,
+        1_000,
+        5_000
+      );
+
+      expect(result.boundaryFound).toBe(true);
+      expect(result.pagesFetched).toBe(2);
+      expect(result.newConnectionDateCounts).toEqual({ '2026-08-10': 1 });
+    } finally {
+      window.fetch = originalFetch;
+    }
   });
 
   it('allows pagination responses without a repeated nextPageRequest', () => {

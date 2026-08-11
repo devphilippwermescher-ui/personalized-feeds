@@ -6,6 +6,7 @@ interface PassiveAnalyticsCapture {
   sourceUrl: string;
   capturedAt: number;
   connectionsCount?: number;
+  connectionsExact?: boolean;
   followersCount?: number;
   followersExact?: boolean;
   socialSellingIndexScore?: number;
@@ -26,12 +27,24 @@ function normalizeSsiScore(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 100 ? value : undefined;
 }
 
+function isAuthoritativeConnectionsSource(sourceUrl: string): boolean {
+  try {
+    const url = new URL(sourceUrl);
+    return url.hostname === 'www.linkedin.com' && url.pathname === '/flagship-web/mynetwork/invite-connect/connections';
+  } catch {
+    return false;
+  }
+}
+
 function normalizeCapture(value: unknown): PassiveAnalyticsCapture | null {
   if (!value || typeof value !== 'object') return null;
   const input = value as Record<string, unknown>;
   const sourceUrl = typeof input.sourceUrl === 'string' ? input.sourceUrl : '';
   if (!sourceUrl.startsWith('https://www.linkedin.com/')) return null;
-  const connectionsCount = normalizeCount(input.connectionsCount);
+  const rawConnectionsCount = normalizeCount(input.connectionsCount);
+  const connectionsExact =
+    rawConnectionsCount !== undefined && input.connectionsExact === true && isAuthoritativeConnectionsSource(sourceUrl);
+  const connectionsCount = connectionsExact ? rawConnectionsCount : undefined;
   const followersCount = normalizeCount(input.followersCount);
   const socialSellingIndexScore = normalizeSsiScore(input.socialSellingIndexScore);
   if (connectionsCount === undefined && followersCount === undefined && socialSellingIndexScore === undefined) {
@@ -43,6 +56,7 @@ function normalizeCapture(value: unknown): PassiveAnalyticsCapture | null {
     sourceUrl,
     capturedAt,
     connectionsCount,
+    connectionsExact,
     followersCount,
     followersExact: input.followersExact === true,
     socialSellingIndexScore,
@@ -59,6 +73,11 @@ async function persistPassiveCapture(capture: PassiveAnalyticsCapture): Promise<
     Boolean(currentProfile) &&
     typeof capture.connectionsCount === 'number' &&
     capture.connectionsCount !== currentProfile?.connectionsCount;
+  const connectionsExactChanged =
+    Boolean(currentProfile) &&
+    typeof capture.connectionsCount === 'number' &&
+    capture.connectionsExact === true &&
+    currentProfile?.connectionsCountExact !== true;
   const followersChanged =
     Boolean(currentProfile) &&
     typeof capture.followersCount === 'number' &&
@@ -71,7 +90,13 @@ async function persistPassiveCapture(capture: PassiveAnalyticsCapture): Promise<
   const socialSellingIndexChanged =
     typeof capture.socialSellingIndexScore === 'number' &&
     capture.socialSellingIndexScore !== current?.socialSellingIndex?.score;
-  if (!connectionsChanged && !followersChanged && !followersExactChanged && !socialSellingIndexChanged) {
+  if (
+    !connectionsChanged &&
+    !connectionsExactChanged &&
+    !followersChanged &&
+    !followersExactChanged &&
+    !socialSellingIndexChanged
+  ) {
     return { written: false, reason: 'unchanged' };
   }
 
@@ -79,6 +104,13 @@ async function persistPassiveCapture(capture: PassiveAnalyticsCapture): Promise<
     ? {
         ...currentProfile,
         ...(connectionsChanged ? { connectionsCount: capture.connectionsCount } : {}),
+        ...((connectionsChanged || connectionsExactChanged) && capture.connectionsExact
+          ? {
+              connectionsCountExact: true,
+              connectionsCountUpdatedAt: capture.capturedAt,
+              connectionsCountSource: 'connections_rsc' as const,
+            }
+          : {}),
         ...(followersChanged ? { followersCount: capture.followersCount } : {}),
         ...(followersExactChanged ? { followersCountExact: true } : {}),
         // A zero-traffic passive observation must not make the full six-hour
@@ -89,7 +121,9 @@ async function persistPassiveCapture(capture: PassiveAnalyticsCapture): Promise<
   await upsertProfileAnalyticsSnapshot(
     user.uid,
     {
-      ...(profile && (connectionsChanged || followersChanged || followersExactChanged) ? { profile } : {}),
+      ...(profile && (connectionsChanged || connectionsExactChanged || followersChanged || followersExactChanged)
+        ? { profile }
+        : {}),
       ...(socialSellingIndexChanged
         ? {
             socialSellingIndex: {
@@ -104,6 +138,7 @@ async function persistPassiveCapture(capture: PassiveAnalyticsCapture): Promise<
   );
   console.info('[profile-analytics] passive LinkedIn response captured', {
     connectionsCount: connectionsChanged ? capture.connectionsCount : undefined,
+    connectionsExact: connectionsExactChanged ? true : undefined,
     followersCount: followersChanged ? capture.followersCount : undefined,
     socialSellingIndexScore: socialSellingIndexChanged ? capture.socialSellingIndexScore : undefined,
     sourceUrl: capture.sourceUrl,

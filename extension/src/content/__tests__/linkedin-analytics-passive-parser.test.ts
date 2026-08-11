@@ -28,16 +28,16 @@ describe('LinkedIn analytics passive response parsing', () => {
       'x{"id":"totalConnectionsCount","value":{"intValue":86}}y',
       100
     );
-    expect(result).toMatchObject({ connectionsCount: 86, capturedAt: 100 });
+    expect(result).toMatchObject({ connectionsCount: 86, connectionsExact: true, capturedAt: 100 });
   });
 
-  it('captures a connections total from a My Network server-request response', () => {
+  it('does not trust a connections total from a related server-request response', () => {
     const result = parsePassiveAnalyticsResponse(
       'https://www.linkedin.com/flagship-web/rsc-action/actions/server-request?sduiid=mynetwork.connectionsList',
       'x{"id": "totalConnectionsCount", "value":{"longValue":"1,086"}}y',
       150
     );
-    expect(result).toMatchObject({ connectionsCount: 1_086, capturedAt: 150 });
+    expect(result).toBeNull();
   });
 
   it('ignores unrelated connections totals from pagination responses', () => {

@@ -11,6 +11,7 @@ interface PassiveAnalyticsWindowMessage {
   sourceUrl?: unknown;
   capturedAt?: unknown;
   connectionsCount?: unknown;
+  connectionsExact?: unknown;
   followersCount?: unknown;
   followersExact?: unknown;
   socialSellingIndexScore?: unknown;
@@ -65,6 +66,7 @@ export function initLinkedInAnalyticsPassiveCapture(): void {
           sourceUrl: event.data.sourceUrl,
           capturedAt: event.data.capturedAt,
           connectionsCount: event.data.connectionsCount,
+          connectionsExact: event.data.connectionsExact,
           followersCount: event.data.followersCount,
           followersExact: event.data.followersExact,
           socialSellingIndexScore: event.data.socialSellingIndexScore,

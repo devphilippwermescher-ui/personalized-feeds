@@ -30,50 +30,69 @@ export function getChartValues(points: ConnectionsFollowersPoint[], mode: Connec
     if ((mode === 'both' || mode === 'followers') && typeof point.followersCount === 'number') {
       values.push(point.followersCount);
     }
+    if (mode === 'connectionsAdded' && typeof point.connectionsAdded === 'number') {
+      values.push(point.connectionsAdded);
+    }
   });
   return values;
 }
 
 export function getSeriesPath(
   points: ConnectionsFollowersPoint[],
-  key: 'connectionsCount' | 'followersCount',
+  key: 'connectionsCount' | 'followersCount' | 'connectionsAdded',
   chartMax: number
 ): string {
   const maxIndex = Math.max(1, points.length - 1);
-  const values = points
-    .map((point, index) => ({ index, value: point[key] }))
-    .filter((point): point is { index: number; value: number } => typeof point.value === 'number');
-  if (values.length < 2) return '';
+  const values = points.map((point, index) => ({ index, value: point[key] }));
+  const valuedCount = values.filter((point) => typeof point.value === 'number').length;
+  if (valuedCount < 2) return '';
 
   return values
-    .map((point, pathIndex) => {
+    .map((point, index) => {
+      if (typeof point.value !== 'number') return '';
       const x = PLOT_LEFT + (point.index / maxIndex) * PLOT_WIDTH;
       const y = PLOT_TOP + (1 - point.value / chartMax) * PLOT_HEIGHT;
-      return `${pathIndex === 0 ? 'M' : 'L'} ${x.toFixed(2)} ${y.toFixed(2)}`;
+      const previousHasValue = index > 0 && typeof values[index - 1].value === 'number';
+      return `${previousHasValue ? 'L' : 'M'} ${x.toFixed(2)} ${y.toFixed(2)}`;
     })
+    .filter(Boolean)
     .join(' ');
 }
 
 export function getSeriesAreaPath(
   points: ConnectionsFollowersPoint[],
-  key: 'connectionsCount' | 'followersCount',
+  key: 'connectionsCount' | 'followersCount' | 'connectionsAdded',
   chartMax: number
 ): string {
-  const linePath = getSeriesPath(points, key, chartMax);
-  if (!linePath) return '';
-
   const maxIndex = Math.max(1, points.length - 1);
-  const valuedIndexes = points
-    .map((point, index) => ({ index, value: point[key] }))
-    .filter((point): point is { index: number; value: number } => typeof point.value === 'number');
-  const firstX = PLOT_LEFT + (valuedIndexes[0].index / maxIndex) * PLOT_WIDTH;
-  const lastX = PLOT_LEFT + (valuedIndexes[valuedIndexes.length - 1].index / maxIndex) * PLOT_WIDTH;
-  return `${linePath} L ${lastX.toFixed(2)} ${PLOT_BOTTOM} L ${firstX.toFixed(2)} ${PLOT_BOTTOM} Z`;
+  const segments: Array<Array<{ index: number; value: number }>> = [];
+  points.forEach((point, index) => {
+    const value = point[key];
+    if (typeof value !== 'number') return;
+    const previousHasValue = index > 0 && typeof points[index - 1][key] === 'number';
+    if (!previousHasValue) segments.push([]);
+    segments[segments.length - 1].push({ index, value });
+  });
+  return segments
+    .filter((segment) => segment.length >= 2)
+    .map((segment) => {
+      const line = segment
+        .map((point, index) => {
+          const x = PLOT_LEFT + (point.index / maxIndex) * PLOT_WIDTH;
+          const y = PLOT_TOP + (1 - point.value / chartMax) * PLOT_HEIGHT;
+          return `${index === 0 ? 'M' : 'L'} ${x.toFixed(2)} ${y.toFixed(2)}`;
+        })
+        .join(' ');
+      const firstX = PLOT_LEFT + (segment[0].index / maxIndex) * PLOT_WIDTH;
+      const lastX = PLOT_LEFT + (segment[segment.length - 1].index / maxIndex) * PLOT_WIDTH;
+      return `${line} L ${lastX.toFixed(2)} ${PLOT_BOTTOM} L ${firstX.toFixed(2)} ${PLOT_BOTTOM} Z`;
+    })
+    .join(' ');
 }
 
 export function getSingleSeriesPoint(
   points: ConnectionsFollowersPoint[],
-  key: 'connectionsCount' | 'followersCount'
+  key: 'connectionsCount' | 'followersCount' | 'connectionsAdded'
 ): { index: number; value: number } | null {
   const values = points
     .map((point, index) => ({ index, value: point[key] }))

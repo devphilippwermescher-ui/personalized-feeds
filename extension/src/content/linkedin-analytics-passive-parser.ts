@@ -4,6 +4,7 @@ export interface PassiveAnalyticsCapture {
   sourceUrl: string;
   capturedAt: number;
   connectionsCount?: number;
+  connectionsExact?: boolean;
   followersCount?: number;
   followersExact?: boolean;
   socialSellingIndexScore?: number;
@@ -13,6 +14,17 @@ function parseSafeCount(value: string | undefined): number | undefined {
   if (!value) return undefined;
   const count = Number(value.replace(/,/g, ''));
   return Number.isSafeInteger(count) && count >= 0 ? count : undefined;
+}
+
+function isAuthoritativeConnectionsUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return (
+      parsed.hostname === 'www.linkedin.com' && parsed.pathname === '/flagship-web/mynetwork/invite-connect/connections'
+    );
+  } catch {
+    return false;
+  }
 }
 
 export function isPassiveAnalyticsUrl(url: string): boolean {
@@ -25,9 +37,7 @@ export function isPassiveAnalyticsUrl(url: string): boolean {
   })();
   return (
     normalizedUrl.includes('/sales-api/salesapissi') ||
-    normalizedUrl.includes('/flagship-web/mynetwork/invite-connect/connections') ||
-    normalizedUrl.includes('connectionslist') ||
-    (normalizedUrl.includes('mynetwork') && normalizedUrl.includes('connection')) ||
+    isAuthoritativeConnectionsUrl(url) ||
     normalizedUrl.includes('audienceanalyticsfollowersmodule') ||
     (normalizedUrl.includes('/voyager/api/graphql') &&
       (normalizedUrl.includes('followers') || normalizedUrl.includes('voyagersearchdashclusters')))
@@ -52,20 +62,16 @@ export function parsePassiveAnalyticsResponse(
     } catch {
       return null;
     }
-  } else if (
-    normalizedSourceUrl.includes('/flagship-web/mynetwork/invite-connect/connections') ||
-    normalizedSourceUrl.includes('connectionslist') ||
-    (normalizedSourceUrl.includes('mynetwork') && normalizedSourceUrl.includes('connection'))
-  ) {
-    // Pagination responses can contain unrelated `totalConnectionsCount`
-    // expression values for individual list items. Only initial/list bootstrap
-    // responses are authoritative for the account-wide Connections total.
-    if (normalizedSourceUrl.includes('/rsc-action/actions/pagination')) return null;
+  } else if (isAuthoritativeConnectionsUrl(sourceUrl)) {
+    // Only the initial Connections RSC response is authoritative. Pagination
+    // and related server-request payloads can contain unrelated values such as
+    // 1 or 500 under the same `totalConnectionsCount` state key.
     capture.connectionsCount = parseSafeCount(
       payload.match(
         /"id"\s*:\s*"totalConnectionsCount"[\s\S]{0,500}?"(?:intValue|longValue|stringValue)"\s*:\s*"?([\d,]+)"?/
       )?.[1] || payload.match(/\b([\d,]+)\s+connections\b/i)?.[1]
     );
+    capture.connectionsExact = typeof capture.connectionsCount === 'number';
   } else if (normalizedSourceUrl.includes('audienceanalyticsfollowersmodule')) {
     capture.followersCount = extractFollowersTotalFromAnalyticsRsc(payload);
     capture.followersExact = typeof capture.followersCount === 'number';

@@ -14,6 +14,7 @@ export interface NetworkMetricResult {
   value?: number;
   sourceUrl?: string;
   error?: string;
+  repairNeeded?: boolean;
 }
 
 export interface ProfileNetworkMetricsSyncResult {
@@ -25,6 +26,11 @@ export interface ProfileNetworkMetricsSyncResult {
 function valuesChanged(current: ProfileAnalyticsProfileSnapshot, next: ProfileAnalyticsProfileSnapshot): boolean {
   return (
     current.connectionsCount !== next.connectionsCount ||
+    current.connectionsCountExact !== next.connectionsCountExact ||
+    current.connectionsCountUpdatedAt !== next.connectionsCountUpdatedAt ||
+    current.connectionsCountSource !== next.connectionsCountSource ||
+    current.connectionDateCountsComplete !== next.connectionDateCountsComplete ||
+    JSON.stringify(current.connectionDateCounts || {}) !== JSON.stringify(next.connectionDateCounts || {}) ||
     current.followersCount !== next.followersCount ||
     current.followersCountExact !== next.followersCountExact ||
     JSON.stringify(current.recentConnectionIds || []) !== JSON.stringify(next.recentConnectionIds || []) ||
@@ -99,13 +105,42 @@ export async function syncProfileNetworkMetrics({
     error: connectionsSnapshot.error,
   });
   const connectionsCollected = typeof connectionsSnapshot.connectionsCount === 'number';
+  let connectionHistoryRepairNeeded = false;
   if (connectionsCollected) {
+    const newDateCounts = connectionsSnapshot.newConnectionDateCounts || {};
+    const newConnectionCount = Object.values(newDateCounts).reduce((sum, count) => sum + count, 0);
+    const totalDelta = connectionsSnapshot.connectionsCount! - (currentProfile.connectionsCount || 0);
+    const hasKnownBoundary = currentProfile.recentConnectionIds && currentProfile.recentConnectionIds.length > 0;
+    const incrementalReliable = Boolean(hasKnownBoundary && connectionsSnapshot.boundaryFound);
+    const nextDateCounts = { ...(currentProfile.connectionDateCounts || {}) };
+    if (incrementalReliable) {
+      Object.entries(newDateCounts).forEach(([date, count]) => {
+        nextDateCounts[date] = (nextDateCounts[date] || 0) + count;
+      });
+    }
+    connectionHistoryRepairNeeded = Boolean(
+      (hasKnownBoundary && !connectionsSnapshot.boundaryFound) ||
+      (currentProfile.connectionDateCountsComplete &&
+        (totalDelta < 0 || !incrementalReliable || totalDelta !== newConnectionCount))
+    );
     nextProfile = {
       ...nextProfile,
       connectionsCount: connectionsSnapshot.connectionsCount,
+      connectionsCountExact: connectionsSnapshot.connectionsCountExact === true,
+      connectionsCountUpdatedAt: collectedAt,
+      connectionsCountSource: 'connections_rsc',
+      ...(incrementalReliable
+        ? {
+            connectionDateCounts: nextDateCounts,
+            connectionDateCountsUpdatedAt: collectedAt,
+          }
+        : {}),
+      ...(connectionHistoryRepairNeeded ? { connectionDateCountsComplete: false } : {}),
       recentConnectionIds:
         connectionsSnapshot.recentConnectionIds && connectionsSnapshot.recentConnectionIds.length > 0
-          ? connectionsSnapshot.recentConnectionIds
+          ? Array.from(
+              new Set([...connectionsSnapshot.recentConnectionIds, ...(currentProfile.recentConnectionIds || [])])
+            ).slice(0, 100)
           : currentProfile.recentConnectionIds,
     };
     if (connectionsSnapshot.recentConnectionIds?.length) {
@@ -178,6 +213,7 @@ export async function syncProfileNetworkMetrics({
       changed: connectionsCollected && currentProfile.connectionsCount !== nextProfile.connectionsCount,
       value: nextProfile.connectionsCount,
       sourceUrl: CONNECTIONS_SOURCE_URL,
+      repairNeeded: connectionHistoryRepairNeeded,
       ...(!connectionsCollected
         ? { error: connectionsSnapshot.error || 'LinkedIn did not return an exact Connections total.' }
         : {}),

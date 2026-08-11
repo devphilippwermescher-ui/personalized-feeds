@@ -125,6 +125,7 @@ export default function ProfileAnalyticsPage({ userId }: ProfileAnalyticsPagePro
             <ConnectionsFollowersChart
               points={analytics.connectionsFollowersPoints}
               rangeLabel={dateRange.rangeLabel}
+              connectionsAddedEstimated={analytics.profile?.connectionHistoryKind === 'backfilled_current_connections'}
             />
             <MetricTrendChart
               title="Acceptance Rate"

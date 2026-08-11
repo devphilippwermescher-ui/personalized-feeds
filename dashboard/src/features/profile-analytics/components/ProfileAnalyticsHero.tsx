@@ -27,7 +27,7 @@ export function ProfileAnalyticsHero({ profile }: { profile?: ProfileAnalyticsPr
                 {profile.location}
               </span>
             ) : null}
-            {typeof profile?.connectionsCount === 'number' ? (
+            {profile?.connectionsCountExact === true && typeof profile.connectionsCount === 'number' ? (
               <span>
                 <HiOutlineUserGroup />
                 {formatNumber(profile.connectionsCount)} Connections

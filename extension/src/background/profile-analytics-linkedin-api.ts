@@ -223,10 +223,13 @@ export async function fetchLinkedInMeProfileSnapshot(
 
   const snapshot: ProfileAnalyticsProfileSnapshot = {
     ...resolvedProfileSnapshot,
-    connectionsCount:
-      connectionsSnapshot?.connectionsCount ??
-      options.currentConnectionsCount ??
-      resolvedProfileSnapshot.connectionsCount,
+    connectionsCount: connectionsSnapshot?.connectionsCount ?? options.currentConnectionsCount,
+    connectionsCountExact:
+      typeof connectionsSnapshot?.connectionsCount === 'number'
+        ? connectionsSnapshot.connectionsCountExact === true
+        : undefined,
+    connectionsCountUpdatedAt: typeof connectionsSnapshot?.connectionsCount === 'number' ? collectedAt : undefined,
+    connectionsCountSource: typeof connectionsSnapshot?.connectionsCount === 'number' ? 'connections_rsc' : undefined,
     connectionDateCounts: connectionsSnapshot?.connectionDateCounts,
     connectionDateCountsComplete: connectionsSnapshot?.connectionDateCountsComplete,
     connectionDateCountsUpdatedAt:
@@ -280,7 +283,8 @@ export async function fetchLinkedInMeProfileSnapshot(
   return {
     profile: snapshot,
     diagnostics: {
-      connectionsExact: typeof connectionsSnapshot?.connectionsCount === 'number',
+      connectionsExact:
+        typeof connectionsSnapshot?.connectionsCount === 'number' && connectionsSnapshot.connectionsCountExact === true,
       connectionsError: connectionsSnapshot?.error,
       followersSource:
         typeof analyticsFollowersSnapshot?.followersCount === 'number'

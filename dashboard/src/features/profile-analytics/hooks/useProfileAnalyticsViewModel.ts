@@ -49,8 +49,7 @@ export function useProfileAnalyticsViewModel(userId: string, selectedDateRange: 
     [analytics.connectionInvites, effectiveDateRange.end, effectiveDateRange.start]
   );
   const today = startOfDay(new Date()).getTime();
-  const includesToday =
-    effectiveDateRange.start.getTime() <= today && effectiveDateRange.end.getTime() >= today;
+  const includesToday = effectiveDateRange.start.getTime() <= today && effectiveDateRange.end.getTime() >= today;
 
   const filteredDailySnapshots = useMemo(
     () => filterSnapshotsByRange(analytics.dailySnapshots, effectiveDateRange),
@@ -65,6 +64,7 @@ export function useProfileAnalyticsViewModel(userId: string, selectedDateRange: 
         connectionDateCountsComplete: profile?.connectionDateCountsComplete,
         connectionDateCountsUpdatedAt: profile?.connectionDateCountsUpdatedAt,
         currentConnectionsCount: profile?.connectionsCount,
+        currentConnectionsCountExact: profile?.connectionsCountExact,
         currentFollowersCount: profile?.followersCount,
         currentFollowersCountExact: profile?.followersCountExact,
         followerGrowthByDate: profile?.followerGrowthByDate,
@@ -75,6 +75,7 @@ export function useProfileAnalyticsViewModel(userId: string, selectedDateRange: 
       profile?.connectionDateCountsComplete,
       profile?.connectionDateCountsUpdatedAt,
       profile?.connectionsCount,
+      profile?.connectionsCountExact,
       profile?.followersCount,
       profile?.followersCountExact,
       profile?.followerGrowthByDate,
@@ -87,8 +88,8 @@ export function useProfileAnalyticsViewModel(userId: string, selectedDateRange: 
         snapshots: analytics.dailySnapshots,
         range: effectiveDateRange,
         dataKey: 'connectionsCount',
-        currentValue: profile?.connectionsCount,
-      }) ?? sumDateCountsInRange(profile?.connectionDateCounts, effectiveDateRange);
+        currentValue: profile?.connectionsCountExact === true ? profile.connectionsCount : undefined,
+      });
   const followerGrowthStart = profile?.followerGrowthStartDate || '';
   const followerGrowthEnd = profile?.followerGrowthEndDate || '';
   const rangeStartKey = getDateKey(effectiveDateRange.start);
@@ -99,13 +100,17 @@ export function useProfileAnalyticsViewModel(userId: string, selectedDateRange: 
     followerGrowthEnd >= rangeEndKey;
   const followerRangeCount = followerHistoryCoversRange
     ? sumDateCountsInRange(profile?.followerGrowthByDate, effectiveDateRange)
-    : getCumulativeMetricChangeInRange({
+    : (getCumulativeMetricChangeInRange({
         snapshots: analytics.dailySnapshots,
         range: effectiveDateRange,
         dataKey: 'followersCount',
         currentValue: profile?.followersCount,
-      }) ?? sumDateCountsInRange(profile?.followerGrowthByDate, effectiveDateRange);
-  const connectionsInRange = isTotalRange ? profile?.connectionsCount : connectionRangeCount;
+      }) ?? sumDateCountsInRange(profile?.followerGrowthByDate, effectiveDateRange));
+  const connectionsInRange = isTotalRange
+    ? profile?.connectionsCountExact === true
+      ? profile.connectionsCount
+      : undefined
+    : connectionRangeCount;
   const followersInRange = isTotalRange ? profile?.followersCount : followerRangeCount;
   const currentSearchAppearances = includesToday ? searchAppearances?.totalCount : undefined;
   const currentSocialSellingIndex = includesToday ? socialSellingIndex?.score : undefined;
@@ -114,11 +119,11 @@ export function useProfileAnalyticsViewModel(userId: string, selectedDateRange: 
     [analytics.connectionInvites, effectiveDateRange]
   );
   const currentPrivateViewerCount = analytics.supportingDataLoaded
-    ? analytics.profileViewerSummary?.privateViewerCount ?? analytics.snapshot?.profileViews?.privateCount ?? 0
-    : analytics.snapshot?.profileViews?.privateCount ?? 0;
+    ? (analytics.profileViewerSummary?.privateViewerCount ?? analytics.snapshot?.profileViews?.privateCount ?? 0)
+    : (analytics.snapshot?.profileViews?.privateCount ?? 0);
   const currentVisibleViewerCount = analytics.supportingDataLoaded
     ? analytics.profileViewers.length
-    : analytics.snapshot?.profileViews?.visibleCount ?? 0;
+    : (analytics.snapshot?.profileViews?.visibleCount ?? 0);
   const profileViewsPoints = useMemo(
     () =>
       buildProfileVisitorPoints({
@@ -155,12 +160,12 @@ export function useProfileAnalyticsViewModel(userId: string, selectedDateRange: 
   );
   const searchAppearancesInRange = isTotalRange
     ? searchAppearances?.totalCount
-    : [...searchAppearancesPoints].reverse().find((point) => typeof point.value === 'number')?.value ??
-      getLatestRangeValue(filteredDailySnapshots, 'searchAppearancesCount');
+    : ([...searchAppearancesPoints].reverse().find((point) => typeof point.value === 'number')?.value ??
+      getLatestRangeValue(filteredDailySnapshots, 'searchAppearancesCount'));
   const socialSellingIndexInRange = isTotalRange
     ? socialSellingIndex?.score
-    : [...socialSellingIndexPoints].reverse().find((point) => typeof point.value === 'number')?.value ??
-      getLatestRangeValue(filteredDailySnapshots, 'socialSellingIndexScore');
+    : ([...socialSellingIndexPoints].reverse().find((point) => typeof point.value === 'number')?.value ??
+      getLatestRangeValue(filteredDailySnapshots, 'socialSellingIndexScore'));
 
   return {
     ...analytics,

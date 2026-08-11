@@ -34,12 +34,24 @@ function buildDailySnapshotPatch(
   date: string,
   updatedAt: number
 ): Omit<Partial<ProfileAnalyticsDailySnapshot>, 'id'> {
+  const hasFreshExactConnections =
+    typeof snapshot.profile?.connectionsCount === 'number' &&
+    snapshot.profile.connectionsCountExact === true &&
+    snapshot.profile.connectionsCountUpdatedAt === updatedAt;
   return {
     date,
     sampleKind: 'daily',
     updatedAt,
-    ...(typeof snapshot.profile?.connectionsCount === 'number'
-      ? { connectionsCount: snapshot.profile.connectionsCount }
+    ...(hasFreshExactConnections ? { connectionsCount: snapshot.profile!.connectionsCount } : {}),
+    ...(hasFreshExactConnections ? { connectionsCountExact: true } : {}),
+    ...(hasFreshExactConnections && snapshot.profile?.connectionsCountSource
+      ? { connectionsCountSource: snapshot.profile.connectionsCountSource }
+      : {}),
+    ...(hasFreshExactConnections && typeof snapshot.profile?.connectionDateCounts?.[date] === 'number'
+      ? {
+          connectionsAdded: snapshot.profile.connectionDateCounts[date],
+          connectionsAddedEstimated: snapshot.profile.connectionHistoryKind === 'backfilled_current_connections',
+        }
       : {}),
     ...(typeof snapshot.profile?.followersCount === 'number'
       ? { followersCount: snapshot.profile.followersCount }
@@ -155,9 +167,7 @@ export function subscribeToProfileAnalyticsDailySnapshots(
     q,
     (snapshot) =>
       onValue(
-        snapshot.docs
-          .map(docToProfileAnalyticsDailySnapshot)
-          .sort((left, right) => left.date.localeCompare(right.date))
+        snapshot.docs.map(docToProfileAnalyticsDailySnapshot).sort((left, right) => left.date.localeCompare(right.date))
       ),
     (error) => onError?.(error)
   );

@@ -10,6 +10,7 @@ import {
   PROFILE_ANALYTICS_RESTRICTION_RETRY_MS,
   PROFILE_ANALYTICS_RETRY_DELAY_MS,
   PROFILE_ANALYTICS_NETWORK_SYNC_INTERVAL_MS,
+  PROFILE_ANALYTICS_HISTORY_BATCH_DELAY_MS,
   recordProfileAnalyticsNetworkSync,
   updateMetricStatus,
   type ProfileAnalyticsSyncState,
@@ -49,7 +50,9 @@ export async function runProfileAnalyticsNetworkTask({
   }
 
   const dashboardForcesNetwork = trigger === 'dashboard_open' && isDashboardNetworkSyncDue(startedAt, initialState);
+  const needsExactConnectionsMigration = initialSnapshot.profile.connectionsCountExact !== true;
   const requested =
+    needsExactConnectionsMigration ||
     dashboardForcesNetwork ||
     isCurrentProfileAnalyticsDue({ now: startedAt, state: initialState }) ||
     trigger === 'manual';
@@ -133,6 +136,14 @@ export async function runProfileAnalyticsNetworkTask({
         : completedAt + (restricted ? PROFILE_ANALYTICS_RESTRICTION_RETRY_MS : PROFILE_ANALYTICS_RETRY_DELAY_MS),
       networkRetryKind: totalsSucceeded ? undefined : restricted ? 'restriction' : 'standard',
       acceptanceNextDueAt: state.acceptanceNextDueAt || completedAt + PROFILE_ANALYTICS_NETWORK_SYNC_INTERVAL_MS,
+      ...(result.connections.repairNeeded
+        ? {
+            historyNextRetryAt: completedAt + PROFILE_ANALYTICS_HISTORY_BATCH_DELAY_MS,
+            historyCompletedAt: undefined,
+            historyCheckpoint: undefined,
+            historyLastError: 'Incremental Connections boundary was not reliable; a history repair was scheduled.',
+          }
+        : {}),
     };
     console.info('[profile-analytics] light network sync finished', {
       trigger,

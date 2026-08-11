@@ -116,6 +116,7 @@ export function setStoredProfileAnalyticsSyncState(state: ProfileAnalyticsSyncSt
 
 /** Clears per-metric `syncing` flags left behind when a service worker stops. */
 export function recoverInterruptedProfileAnalyticsState(state: ProfileAnalyticsSyncState): ProfileAnalyticsSyncState {
+  const historyWasRunning = state.historyAttemptInProgress === true || state.historyCheckpoint?.status === 'running';
   const metrics = Object.fromEntries(
     Object.entries(state.status.metrics).map(([metric, metricStatus]) => {
       if (metricStatus?.status !== 'syncing') return [metric, metricStatus];
@@ -135,6 +136,13 @@ export function recoverInterruptedProfileAnalyticsState(state: ProfileAnalyticsS
 
   return {
     ...state,
+    version: 2,
+    historyCheckpoint:
+      state.historyCheckpoint?.status === 'running'
+        ? { ...state.historyCheckpoint, status: 'pending' }
+        : state.historyCheckpoint,
+    historyNextRetryAt: historyWasRunning ? Date.now() + 1_000 : state.historyNextRetryAt,
+    historyAttemptInProgress: false,
     attemptStartedAt: undefined,
     attemptExpiresAt: undefined,
     status: {
@@ -239,6 +247,7 @@ export function getNextProfileAnalyticsAlarmAt(state: ProfileAnalyticsSyncState,
     searchAt,
     ssiAt,
     state.metadataNextRetryAt || Number.POSITIVE_INFINITY,
-    state.bootstrapNextRetryAt || Number.POSITIVE_INFINITY
+    state.bootstrapNextRetryAt || Number.POSITIVE_INFINITY,
+    state.historyNextRetryAt || Number.POSITIVE_INFINITY
   );
 }

@@ -12,6 +12,7 @@ export const PROFILE_ANALYTICS_DAILY_SYNC_INTERVAL_MS = 24 * 60 * 60 * 1000;
 export const PROFILE_ANALYTICS_RETRY_DELAY_MS = 15 * 60 * 1000;
 export const PROFILE_ANALYTICS_RESTRICTION_RETRY_MS = 12 * 60 * 60 * 1000;
 export const PROFILE_ANALYTICS_HISTORY_START_DELAY_MS = 2 * 60 * 1000;
+export const PROFILE_ANALYTICS_HISTORY_BATCH_DELAY_MS = 60 * 1000;
 export const PROFILE_ANALYTICS_HISTORY_RETRY_DELAY_MS = 60 * 60 * 1000;
 export const PROFILE_ANALYTICS_ATTEMPT_LEASE_MS = 2 * 60 * 1000;
 export const PROFILE_ANALYTICS_REQUEST_WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -53,8 +54,21 @@ export interface ProfileAnalyticsSyncLog {
   nextScheduledAt?: number;
 }
 
-export interface ProfileAnalyticsSyncState {
+export interface ProfileAnalyticsConnectionHistoryCheckpoint {
   version: 1;
+  expectedTotal: number;
+  nextStartIndex: number;
+  /** Kept in extension-local storage only to make resumed batches idempotent. */
+  connectionDatesById: Record<string, string>;
+  recentConnectionIds: string[];
+  collectedUniqueCount: number;
+  lastAttemptAt: number;
+  status: 'pending' | 'running' | 'failed';
+  error?: string;
+}
+
+export interface ProfileAnalyticsSyncState {
+  version: 1 | 2;
   userId: string;
   networkLastAttemptAt?: number;
   networkLastSuccessAt?: number;
@@ -80,6 +94,8 @@ export interface ProfileAnalyticsSyncState {
   historyCompletedAt?: number;
   historyNextRetryAt?: number;
   historyLastError?: string;
+  historyCheckpoint?: ProfileAnalyticsConnectionHistoryCheckpoint;
+  historyAttemptInProgress?: boolean;
   metadataLastAttemptAt?: number;
   metadataLastSuccessAt?: number;
   metadataNextRetryAt?: number;
@@ -93,7 +109,7 @@ export interface ProfileAnalyticsSyncState {
 
 export function createProfileAnalyticsSyncState(userId: string): ProfileAnalyticsSyncState {
   return {
-    version: 1,
+    version: 2,
     userId,
     networkCyclesInWindow: 0,
     status: { status: 'idle', metrics: {} },

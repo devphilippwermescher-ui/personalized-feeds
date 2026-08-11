@@ -60,10 +60,14 @@ export function getCumulativeMetricChangeInRange({
   const start = startOfDay(range.start).getTime();
   const end = endOfDay(range.end).getTime();
   const ordered = snapshots
-    .map((snapshot) => ({ timestamp: getTimestamp(snapshot.date), value: snapshot[dataKey] }))
+    .map((snapshot) => ({
+      timestamp: getTimestamp(snapshot.date),
+      value: snapshot[dataKey],
+      exact: dataKey !== 'connectionsCount' || snapshot.connectionsCountExact === true,
+    }))
     .filter(
-      (item): item is { timestamp: number; value: number } =>
-        typeof item.timestamp === 'number' && typeof item.value === 'number'
+      (item): item is { timestamp: number; value: number; exact: boolean } =>
+        typeof item.timestamp === 'number' && typeof item.value === 'number' && item.exact
     )
     .sort((left, right) => left.timestamp - right.timestamp);
   const baseline = [...ordered].reverse().find((item) => item.timestamp < start)?.value;
@@ -114,6 +118,7 @@ export function buildConnectionsFollowersPoints({
   connectionDateCountsComplete,
   connectionDateCountsUpdatedAt,
   currentConnectionsCount,
+  currentConnectionsCountExact,
   currentFollowersCount,
   currentFollowersCountExact,
   followerGrowthByDate,
@@ -124,6 +129,7 @@ export function buildConnectionsFollowersPoints({
   connectionDateCountsComplete?: boolean;
   connectionDateCountsUpdatedAt?: number;
   currentConnectionsCount?: number;
+  currentConnectionsCountExact?: boolean;
   currentFollowersCount?: number;
   currentFollowersCountExact?: boolean;
   followerGrowthByDate?: Record<string, number>;
@@ -139,7 +145,9 @@ export function buildConnectionsFollowersPoints({
     const currentSnapshot = valuesByDate.get(todayKey);
     valuesByDate.set(todayKey, {
       ...(currentSnapshot || { id: `current-${todayKey}`, date: todayKey, updatedAt: Date.now() }),
-      connectionsCount: currentConnectionsCount ?? currentSnapshot?.connectionsCount,
+      connectionsCount:
+        currentConnectionsCountExact === true ? currentConnectionsCount : currentSnapshot?.connectionsCount,
+      connectionsCountExact: currentConnectionsCountExact === true ? true : currentSnapshot?.connectionsCountExact,
       followersCount: currentFollowersCount ?? currentSnapshot?.followersCount,
       followersCountExact: currentFollowersCountExact ?? currentSnapshot?.followersCountExact,
     });
@@ -153,8 +161,12 @@ export function buildConnectionsFollowersPoints({
   const end = startOfDay(range.end);
   let latestConnections = [...orderedSnapshots]
     .reverse()
-    .find((item) => item.date.getTime() <= start.getTime() && typeof item.snapshot.connectionsCount === 'number')
-    ?.snapshot.connectionsCount;
+    .find(
+      (item) =>
+        item.date.getTime() <= start.getTime() &&
+        item.snapshot.connectionsCountExact === true &&
+        typeof item.snapshot.connectionsCount === 'number'
+    )?.snapshot.connectionsCount;
   let latestFollowers = [...orderedSnapshots]
     .reverse()
     .find((item) => item.date.getTime() <= start.getTime() && typeof item.snapshot.followersCount === 'number')
@@ -165,7 +177,9 @@ export function buildConnectionsFollowersPoints({
   const historyCutoffKey =
     typeof connectionDateCountsUpdatedAt === 'number' ? getDateKey(new Date(connectionDateCountsUpdatedAt)) : undefined;
   const historyBaselineCount =
-    (historyCutoffKey ? valuesByDate.get(historyCutoffKey)?.connectionsCount : undefined) ?? currentConnectionsCount;
+    (historyCutoffKey && valuesByDate.get(historyCutoffKey)?.connectionsCountExact === true
+      ? valuesByDate.get(historyCutoffKey)?.connectionsCount
+      : undefined) ?? (currentConnectionsCountExact === true ? currentConnectionsCount : undefined);
 
   function getBackfilledConnections(dateKey: string): number | undefined {
     if (
@@ -225,9 +239,9 @@ export function buildConnectionsFollowersPoints({
     const historicalConnections = connectionDateCountsComplete ? getBackfilledConnections(dateKey) : undefined;
     if (typeof historicalConnections === 'number') {
       latestConnections = historicalConnections;
-    } else if (typeof snapshot?.connectionsCount === 'number') {
+    } else if (snapshot?.connectionsCountExact === true && typeof snapshot.connectionsCount === 'number') {
       latestConnections = snapshot.connectionsCount;
-    } else if (typeof latestConnections !== 'number') {
+    } else if (connectionDateCountsComplete && typeof latestConnections !== 'number') {
       latestConnections = getBackfilledConnections(dateKey);
     }
     const reconstructedFollowers = getReconstructedFollowers(dateKey);
@@ -241,6 +255,7 @@ export function buildConnectionsFollowersPoints({
       date: new Date(cursor),
       dateKey,
       connectionsCount: latestConnections,
+      connectionsAdded: connectionDateCountsComplete ? connectionDateCounts?.[dateKey] : snapshot?.connectionsAdded,
       followersCount: latestFollowers,
     });
   }
@@ -364,8 +379,7 @@ export function buildProfileVisitorPoints({
     left.localeCompare(right)
   );
   const startKey = getDateKey(start);
-  const privateBaseline =
-    [...orderedPrivateCounts].reverse().find(([dateKey]) => dateKey < startKey)?.[1] || 0;
+  const privateBaseline = [...orderedPrivateCounts].reverse().find(([dateKey]) => dateKey < startKey)?.[1] || 0;
 
   const points: MetricTrendPoint[] = [];
   let visibleCount = 0;

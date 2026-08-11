@@ -188,12 +188,18 @@ export interface ProfileAnalyticsProfileSnapshot {
   company?: string;
   location?: string;
   connectionsCount?: number;
+  /** True only when the total came from the initial authoritative Connections RSC response. */
+  connectionsCountExact?: boolean;
+  connectionsCountUpdatedAt?: number;
+  connectionsCountSource?: 'connections_rsc' | 'legacy' | 'network_info';
   /** Number of connections added on each LinkedIn connection date (YYYY-MM-DD). */
   connectionDateCounts?: Record<string, number>;
   /** True only after every connection page was read successfully. */
   connectionDateCountsComplete?: boolean;
   connectionDateCountsUpdatedAt?: number;
   connectionDateCountsError?: string;
+  /** LinkedIn can only backfill connections that still exist when history is collected. */
+  connectionHistoryKind?: 'backfilled_current_connections';
   /** Recent identifiers used to stop incremental pagination at known data. */
   recentConnectionIds?: string[];
   followersCount?: number;
@@ -272,6 +278,12 @@ export interface ProfileAnalyticsDailySnapshot {
   date: string;
   sampleKind?: 'daily' | 'sample';
   connectionsCount?: number;
+  connectionsCountExact?: boolean;
+  connectionsCountSource?: 'connections_rsc' | 'legacy' | 'network_info';
+  /** Connections whose LinkedIn "Connected on" date matches this day. */
+  connectionsAdded?: number;
+  /** True for dates reconstructed from the current LinkedIn connections list. */
+  connectionsAddedEstimated?: boolean;
   followersCount?: number;
   followersCountExact?: boolean;
   searchAppearancesCount?: number;

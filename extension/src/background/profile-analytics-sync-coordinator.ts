@@ -172,20 +172,21 @@ async function runProfileAnalyticsSync(
   snapshot = ssiTask.snapshot;
   metricsRan.push(...ssiTask.metrics);
 
-  // Connection-history pagination is intentionally a first-bootstrap-only
-  // operation. It must never block routine hourly or dashboard-open refreshes.
-  if (bootstrap.currentSynced && bootstrap.metrics.length > 0) {
+  // History runs in resumable batches. Bootstrap schedules the first batch;
+  // alarms continue it without blocking routine dashboard-open refreshes.
+  const shouldEvaluateHistory =
+    Boolean(snapshot?.profile && snapshot.profile.connectionDateCountsComplete !== true) &&
+    (bootstrap.currentSynced || trigger === 'alarm' || trigger === 'manual');
+  if (shouldEvaluateHistory) {
     const historyTask = await runConnectionHistoryTask({
       state,
       snapshot,
-      trigger: 'alarm',
+      trigger,
       linkedInTabId: linkedInTab?.id,
     });
     state = historyTask.state;
     snapshot = historyTask.snapshot;
     historySynced = historyTask.historySynced;
-  } else if (state.historyNextRetryAt) {
-    state = { ...state, historyNextRetryAt: undefined };
   }
 
   const now = Date.now();
