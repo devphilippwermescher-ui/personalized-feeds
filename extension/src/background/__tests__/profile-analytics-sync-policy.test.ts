@@ -85,6 +85,24 @@ describe('profile analytics sync policy', () => {
     ).toEqual({ trigger: 'dashboard_open' });
   });
 
+  it('keeps a LinkedIn-open follow-up so a new document can bypass a standard retry', () => {
+    expect(
+      selectPendingProfileAnalyticsRequest({ trigger: 'service_worker' }, null, {
+        trigger: 'linkedin_open',
+        preferredTabId: 42,
+      })
+    ).toEqual({ trigger: 'linkedin_open', preferredTabId: 42 });
+  });
+
+  it('never drops a profile metadata change behind a routine active evaluation', () => {
+    expect(
+      selectPendingProfileAnalyticsRequest({ trigger: 'linkedin_activity' }, null, {
+        trigger: 'profile_metadata_changed',
+        preferredTabId: 42,
+      })
+    ).toEqual({ trigger: 'profile_metadata_changed', preferredTabId: 42 });
+  });
+
   it('does not queue routine activity as a duplicate follow-up', () => {
     expect(
       selectPendingProfileAnalyticsRequest({ trigger: 'service_worker' }, null, {

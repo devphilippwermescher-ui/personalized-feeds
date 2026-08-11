@@ -3,6 +3,77 @@ import type { MetricTrendPoint } from '../../../components/MetricTrendChart';
 import { addDays, endOfDay, getDateKey, parseDate, startOfDay, type DateRange } from '../../../utils/date';
 import type { ChartKey, ConnectionsFollowersPoint } from '../types';
 
+function getTimestamp(value: string | number | undefined): number | undefined {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : undefined;
+  if (!value) return undefined;
+  const parsed = parseDate(value);
+  return parsed?.getTime();
+}
+
+export function getAllAnalyticsDateRange({
+  snapshots,
+  viewers,
+  invites,
+  connectionDateCounts,
+  followerGrowthByDate,
+}: {
+  snapshots: ProfileAnalyticsDailySnapshot[];
+  viewers: ProfileViewer[];
+  invites: ProfileAnalyticsConnectionInvite[];
+  connectionDateCounts?: Record<string, number>;
+  followerGrowthByDate?: Record<string, number>;
+}): DateRange {
+  const timestamps = [
+    ...snapshots.map((snapshot) => getTimestamp(snapshot.date)),
+    ...viewers.map((viewer) => getTimestamp(viewer.firstSeenAt)),
+    ...invites.map((invite) => getTimestamp(invite.sentAt)),
+    ...Object.keys(connectionDateCounts || {}).map(getTimestamp),
+    ...Object.keys(followerGrowthByDate || {}).map(getTimestamp),
+  ].filter((timestamp): timestamp is number => typeof timestamp === 'number');
+  const end = endOfDay(new Date());
+  const earliest = timestamps.length > 0 ? Math.min(...timestamps) : startOfDay(end).getTime();
+  return { start: startOfDay(new Date(earliest)), end };
+}
+
+export function sumDateCountsInRange(counts: Record<string, number> | undefined, range: DateRange): number {
+  const start = startOfDay(range.start).getTime();
+  const end = endOfDay(range.end).getTime();
+  return Object.entries(counts || {}).reduce((total, [date, count]) => {
+    const timestamp = getTimestamp(date);
+    return typeof timestamp === 'number' && timestamp >= start && timestamp <= end && Number.isFinite(count)
+      ? total + count
+      : total;
+  }, 0);
+}
+
+export function getCumulativeMetricChangeInRange({
+  snapshots,
+  range,
+  dataKey,
+  currentValue,
+}: {
+  snapshots: ProfileAnalyticsDailySnapshot[];
+  range: DateRange;
+  dataKey: 'connectionsCount' | 'followersCount';
+  currentValue?: number;
+}): number | undefined {
+  const start = startOfDay(range.start).getTime();
+  const end = endOfDay(range.end).getTime();
+  const ordered = snapshots
+    .map((snapshot) => ({ timestamp: getTimestamp(snapshot.date), value: snapshot[dataKey] }))
+    .filter(
+      (item): item is { timestamp: number; value: number } =>
+        typeof item.timestamp === 'number' && typeof item.value === 'number'
+    )
+    .sort((left, right) => left.timestamp - right.timestamp);
+  const baseline = [...ordered].reverse().find((item) => item.timestamp < start)?.value;
+  let finalValue = [...ordered].reverse().find((item) => item.timestamp <= end)?.value;
+  if (end >= startOfDay(new Date()).getTime() && typeof currentValue === 'number') finalValue = currentValue;
+  return typeof baseline === 'number' && typeof finalValue === 'number'
+    ? Math.max(0, finalValue - baseline)
+    : undefined;
+}
+
 function indexLatestSnapshots(snapshots: ProfileAnalyticsDailySnapshot[]) {
   const valuesByDate = new Map<string, ProfileAnalyticsDailySnapshot>();
   snapshots.forEach((snapshot) => {
@@ -250,11 +321,22 @@ export function buildAcceptanceRatePoints(
   return points;
 }
 
-export function buildProfileVisitorPoints(viewers: ProfileViewer[], range: DateRange): MetricTrendPoint[] {
+export function buildProfileVisitorPoints({
+  viewers,
+  snapshots,
+  range,
+  currentPrivateCount,
+}: {
+  viewers: ProfileViewer[];
+  snapshots: ProfileAnalyticsDailySnapshot[];
+  range: DateRange;
+  currentPrivateCount?: number;
+}): MetricTrendPoint[] {
   const start = startOfDay(range.start);
   const end = startOfDay(range.end);
   const rangeEnd = endOfDay(range.end).getTime();
   const firstSeenCountsByDate = new Map<string, number>();
+  const privateCountsByDate = new Map<string, number>();
 
   viewers.forEach((viewer) => {
     if (
@@ -268,13 +350,34 @@ export function buildProfileVisitorPoints(viewers: ProfileViewer[], range: DateR
     firstSeenCountsByDate.set(dateKey, (firstSeenCountsByDate.get(dateKey) || 0) + 1);
   });
 
+  snapshots.forEach((snapshot) => {
+    if (typeof snapshot.profileViewsPrivateCount !== 'number') return;
+    const date = parseDate(snapshot.date);
+    if (!date) return;
+    privateCountsByDate.set(getDateKey(date), snapshot.profileViewsPrivateCount);
+  });
+  const today = startOfDay(new Date());
+  if (range.end.getTime() >= today.getTime() && typeof currentPrivateCount === 'number') {
+    privateCountsByDate.set(getDateKey(today), currentPrivateCount);
+  }
+  const orderedPrivateCounts = Array.from(privateCountsByDate.entries()).sort(([left], [right]) =>
+    left.localeCompare(right)
+  );
+  const startKey = getDateKey(start);
+  const privateBaseline =
+    [...orderedPrivateCounts].reverse().find(([dateKey]) => dateKey < startKey)?.[1] || 0;
+
   const points: MetricTrendPoint[] = [];
-  let cumulativeCount = viewers.filter(
-    (viewer) => typeof viewer.firstSeenAt === 'number' && viewer.firstSeenAt < start.getTime()
-  ).length;
+  let visibleCount = 0;
+  let latestPrivateCount = privateBaseline;
   for (let cursor = start; cursor.getTime() <= end.getTime(); cursor = addDays(cursor, 1)) {
-    cumulativeCount += firstSeenCountsByDate.get(getDateKey(cursor)) || 0;
-    points.push({ date: new Date(cursor), value: cumulativeCount });
+    const dateKey = getDateKey(cursor);
+    visibleCount += firstSeenCountsByDate.get(dateKey) || 0;
+    if (typeof privateCountsByDate.get(dateKey) === 'number') {
+      latestPrivateCount = privateCountsByDate.get(dateKey) as number;
+    }
+    const privateCountInRange = Math.max(0, latestPrivateCount - privateBaseline);
+    points.push({ date: new Date(cursor), value: visibleCount + privateCountInRange });
   }
 
   return points;

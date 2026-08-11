@@ -71,6 +71,72 @@ describe('Search Appearances analytics parsing', () => {
     expect(parseSearchAppearancesSnapshot(payload, collectedAt, sourceUrl)?.totalCount).toBe(1_234);
   });
 
+  it('treats an explicit zero as a successfully collected value', () => {
+    const payload = {
+      included: [
+        {
+          entityUrn: `urn:li:test:${'PROFILE_APPEARANCES_INSIGHTS_CONSOLIDATED_CARD'}`,
+          components: [
+            {
+              summary: {
+                keyMetrics: {
+                  items: [
+                    { description: { text: 'All appearances' }, title: { text: 0 } },
+                    { description: { text: 'Search appearances' }, title: { text: 0 } },
+                  ],
+                },
+              },
+            },
+          ],
+        },
+      ],
+    };
+
+    expect(parseSearchAppearancesSnapshot(payload, collectedAt, sourceUrl)?.totalCount).toBe(0);
+  });
+
+  it('treats an empty consolidated card as zero rather than a failed refresh', () => {
+    const payload = {
+      included: [
+        {
+          entityUrn: `urn:li:test:${'PROFILE_APPEARANCES_INSIGHTS_CONSOLIDATED_CARD'}`,
+          components: [{ summary: null, emptyState: { text: 'No search appearances' } }],
+        },
+      ],
+    };
+
+    expect(parseSearchAppearancesSnapshot(payload, collectedAt, sourceUrl)).toEqual({
+      totalCount: 0,
+      periodLabel: undefined,
+      updatedAt: collectedAt,
+      sourceUrl,
+    });
+  });
+
+  it('accepts LinkedIn dash notation as a zero result', () => {
+    const payload = {
+      included: [
+        {
+          entityUrn: `urn:li:test:${'PROFILE_APPEARANCES_INSIGHTS_CONSOLIDATED_CARD'}`,
+          components: [
+            {
+              summary: {
+                keyMetrics: {
+                  items: [
+                    { description: { text: 'All appearances' }, title: { text: '0' } },
+                    { description: { text: 'Search appearances' }, title: { text: '—' } },
+                  ],
+                },
+              },
+            },
+          ],
+        },
+      ],
+    };
+
+    expect(parseSearchAppearancesSnapshot(payload, collectedAt, sourceUrl)?.totalCount).toBe(0);
+  });
+
   it('returns null when the response does not contain the analytics metric', () => {
     expect(parseSearchAppearancesSnapshot({ included: [] }, collectedAt, sourceUrl)).toBeNull();
   });

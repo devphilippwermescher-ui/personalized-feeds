@@ -2,7 +2,9 @@ const MESSAGE_TYPE = 'MFP_LINKEDIN_ANALYTICS_PASSIVE_CAPTURE';
 const PING_MESSAGE_TYPE = 'MFP_LINKEDIN_ANALYTICS_PASSIVE_CAPTURE_PING';
 const SSI_REQUEST_MESSAGE_TYPE = 'MFP_LINKEDIN_SSI_REQUEST';
 const SSI_RESPONSE_MESSAGE_TYPE = 'MFP_LINKEDIN_SSI_RESPONSE';
+const PROFILE_METADATA_CHANGED_MESSAGE_TYPE = 'MFP_LINKEDIN_PROFILE_METADATA_CHANGED';
 const SSI_BRIDGE_TIMEOUT_MS = 12_000;
+const PROFILE_METADATA_SETTLE_DELAY_MS = 1_000;
 
 interface PassiveAnalyticsWindowMessage {
   type?: string;
@@ -14,6 +16,7 @@ interface PassiveAnalyticsWindowMessage {
   socialSellingIndexScore?: unknown;
   requestId?: unknown;
   response?: unknown;
+  mutation?: unknown;
 }
 
 interface LinkedInSsiBridgeResponse {
@@ -52,19 +55,33 @@ function requestSocialSellingIndexFromMainWorld(): Promise<LinkedInSsiBridgeResp
 }
 
 export function initLinkedInAnalyticsPassiveCapture(): void {
+  let metadataChangeTimer: number | undefined;
   window.addEventListener('message', (event: MessageEvent<PassiveAnalyticsWindowMessage>) => {
-    if (event.source !== window || event.origin !== window.location.origin || event.data?.type !== MESSAGE_TYPE) return;
-    void chrome.runtime.sendMessage({
-      type: 'PROFILE_ANALYTICS_PASSIVE_CAPTURE',
-      capture: {
+    if (event.source !== window || event.origin !== window.location.origin) return;
+    if (event.data?.type === MESSAGE_TYPE) {
+      void chrome.runtime.sendMessage({
+        type: 'PROFILE_ANALYTICS_PASSIVE_CAPTURE',
+        capture: {
+          sourceUrl: event.data.sourceUrl,
+          capturedAt: event.data.capturedAt,
+          connectionsCount: event.data.connectionsCount,
+          followersCount: event.data.followersCount,
+          followersExact: event.data.followersExact,
+          socialSellingIndexScore: event.data.socialSellingIndexScore,
+        },
+      });
+      return;
+    }
+    if (event.data?.type !== PROFILE_METADATA_CHANGED_MESSAGE_TYPE) return;
+    window.clearTimeout(metadataChangeTimer);
+    metadataChangeTimer = window.setTimeout(() => {
+      void chrome.runtime.sendMessage({
+        type: 'PROFILE_ANALYTICS_PROFILE_METADATA_CHANGED',
+        mutation: event.data.mutation,
         sourceUrl: event.data.sourceUrl,
         capturedAt: event.data.capturedAt,
-        connectionsCount: event.data.connectionsCount,
-        followersCount: event.data.followersCount,
-        followersExact: event.data.followersExact,
-        socialSellingIndexScore: event.data.socialSellingIndexScore,
-      },
-    });
+      });
+    }, PROFILE_METADATA_SETTLE_DELAY_MS);
   });
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (message.type !== 'PROFILE_ANALYTICS_FETCH_SSI') return false;

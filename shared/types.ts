@@ -278,10 +278,13 @@ export interface ProfileAnalyticsDailySnapshot {
   socialSellingIndexScore?: number;
   acceptanceRate?: number;
   profileViewsCount?: number;
+  profileViewsVisibleCount?: number;
+  profileViewsPrivateCount?: number;
   updatedAt: number;
 }
 
 export type ProfileAnalyticsSyncMetric =
+  | 'profileMetadata'
   | 'connections'
   | 'followers'
   | 'acceptanceRate'

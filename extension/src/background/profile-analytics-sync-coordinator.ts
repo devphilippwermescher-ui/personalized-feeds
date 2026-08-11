@@ -6,6 +6,7 @@ import { runProfileAnalyticsBootstrapTask } from './profile-analytics-bootstrap-
 import { runSearchAppearancesTask, runSocialSellingIndexTask } from './profile-analytics-daily-sync-tasks';
 import { runConnectionHistoryTask } from './profile-analytics-history-task';
 import { runProfileAnalyticsNetworkTask } from './profile-analytics-network-task';
+import { runProfileAnalyticsMetadataTask } from './profile-analytics-metadata-task';
 import { selectLinkedInExecutionTabs } from './linkedin-tab-selection';
 import {
   createProfileAnalyticsSyncState,
@@ -110,6 +111,20 @@ async function runProfileAnalyticsSync(
   currentSynced = bootstrap.currentSynced;
   metricsRan.push(...bootstrap.metrics);
 
+  const metadataTask = await runProfileAnalyticsMetadataTask({
+    userId: user.uid,
+    state,
+    snapshot,
+    trigger,
+    linkedInTabId: linkedInTab?.id,
+    startedAt,
+    bootstrapRan: bootstrap.currentSynced,
+  });
+  state = metadataTask.state;
+  snapshot = metadataTask.snapshot;
+  currentSynced = currentSynced || metadataTask.currentSynced;
+  metricsRan.push(...metadataTask.metrics);
+
   const networkTask = await runProfileAnalyticsNetworkTask({
     userId: user.uid,
     state,
@@ -192,6 +207,7 @@ async function runProfileAnalyticsSync(
       state.searchNextRetryAt || (state.searchLastSuccessAt || now) + PROFILE_ANALYTICS_DAILY_SYNC_INTERVAL_MS,
     ssiNextDueAt: state.ssiNextRetryAt || (state.ssiLastSuccessAt || now) + PROFILE_ANALYTICS_DAILY_SYNC_INTERVAL_MS,
     historyNextRetryAt: state.historyNextRetryAt,
+    metadataNextRetryAt: state.metadataNextRetryAt,
     nextScheduledAt,
     nextScheduledAtIso: toIso(nextScheduledAt),
   });

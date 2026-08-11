@@ -12,7 +12,7 @@ export type ChartKey = keyof Pick<
 >;
 
 export type TimeRangeKey = '30d' | '90d' | '6m' | '1y';
-export type ActiveRangeKey = TimeRangeKey | 'custom';
+export type ActiveRangeKey = 'total' | TimeRangeKey | 'custom';
 export type DateRangeBoundary = 'start' | 'end';
 export type ConnectionsFollowersMode = 'both' | 'connections' | 'followers';
 
@@ -26,7 +26,7 @@ export interface ConnectionsFollowersPoint {
 export interface AnalyticsDateRangeState {
   range: ActiveRangeKey;
   rangeLabel: string;
-  selectedDateRange: DateRange;
+  selectedDateRange: DateRange | null;
   customRange: DateRange;
   isCustomPickerOpen: boolean;
   activeCustomBoundary: DateRangeBoundary;

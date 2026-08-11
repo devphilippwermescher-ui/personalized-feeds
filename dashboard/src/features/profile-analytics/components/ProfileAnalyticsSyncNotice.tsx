@@ -5,6 +5,7 @@ import type {
 } from 'shared/types';
 
 const METRIC_LABELS: Record<ProfileAnalyticsSyncMetric, string> = {
+  profileMetadata: 'Profile details',
   connections: 'Connections',
   followers: 'Followers',
   acceptanceRate: 'Acceptance Rate',

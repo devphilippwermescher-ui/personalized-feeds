@@ -30,11 +30,14 @@ export function useProfileAnalytics(userId: string) {
   const [profileViewers, setProfileViewers] = useState<ProfileViewer[]>([]);
   const [profileViewerSummary, setProfileViewerSummary] = useState<ProfileViewerSummary | null>(null);
   const [connectionInvites, setConnectionInvites] = useState<ProfileAnalyticsConnectionInvite[]>([]);
+  const [supportingDataLoaded, setSupportingDataLoaded] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [syncStatus, setSyncStatus] = useState<ProfileAnalyticsSyncStatus | null>(null);
   const [syncStatusError, setSyncStatusError] = useState<string | null>(null);
+  const [syncStatusLoaded, setSyncStatusLoaded] = useState(false);
   const observedUpdatedAt = useRef<number | undefined>();
+  const syncWasRunning = useRef(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -50,6 +53,7 @@ export function useProfileAnalytics(userId: string) {
       setProfileViewers(supportingData.profileViewers);
       setProfileViewerSummary(supportingData.profileViewerSummary);
       setConnectionInvites(supportingData.connectionInvites);
+      setSupportingDataLoaded(true);
     } catch (refreshError) {
       setError(refreshError instanceof Error ? refreshError.message : String(refreshError));
       setLoading(false);
@@ -58,6 +62,7 @@ export function useProfileAnalytics(userId: string) {
 
   useEffect(() => {
     setLoading(true);
+    setSupportingDataLoaded(false);
     setError(null);
     observedUpdatedAt.current = undefined;
     const timeoutId = window.setTimeout(() => setLoading(false), MAX_INITIAL_SKELETON_MS);
@@ -111,7 +116,7 @@ export function useProfileAnalytics(userId: string) {
     let disposed = false;
     let hiddenAt: number | undefined;
 
-    const readSyncStatus = async () => {
+    const readSyncStatus = async (refreshWhenSettled = false) => {
       const response = await sendMessageToExtension<{
         success: boolean;
         status?: ProfileAnalyticsSyncStatus | null;
@@ -119,22 +124,35 @@ export function useProfileAnalytics(userId: string) {
       }>({ type: 'DASHBOARD_GET_PROFILE_ANALYTICS_SYNC_STATUS' });
       if (disposed) return;
       if (response.success) {
-        setSyncStatus(response.status || null);
+        const nextStatus = response.status || null;
+        const isSyncing = nextStatus?.status === 'syncing';
+        const shouldRefreshSettledData = !isSyncing && (refreshWhenSettled || syncWasRunning.current);
+        if (isSyncing) {
+          syncWasRunning.current = true;
+        } else if (shouldRefreshSettledData) {
+          await refresh();
+          if (disposed) return;
+          syncWasRunning.current = false;
+        }
+        setSyncStatus(nextStatus);
         setSyncStatusError(null);
       } else {
         setSyncStatusError(response.error || 'myFeedPilot extension is not available.');
       }
+      setSyncStatusLoaded(true);
     };
 
     const triggerLightSync = async () => {
+      setSyncStatusLoaded(false);
       const response = await sendMessageToExtension<{ success: boolean; error?: string }>({
         type: 'DASHBOARD_PROFILE_ANALYTICS_OPENED',
       });
       if (!disposed && !response.success) {
         setSyncStatusError(response.error || 'myFeedPilot extension is not available.');
+        setSyncStatusLoaded(true);
       }
       window.setTimeout(() => {
-        if (!disposed) void readSyncStatus();
+        if (!disposed && response.success) void readSyncStatus(true);
       }, 500);
     };
 
@@ -149,8 +167,11 @@ export function useProfileAnalytics(userId: string) {
       hiddenAt = undefined;
     };
 
+    setSyncStatus(null);
+    setSyncStatusError(null);
+    setSyncStatusLoaded(false);
+    syncWasRunning.current = false;
     void triggerLightSync();
-    void readSyncStatus();
     const intervalId = window.setInterval(() => void readSyncStatus(), 5_000);
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
@@ -167,10 +188,12 @@ export function useProfileAnalytics(userId: string) {
     profileViewers,
     profileViewerSummary,
     connectionInvites,
+    supportingDataLoaded,
     loading,
     error,
     syncStatus,
     syncStatusError,
+    syncStatusLoaded,
     refresh,
   };
 }

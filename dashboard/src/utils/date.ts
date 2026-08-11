@@ -49,7 +49,7 @@ export function parseDate(value: string): Date | null {
 
 export function getPresetRange(days: number): DateRange {
   const end = endOfDay(new Date());
-  return { start: startOfDay(addDays(end, -days)), end };
+  return { start: startOfDay(addDays(end, -Math.max(0, days - 1))), end };
 }
 
 export function isSameDay(left: Date, right: Date): boolean {

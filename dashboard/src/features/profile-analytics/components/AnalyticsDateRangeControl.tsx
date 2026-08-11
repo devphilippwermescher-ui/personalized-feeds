@@ -10,6 +10,7 @@ interface AnalyticsDateRangeControlProps {
   isCustomPickerOpen: boolean;
   activeBoundary: DateRangeBoundary;
   visibleMonth: Date;
+  onTotalSelect: () => void;
   onPresetSelect: (range: TimeRangeKey) => void;
   onCustomToggle: () => void;
   onVisibleMonthChange: (date: Date) => void;
@@ -21,6 +22,13 @@ interface AnalyticsDateRangeControlProps {
 export function AnalyticsDateRangeControl(props: AnalyticsDateRangeControlProps) {
   return (
     <div className="profile-analytics-range-control" aria-label="Analytics time range">
+      <button
+        className={props.range === 'total' ? 'is-active' : ''}
+        type="button"
+        onClick={props.onTotalSelect}
+      >
+        Total
+      </button>
       {TIME_RANGES.map((item) => (
         <button
           key={item.key}
@@ -50,8 +58,8 @@ export function AnalyticsDateRangeControl(props: AnalyticsDateRangeControlProps)
       <button
         className="profile-analytics-range-reset"
         type="button"
-        aria-label="Reset to 30 days"
-        title="Reset to 30 days"
+        aria-label="Reset to Total"
+        title="Reset to Total"
         onClick={props.onReset}
       >
         <HiOutlineArrowPath />

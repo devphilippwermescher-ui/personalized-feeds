@@ -238,6 +238,7 @@ export function getNextProfileAnalyticsAlarmAt(state: ProfileAnalyticsSyncState,
     state.acceptanceNextDueAt || Number.POSITIVE_INFINITY,
     searchAt,
     ssiAt,
+    state.metadataNextRetryAt || Number.POSITIVE_INFINITY,
     state.bootstrapNextRetryAt || Number.POSITIVE_INFINITY
   );
 }

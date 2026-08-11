@@ -31,6 +31,7 @@ export type ProfileAnalyticsSyncTrigger =
   | 'sign_in'
   | 'linkedin_open'
   | 'linkedin_activity'
+  | 'profile_metadata_changed'
   | 'dashboard_open'
   | 'invite_sent'
   | 'alarm'
@@ -79,6 +80,10 @@ export interface ProfileAnalyticsSyncState {
   historyCompletedAt?: number;
   historyNextRetryAt?: number;
   historyLastError?: string;
+  metadataLastAttemptAt?: number;
+  metadataLastSuccessAt?: number;
+  metadataNextRetryAt?: number;
+  metadataRetryKind?: ProfileAnalyticsRetryKind;
   attemptStartedAt?: number;
   attemptExpiresAt?: number;
   nextScheduledAt?: number;
@@ -241,9 +246,10 @@ export function updateMetricStatus(
 }
 
 function triggerPriority(trigger: ProfileAnalyticsSyncTrigger): number {
+  if (trigger === 'profile_metadata_changed') return 5;
   if (trigger === 'manual') return 4;
   if (trigger === 'dashboard_open') return 3;
-  if (trigger === 'sign_in' || trigger === 'install' || trigger === 'update') return 2;
+  if (trigger === 'sign_in' || trigger === 'install' || trigger === 'update' || trigger === 'linkedin_open') return 2;
   return 1;
 }
 

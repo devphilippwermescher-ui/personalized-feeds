@@ -46,7 +46,7 @@ export async function runProfileAnalyticsBootstrapTask({
     return { state: initialState, snapshot: initialSnapshot, currentSynced: false, metrics: [] };
   }
 
-  const metrics: ProfileAnalyticsSyncMetric[] = ['connections', 'followers', 'searchAppearances'];
+  const metrics: ProfileAnalyticsSyncMetric[] = ['profileMetadata', 'connections', 'followers', 'searchAppearances'];
   let state = markProfileAnalyticsMetricsRunning(initialState, metrics, startedAt);
   let snapshot = initialSnapshot;
   state.bootstrapLastAttemptAt = startedAt;
@@ -66,6 +66,12 @@ export async function runProfileAnalyticsBootstrapTask({
       lastAttemptAt: startedAt,
       lastSuccessAt: completedAt,
     });
+    state = updateMetricStatus(state, 'profileMetadata', {
+      status: 'success',
+      lastAttemptAt: startedAt,
+      lastSuccessAt: completedAt,
+      sourceUrl: snapshot.profile?.sourceUrl,
+    });
     state = updateMetricStatus(state, 'followers', {
       status: 'success',
       lastAttemptAt: startedAt,
@@ -83,6 +89,7 @@ export async function runProfileAnalyticsBootstrapTask({
     state = {
       ...state,
       bootstrapCompletedAt: completedAt,
+      metadataLastSuccessAt: completedAt,
       bootstrapNextRetryAt: undefined,
       bootstrapRetryKind: undefined,
       networkLastAttemptAt: startedAt,

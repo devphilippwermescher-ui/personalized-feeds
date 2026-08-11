@@ -5,18 +5,20 @@ import { TIME_RANGES } from '../constants';
 import type { ActiveRangeKey, DateRangeBoundary, TimeRangeKey } from '../types';
 
 export function useAnalyticsDateRange() {
-  const [range, setRange] = useState<ActiveRangeKey>('30d');
+  const [range, setRange] = useState<ActiveRangeKey>('total');
   const [customRange, setCustomRange] = useState<DateRange>(() => getPresetRange(30));
   const [isCustomPickerOpen, setIsCustomPickerOpen] = useState(false);
   const [activeCustomBoundary, setActiveCustomBoundary] = useState<DateRangeBoundary>('start');
   const [visibleMonth, setVisibleMonth] = useState(() => startOfDay(new Date()));
 
   const selectedDateRange = useMemo(() => {
+    if (range === 'total') return null;
     const preset = TIME_RANGES.find((item) => item.key === range);
     return preset ? getPresetRange(preset.days) : customRange;
   }, [customRange, range]);
 
   const rangeLabel = useMemo(() => {
+    if (range === 'total') return 'Total';
     const preset = TIME_RANGES.find((item) => item.key === range);
     return preset
       ? `Last ${preset.label}`
@@ -25,6 +27,11 @@ export function useAnalyticsDateRange() {
 
   function selectPreset(nextRange: TimeRangeKey) {
     setRange(nextRange);
+    setIsCustomPickerOpen(false);
+  }
+
+  function selectTotal() {
+    setRange('total');
     setIsCustomPickerOpen(false);
   }
 
@@ -40,7 +47,7 @@ export function useAnalyticsDateRange() {
 
   function reset() {
     const defaultRange = getPresetRange(30);
-    setRange('30d');
+    setRange('total');
     setCustomRange(defaultRange);
     setVisibleMonth(startOfDay(defaultRange.end));
     setActiveCustomBoundary('start');
@@ -56,6 +63,7 @@ export function useAnalyticsDateRange() {
     activeCustomBoundary,
     visibleMonth,
     selectPreset,
+    selectTotal,
     toggleCustomPicker,
     updateCustomRange,
     reset,

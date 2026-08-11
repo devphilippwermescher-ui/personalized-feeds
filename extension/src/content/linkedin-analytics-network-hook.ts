@@ -1,10 +1,12 @@
 import { isPassiveAnalyticsUrl, parsePassiveAnalyticsResponse } from './linkedin-analytics-passive-parser';
+import { getLinkedInProfileMetadataMutation } from './linkedin-profile-metadata-change-detector';
 
 const MESSAGE_TYPE = 'MFP_LINKEDIN_ANALYTICS_PASSIVE_CAPTURE';
 const PING_MESSAGE_TYPE = 'MFP_LINKEDIN_ANALYTICS_PASSIVE_CAPTURE_PING';
 const SSI_REQUEST_MESSAGE_TYPE = 'MFP_LINKEDIN_SSI_REQUEST';
 const SSI_RESPONSE_MESSAGE_TYPE = 'MFP_LINKEDIN_SSI_RESPONSE';
 const SSI_URL = 'https://www.linkedin.com/sales-api/salesApiSsi';
+const PROFILE_METADATA_CHANGED_MESSAGE_TYPE = 'MFP_LINKEDIN_PROFILE_METADATA_CHANGED';
 const recentCaptures = new Map<string, ReturnType<typeof parsePassiveAnalyticsResponse>>();
 
 function inspectResponse(url: string, payload: string): void {
@@ -18,6 +20,20 @@ function inspectResponse(url: string, payload: string): void {
         : 'followers';
   recentCaptures.set(key, capture);
   window.postMessage({ type: MESSAGE_TYPE, ...capture }, window.location.origin);
+}
+
+function inspectProfileMetadataMutation(url: string, status: number): void {
+  const mutation = getLinkedInProfileMetadataMutation(url, status);
+  if (!mutation) return;
+  window.postMessage(
+    {
+      type: PROFILE_METADATA_CHANGED_MESSAGE_TYPE,
+      mutation,
+      sourceUrl: url,
+      capturedAt: Date.now(),
+    },
+    window.location.origin
+  );
 }
 
 window.addEventListener('message', (event) => {
@@ -107,6 +123,7 @@ window.fetch = async (...args: Parameters<typeof window.fetch>): Promise<Respons
         /* Passive capture must never affect LinkedIn's own request. */
       });
   }
+  inspectProfileMetadataMutation(url, response.status);
   return response;
 };
 
@@ -136,5 +153,6 @@ XMLHttpRequest.prototype.send = function patchedSend(body?: Document | XMLHttpRe
       }
     });
   }
+  request.addEventListener('load', () => inspectProfileMetadataMutation(url, request.status));
   originalSend.call(this, body);
 };

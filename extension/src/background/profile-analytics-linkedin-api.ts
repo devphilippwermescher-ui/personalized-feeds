@@ -4,6 +4,7 @@ import { fetchLinkedInConnectionsSnapshot } from './linkedin-connections-api';
 import { collectFollowersInLinkedInPage, type LinkedInFollowersSnapshot } from './linkedin-followers-page-collector';
 import { fetchFollowersAnalyticsFromLinkedInTab } from './linkedin-followers-analytics-api';
 import { resolveLinkedInProfileIdentity } from './linkedin-profile-identity-resolver';
+import { readLinkedInProfileMetadataFromExistingTab } from './linkedin-profile-metadata-page-collector';
 import {
   extractFollowersCountFromGraphql,
   extractMiniProfile,
@@ -19,7 +20,7 @@ export {
   extractFollowersCountFromNetworkInfo,
 } from './profile-analytics-linkedin-parser';
 
-const LINKEDIN_ME_URL = 'https://www.linkedin.com/voyager/api/me';
+export const LINKEDIN_ME_URL = 'https://www.linkedin.com/voyager/api/me';
 const REQUEST_TIMEOUT_MS = 12_000;
 const LINKEDIN_FOLLOWERS_QUERY_ID = 'voyagerSearchDashClusters.a7a0567fa66c52d645b5ff2f960b92aa';
 const LINKEDIN_FOLLOWERS_VARIABLES =
@@ -49,7 +50,7 @@ export interface LinkedInProfileAnalyticsResult {
   };
 }
 
-async function fetchLinkedInJson(url: string, csrfToken: string): Promise<unknown | null> {
+export async function fetchLinkedInJson(url: string, csrfToken: string): Promise<unknown | null> {
   const response = await fetchWithTimeout(
     url,
     {
@@ -83,7 +84,7 @@ async function fetchLinkedInJson(url: string, csrfToken: string): Promise<unknow
   return response.json();
 }
 
-function getProfileUrls(linkedinUsername: string) {
+export function getProfileUrls(linkedinUsername: string) {
   const baseUrl = `https://www.linkedin.com/voyager/api/identity/profiles/${encodeURIComponent(linkedinUsername)}`;
   return {
     profile: baseUrl,
@@ -168,11 +169,16 @@ export async function fetchLinkedInMeProfileSnapshot(
         return null;
       })
     : null;
-  const resolvedProfileSnapshot: ProfileAnalyticsProfileSnapshot = profileIdentity?.location
+  const pageProfileMetadata =
+    !networkInfoSnapshot.location && !profileIdentity?.location
+      ? await readLinkedInProfileMetadataFromExistingTab(linkedInTabId, meSnapshot.linkedinUsername)
+      : null;
+  const fallbackLocation = profileIdentity?.location || pageProfileMetadata?.location;
+  const resolvedProfileSnapshot: ProfileAnalyticsProfileSnapshot = fallbackLocation
     ? {
         ...networkInfoSnapshot,
-        profileUrn: profileIdentity.profileUrn || networkInfoSnapshot.profileUrn,
-        location: profileIdentity.location,
+        profileUrn: profileIdentity?.profileUrn || networkInfoSnapshot.profileUrn,
+        location: fallbackLocation,
       }
     : networkInfoSnapshot;
 
@@ -253,7 +259,9 @@ export async function fetchLinkedInMeProfileSnapshot(
         ? urls.networkInfo
         : profileIdentity?.location
           ? 'voyagerIdentityDashProfiles'
-          : undefined,
+          : pageProfileMetadata?.location
+            ? pageProfileMetadata.pageUrl
+            : undefined,
     connectionsCount: snapshot.connectionsCount,
     connectionDateCount: Object.values(snapshot.connectionDateCounts || {}).reduce((total, value) => total + value, 0),
     connectionDateCountsComplete: snapshot.connectionDateCountsComplete,

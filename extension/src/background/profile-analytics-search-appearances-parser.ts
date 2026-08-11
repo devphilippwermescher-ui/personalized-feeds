@@ -4,6 +4,9 @@ import { findFirstRecord, getNestedRecord, getString, isRecord, type UnknownReco
 const SEARCH_APPEARANCES_CARD_MARKER = 'PROFILE_APPEARANCES_INSIGHTS_CONSOLIDATED_CARD';
 
 function parseMetricCount(value: unknown): number | undefined {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) && value >= 0 ? Math.round(value) : undefined;
+  }
   const text = getString(value);
   if (!text) return undefined;
 
@@ -31,10 +34,11 @@ function getMetricDescription(item: UnknownRecord): string {
   return getString(getNestedRecord(item, ['description'])?.text).toLowerCase();
 }
 
-function findSearchAppearancesMetric(payload: unknown): UnknownRecord | null {
-  const consolidatedCard = findFirstRecord(payload, (record) =>
-    getString(record.entityUrn).includes(SEARCH_APPEARANCES_CARD_MARKER)
-  );
+function findConsolidatedCard(payload: unknown): UnknownRecord | null {
+  return findFirstRecord(payload, (record) => getString(record.entityUrn).includes(SEARCH_APPEARANCES_CARD_MARKER));
+}
+
+function findSearchAppearancesMetric(payload: unknown, consolidatedCard: UnknownRecord | null): UnknownRecord | null {
   const cardItems = consolidatedCard ? getMetricItems(consolidatedCard) : [];
   const describedMetric = cardItems.find((item) => {
     const description = getMetricDescription(item);
@@ -63,15 +67,24 @@ export function parseSearchAppearancesSnapshot(
   collectedAt: number,
   sourceUrl: string
 ): ProfileAnalyticsSearchAppearancesSnapshot | null {
-  const metric = findSearchAppearancesMetric(payload);
-  if (!metric) return null;
+  const consolidatedCard = findConsolidatedCard(payload);
+  const metric = findSearchAppearancesMetric(payload, consolidatedCard);
+  // LinkedIn can omit the key-metric item when Search Appearances is zero.
+  // The exact consolidated-card URN proves this is a valid analytics response;
+  // without that card we still treat the response as incomplete.
+  if (!metric && !consolidatedCard) return null;
 
-  const totalCount = parseMetricCount(getNestedRecord(metric, ['title'])?.text);
-  if (typeof totalCount !== 'number') return null;
+  const title = metric ? getNestedRecord(metric, ['title']) : null;
+  const totalCount = metric ? (parseMetricCount(title?.text) ?? parseMetricCount(title?.accessibilityText)) : 0;
+  if (typeof totalCount !== 'number') {
+    // Some zero-result variants render a dash instead of a numeric title.
+    const titleText = getString(title?.text);
+    if (!/^[-–—]$/.test(titleText)) return null;
+  }
 
   return {
-    totalCount,
-    periodLabel: normalizePeriodLabel(metric.valuePercentageDescription),
+    totalCount: totalCount ?? 0,
+    periodLabel: metric ? normalizePeriodLabel(metric.valuePercentageDescription) : undefined,
     updatedAt: collectedAt,
     sourceUrl,
   };

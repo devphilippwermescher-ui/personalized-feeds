@@ -57,6 +57,12 @@ function buildDailySnapshotPatch(
     ...(typeof snapshot.profileViews?.totalCount === 'number'
       ? { profileViewsCount: snapshot.profileViews.totalCount }
       : {}),
+    ...(typeof snapshot.profileViews?.visibleCount === 'number'
+      ? { profileViewsVisibleCount: snapshot.profileViews.visibleCount }
+      : {}),
+    ...(typeof snapshot.profileViews?.privateCount === 'number'
+      ? { profileViewsPrivateCount: snapshot.profileViews.privateCount }
+      : {}),
   };
 }
 
