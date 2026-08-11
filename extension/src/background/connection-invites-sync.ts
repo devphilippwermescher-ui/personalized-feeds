@@ -13,10 +13,10 @@ export const CONNECTION_INVITES_STATUS_ALARM_NAME = 'connection-invites-status-s
 
 const CONNECTION_INVITES_SYNC_STATE_KEY = 'mfp_connection_invites_status_sync_v1';
 const CONNECTION_INVITES_SYNC_INTERVAL_MS = 60 * 60 * 1000;
-const CONNECTION_INVITES_SYNC_BATCH_COOLDOWN_MS = 5 * 60 * 1000;
+const CONNECTION_INVITES_SYNC_BATCH_COOLDOWN_MS = 60 * 60 * 1000;
 const CONNECTION_INVITES_RESTRICTION_BACKOFF_MS = 12 * 60 * 60 * 1000;
 const CONNECTION_INVITES_SYNC_LEASE_MS = 2 * 60 * 1000;
-const CONNECTION_INVITES_SYNC_BATCH_LIMIT = 20;
+const CONNECTION_INVITES_SYNC_BATCH_LIMIT = 5;
 const CONNECTION_INVITES_SYNC_REQUEST_DELAY_MS = 5_000;
 
 type ConnectionInvitesStatusSyncTrigger =
@@ -143,6 +143,8 @@ export async function syncTrackedConnectionInviteAcceptance(
     if (index < candidates.length - 1) await waitBetweenRequests();
   }
 
+  const remainingInvites = checkedCount > 0 || acceptedCount > 0 ? await getConnectionInvites(userId) : invites;
+
   return {
     ran: true,
     success: true,
@@ -150,6 +152,9 @@ export async function syncTrackedConnectionInviteAcceptance(
     acceptedCount,
     pendingCount: Math.max(0, invites.filter((invite) => invite.status !== 'accepted').length - acceptedCount),
     skippedCount: Math.max(0, invites.length - candidates.length),
+    nextDueAt: remainingInvites.some((invite) => invite.status !== 'accepted')
+      ? getNextDueAt(remainingInvites, Date.now())
+      : undefined,
   };
 }
 

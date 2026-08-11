@@ -3,6 +3,7 @@ import { fetchWithTimeout } from './fetch-with-timeout';
 import { fetchLinkedInConnectionsSnapshot } from './linkedin-connections-api';
 import { collectFollowersInLinkedInPage, type LinkedInFollowersSnapshot } from './linkedin-followers-page-collector';
 import { fetchFollowersAnalyticsFromLinkedInTab } from './linkedin-followers-analytics-api';
+import { resolveLinkedInProfileIdentity } from './linkedin-profile-identity-resolver';
 import {
   extractFollowersCountFromGraphql,
   extractMiniProfile,
@@ -85,6 +86,7 @@ async function fetchLinkedInJson(url: string, csrfToken: string): Promise<unknow
 function getProfileUrls(linkedinUsername: string) {
   const baseUrl = `https://www.linkedin.com/voyager/api/identity/profiles/${encodeURIComponent(linkedinUsername)}`;
   return {
+    profile: baseUrl,
     profileView: `${baseUrl}/profileView`,
     networkInfo: `${baseUrl}/networkinfo`,
   };
@@ -141,17 +143,40 @@ export async function fetchLinkedInMeProfileSnapshot(
   });
 
   const urls = getProfileUrls(meSnapshot.linkedinUsername);
-  const profileViewPayload = await fetchLinkedInJson(urls.profileView, csrfToken).catch(() => null);
-  const profileViewSnapshot = profileViewPayload
-    ? profileSnapshotFromProfileView(profileViewPayload, meSnapshot, collectedAt, urls.profileView)
+  // LinkedIn retired profileView for some accounts (410). The base profile
+  // resource is the current source and contains geoLocationName when exposed.
+  // Keep profileView only as a compatibility fallback for older accounts.
+  const currentProfilePayload = await fetchLinkedInJson(urls.profile, csrfToken).catch(() => null);
+  const legacyProfilePayload = currentProfilePayload
+    ? null
+    : await fetchLinkedInJson(urls.profileView, csrfToken).catch(() => null);
+  const profilePayload = currentProfilePayload || legacyProfilePayload;
+  const profileSourceUrl = currentProfilePayload ? urls.profile : urls.profileView;
+  const profileViewSnapshot = profilePayload
+    ? profileSnapshotFromProfileView(profilePayload, meSnapshot, collectedAt, profileSourceUrl)
     : meSnapshot;
 
   const networkInfoPayload = await fetchLinkedInJson(urls.networkInfo, csrfToken).catch(() => null);
   const networkInfoSnapshot = networkInfoPayload
     ? profileSnapshotFromNetworkInfo(networkInfoPayload, profileViewSnapshot, collectedAt, urls.networkInfo)
     : profileViewSnapshot;
+  const profileIdentity = !networkInfoSnapshot.location
+    ? await resolveLinkedInProfileIdentity(meSnapshot.linkedinUsername).catch((error) => {
+        console.info('[profile-analytics] current GraphQL profile details were unavailable', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+        return null;
+      })
+    : null;
+  const resolvedProfileSnapshot: ProfileAnalyticsProfileSnapshot = profileIdentity?.location
+    ? {
+        ...networkInfoSnapshot,
+        profileUrn: profileIdentity.profileUrn || networkInfoSnapshot.profileUrn,
+        location: profileIdentity.location,
+      }
+    : networkInfoSnapshot;
 
-  const networkInfoFollowersCount = networkInfoSnapshot.followersCount;
+  const networkInfoFollowersCount = resolvedProfileSnapshot.followersCount;
   let analyticsFollowersError: string | undefined;
   const analyticsFollowersSnapshot = await fetchFollowersAnalyticsFromLinkedInTab(
     linkedInTabId,
@@ -191,9 +216,11 @@ export async function fetchLinkedInMeProfileSnapshot(
   const followerGrowthByDate = Object.fromEntries(followerDailyGrowth.map((point) => [point.date, point.count]));
 
   const snapshot: ProfileAnalyticsProfileSnapshot = {
-    ...networkInfoSnapshot,
+    ...resolvedProfileSnapshot,
     connectionsCount:
-      connectionsSnapshot?.connectionsCount ?? options.currentConnectionsCount ?? networkInfoSnapshot.connectionsCount,
+      connectionsSnapshot?.connectionsCount ??
+      options.currentConnectionsCount ??
+      resolvedProfileSnapshot.connectionsCount,
     connectionDateCounts: connectionsSnapshot?.connectionDateCounts,
     connectionDateCountsComplete: connectionsSnapshot?.connectionDateCountsComplete,
     connectionDateCountsUpdatedAt:
@@ -220,6 +247,13 @@ export async function fetchLinkedInMeProfileSnapshot(
   console.info('[profile-analytics] profile detail parsed fields', {
     sourceUrl: snapshot.sourceUrl,
     location: snapshot.location,
+    locationSource: profileViewSnapshot.location
+      ? profileSourceUrl
+      : networkInfoSnapshot.location
+        ? urls.networkInfo
+        : profileIdentity?.location
+          ? 'voyagerIdentityDashProfiles'
+          : undefined,
     connectionsCount: snapshot.connectionsCount,
     connectionDateCount: Object.values(snapshot.connectionDateCounts || {}).reduce((total, value) => total + value, 0),
     connectionDateCountsComplete: snapshot.connectionDateCountsComplete,

@@ -17,8 +17,11 @@ export async function collectConnectionsInLinkedInPage(
   knownConnectionIds: string[],
   paginationDelayMs: number,
   paginationBatchSize: number,
-  paginationBatchCooldownMs: number
+  paginationBatchCooldownMs: number,
+  requestTimeoutMs: number,
+  workTimeoutMs: number
 ): Promise<LinkedInConnectionsSnapshot> {
+  const workStartedAt = Date.now();
   const dateCounts: Record<string, number> = {};
   const visitedStarts = new Set<number>();
   let url = initialUrl;
@@ -143,20 +146,40 @@ export async function collectConnectionsInLinkedInPage(
 
   try {
     for (let page = 0; page < maxPages; page += 1) {
-      const response = await fetch(url, {
-        method: 'POST',
-        credentials: 'include',
-        headers: {
-          accept: '*/*',
-          'content-type': 'application/json',
-          'csrf-token': csrfToken,
-          'x-li-anchor-page-key': 'd_flagship3_people_connections',
-          'x-li-rsc-stream': 'true',
-          ...context,
-        },
-        body,
-      });
-      if (!response.ok) throw new Error(`LinkedIn pagination request failed with ${response.status}`);
+      if (Date.now() - workStartedAt >= workTimeoutMs) {
+        throw new Error(`LinkedIn connections tab work timed out after ${workTimeoutMs}ms`);
+      }
+      const controller = new AbortController();
+      let timedOut = false;
+      const timeoutId = window.setTimeout(() => {
+        timedOut = true;
+        controller.abort();
+      }, requestTimeoutMs);
+      let response: Response;
+      let payload: string;
+      try {
+        response = await fetch(url, {
+          method: 'POST',
+          credentials: 'include',
+          headers: {
+            accept: '*/*',
+            'content-type': 'application/json',
+            'csrf-token': csrfToken,
+            'x-li-anchor-page-key': 'd_flagship3_people_connections',
+            'x-li-rsc-stream': 'true',
+            ...context,
+          },
+          body,
+          signal: controller.signal,
+        });
+        if (!response.ok) throw new Error(`LinkedIn pagination request failed with ${response.status}`);
+        payload = await response.text();
+      } catch (error) {
+        if (timedOut) throw new Error(`LinkedIn connections request timed out after ${requestTimeoutMs}ms`);
+        throw error;
+      } finally {
+        window.clearTimeout(timeoutId);
+      }
 
       context = {
         ...context,
@@ -176,7 +199,6 @@ export async function collectConnectionsInLinkedInPage(
           ? { 'x-li-pageforestid': response.headers.get('x-li-pageforestid') as string }
           : {}),
       };
-      const payload = await response.text();
       addPageDates(payload);
       const pageConnectionIds = addPageConnectionIds(payload);
       const totalMatch =
@@ -205,7 +227,11 @@ export async function collectConnectionsInLinkedInPage(
           ? paginationBatchCooldownMs
           : paginationDelayMs;
       if (delay > 0) {
-        await new Promise((resolve) => window.setTimeout(resolve, delay));
+        const remainingWorkMs = workTimeoutMs - (Date.now() - workStartedAt);
+        if (remainingWorkMs <= 0) {
+          throw new Error(`LinkedIn connections tab work timed out after ${workTimeoutMs}ms`);
+        }
+        await new Promise((resolve) => window.setTimeout(resolve, Math.min(delay, remainingWorkMs)));
       }
       const spanBytes = new Uint8Array(8);
       crypto.getRandomValues(spanBytes);

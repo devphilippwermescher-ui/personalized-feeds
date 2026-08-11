@@ -137,3 +137,22 @@ export async function getProfileAnalyticsDailySnapshots(
     .map(docToProfileAnalyticsDailySnapshot)
     .sort((left, right) => left.date.localeCompare(right.date));
 }
+
+export function subscribeToProfileAnalyticsDailySnapshots(
+  userId: string,
+  maxCount: number,
+  onValue: (snapshots: ProfileAnalyticsDailySnapshot[]) => void,
+  onError?: (error: Error) => void
+): () => void {
+  const q = query(profileAnalyticsDailyCollection(userId), orderBy('date', 'desc'), limit(maxCount));
+  return onSnapshot(
+    q,
+    (snapshot) =>
+      onValue(
+        snapshot.docs
+          .map(docToProfileAnalyticsDailySnapshot)
+          .sort((left, right) => left.date.localeCompare(right.date))
+      ),
+    (error) => onError?.(error)
+  );
+}

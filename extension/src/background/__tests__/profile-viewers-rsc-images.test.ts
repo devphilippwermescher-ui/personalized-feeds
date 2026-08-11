@@ -31,4 +31,15 @@ describe('extractProfileViewerImageUrls', () => {
       'https://media.licdn.com/dms/image/v2/named/photo'
     );
   });
+
+  it('does not cross a profile-card boundary to borrow the next viewer avatar', () => {
+    const payload =
+      `1:{"a11yText":"Julia Mozharova","shape":"circle"}` +
+      `2:{"navigationUrl":"https://www.linkedin.com/in/adam-ivaniush/",` +
+      `"renderPayload":{"rootUrl":"https://media.licdn.com/dms/image/v2/adam/profile-displayphoto-shrink_",` +
+      `"imageRenditions":[{"width":100,"height":100,"suffixUrl":"100_100/photo"}],` +
+      `"assetUrn":"urn:li:digitalmediaAsset:adam"}}`;
+
+    expect(extractProfileViewerImageUrls(payload).has('julia mozharova')).toBe(false);
+  });
 });

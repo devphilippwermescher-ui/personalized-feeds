@@ -262,6 +262,55 @@
   border: 1px solid #bbf7d0;
 }
 
+.profile-analytics-sync-notice {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+  padding: 11px 14px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.profile-analytics-sync-notice--info {
+  color: #164e85;
+  background: #eff7ff;
+  border-color: #cfe5fa;
+}
+
+.profile-analytics-sync-notice--warning {
+  color: #7a4b00;
+  background: #fff8e8;
+  border-color: #f2d79a;
+}
+
+.profile-analytics-sync-notice--blocked {
+  color: #8a2d2d;
+  background: #fff1f1;
+  border-color: #efc3c3;
+}
+
+.profile-analytics-sync-notice small {
+  display: block;
+  margin-top: 5px;
+  color: inherit;
+  opacity: 0.82;
+}
+
+.profile-analytics-sync-notice details {
+  flex: 0 0 auto;
+  max-width: 48%;
+}
+
+.profile-analytics-sync-notice summary {
+  cursor: pointer;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
 .profile-analytics-metrics-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

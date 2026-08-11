@@ -1,30 +1,32 @@
-import { getProfileAnalyticsSnapshot } from 'shared/firestore-service';
+import { CONNECTION_INVITE_FIRST_CHECK_DELAY_MS, getProfileAnalyticsSnapshot } from 'shared/firestore-service';
+import type { ProfileAnalyticsSyncMetric } from 'shared/types';
 import { getAuthenticatedFeedsUser } from './feeds-auth';
-import { syncConnectionHistoryFromLinkedIn, syncProfileAnalyticsFromLinkedInTabs } from './profile-analytics-sync';
+import { runDueAcceptanceTask } from './profile-analytics-acceptance-task';
+import { runProfileAnalyticsBootstrapTask } from './profile-analytics-bootstrap-task';
+import { runSearchAppearancesTask, runSocialSellingIndexTask } from './profile-analytics-daily-sync-tasks';
+import { runConnectionHistoryTask } from './profile-analytics-history-task';
+import { runProfileAnalyticsNetworkTask } from './profile-analytics-network-task';
+import { selectLinkedInExecutionTabs } from './linkedin-tab-selection';
 import {
-  isCurrentProfileAnalyticsRetryBlocked,
-  isConnectionHistoryDue,
-  isCurrentProfileAnalyticsDue,
-  isSocialSellingIndexDue,
-  isSocialSellingIndexRetryBlocked,
-  mustVerifyCurrentProfileAnalytics,
-  PROFILE_ANALYTICS_HISTORY_START_DELAY_MS,
-  PROFILE_ANALYTICS_HISTORY_RETRY_DELAY_MS,
-  PROFILE_ANALYTICS_RETRY_DELAY_MS,
-  PROFILE_ANALYTICS_RESTRICTION_RETRY_MS,
-  SOCIAL_SELLING_INDEX_SYNC_TTL_MS,
-  PROFILE_ANALYTICS_SYNC_INTERVAL_MS,
+  createProfileAnalyticsSyncState,
+  getProfileAnalyticsScheduledIntervalMs,
+  PROFILE_ANALYTICS_ATTEMPT_LEASE_MS,
+  PROFILE_ANALYTICS_DAILY_SYNC_INTERVAL_MS,
   selectPendingProfileAnalyticsRequest,
   type ProfileAnalyticsSyncRequest,
-  type ProfileAnalyticsSyncState,
   type ProfileAnalyticsSyncTrigger,
 } from './profile-analytics-sync-policy';
-import { syncSocialSellingIndexMetric } from './profile-analytics-ssi-sync';
+import {
+  finishProfileAnalyticsSyncState,
+  getNextProfileAnalyticsAlarmAt,
+  getStoredProfileAnalyticsSyncState,
+  recoverInterruptedProfileAnalyticsState,
+  scheduleProfileAnalyticsAlarm,
+  setStoredProfileAnalyticsSyncState,
+  toIso,
+} from './profile-analytics-sync-runtime';
 
-// Versioned so existing installations run the request-based SSI collector once
-// immediately after upgrading instead of trusting an older Firestore timestamp.
-const PROFILE_ANALYTICS_SYNC_STORAGE_KEY = 'mfp_profile_analytics_sync_v4';
-export const PROFILE_ANALYTICS_ALARM_NAME = 'profile-analytics-sync-v1';
+export { getProfileAnalyticsSyncStatus, PROFILE_ANALYTICS_ALARM_NAME } from './profile-analytics-sync-runtime';
 
 export type { ProfileAnalyticsSyncTrigger } from './profile-analytics-sync-policy';
 
@@ -42,35 +44,6 @@ let activeSyncRequest: ProfileAnalyticsSyncRequest | null = null;
 let pendingSyncRequest: ProfileAnalyticsSyncRequest | null = null;
 const observedLinkedInTabIds = new Set<number>();
 
-function isRestrictionSignal(error: unknown): boolean {
-  const status = (error as { httpStatus?: unknown })?.httpStatus;
-  const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
-  return (
-    status === 429 ||
-    status === 999 ||
-    message.includes('blocked with 429') ||
-    message.includes('blocked with 999') ||
-    message.includes('temporarily restricted')
-  );
-}
-
-async function getStoredState(userId: string): Promise<ProfileAnalyticsSyncState | undefined> {
-  const stored = await chrome.storage.local.get(PROFILE_ANALYTICS_SYNC_STORAGE_KEY);
-  const state = stored[PROFILE_ANALYTICS_SYNC_STORAGE_KEY] as ProfileAnalyticsSyncState | undefined;
-  return state?.userId === userId ? state : undefined;
-}
-
-function setStoredState(state: ProfileAnalyticsSyncState): Promise<void> {
-  return chrome.storage.local.set({ [PROFILE_ANALYTICS_SYNC_STORAGE_KEY]: state });
-}
-
-function scheduleAlarm(scheduledAt: number): Promise<void> {
-  if (!chrome.alarms?.create) return Promise.resolve();
-  return chrome.alarms.create(PROFILE_ANALYTICS_ALARM_NAME, {
-    when: Math.max(Date.now() + 1_000, scheduledAt),
-  });
-}
-
 async function runProfileAnalyticsSync(
   trigger: ProfileAnalyticsSyncTrigger,
   preferredTabId?: number
@@ -81,209 +54,162 @@ async function runProfileAnalyticsSync(
   }
 
   const linkedInTabs = await chrome.tabs.query({ url: 'https://www.linkedin.com/*' });
-  const availableLinkedInTabs = linkedInTabs.filter(
-    (tab): tab is chrome.tabs.Tab & { id: number } => typeof tab.id === 'number'
-  );
-  if (availableLinkedInTabs.length === 0) {
-    await scheduleAlarm(Date.now() + PROFILE_ANALYTICS_RETRY_DELAY_MS);
-    return {
-      ran: false,
-      success: false,
-      currentSynced: false,
-      historySynced: false,
-      reason: 'no_linkedin_tab',
-    };
-  }
-
+  const availableLinkedInTabs = selectLinkedInExecutionTabs(linkedInTabs, preferredTabId);
+  const linkedInTab = availableLinkedInTabs[0];
+  const linkedInTabIds = availableLinkedInTabs.map((tab) => tab.id);
   const startedAt = Date.now();
-  let state = await getStoredState(user.uid);
+  let state = (await getStoredProfileAnalyticsSyncState(user.uid)) || createProfileAnalyticsSyncState(user.uid);
+  state = recoverInterruptedProfileAnalyticsState(state);
   let snapshot = await getProfileAnalyticsSnapshot(user.uid);
+  const metricsRan: ProfileAnalyticsSyncMetric[] = [];
   let currentSynced = false;
   let historySynced = false;
-  let ssiSynced = false;
-  const currentRetryBlocked = isCurrentProfileAnalyticsRetryBlocked({ now: startedAt, state, trigger });
-  const ssiRetryBlocked = isSocialSellingIndexRetryBlocked({ now: startedAt, state, trigger });
-  const preferredLinkedInTab = availableLinkedInTabs.find((tab) => tab.id === preferredTabId);
-  const activeLinkedInTab =
-    preferredLinkedInTab || availableLinkedInTabs.find((tab) => tab.active) || availableLinkedInTabs[0];
 
-  if (
-    !ssiRetryBlocked &&
-    (mustVerifyCurrentProfileAnalytics(trigger) || isSocialSellingIndexDue({ now: startedAt, state }))
-  ) {
-    state = {
-      ...state,
-      userId: user.uid,
-      ssiLastAttemptAt: startedAt,
-      ssiNextRetryAt: undefined,
-      ssiLastError: undefined,
-      ssiRetryKind: undefined,
-    };
-    await setStoredState(state);
+  if (trigger === 'invite_sent') {
+    const firstCheckAt = startedAt + CONNECTION_INVITE_FIRST_CHECK_DELAY_MS;
+    state.acceptanceNextDueAt = state.acceptanceNextDueAt
+      ? Math.min(state.acceptanceNextDueAt, firstCheckAt)
+      : firstCheckAt;
+  }
 
-    const ssiResult = await syncSocialSellingIndexMetric({
-      userId: user.uid,
+  state = {
+    ...state,
+    attemptStartedAt: startedAt,
+    attemptExpiresAt: startedAt + PROFILE_ANALYTICS_ATTEMPT_LEASE_MS,
+    status: {
+      ...state.status,
+      status: 'syncing',
       trigger,
-      linkedInTabId: activeLinkedInTab.id,
-      currentSnapshot: snapshot,
-      collectedAt: startedAt,
-    });
-    snapshot = ssiResult.snapshot || snapshot;
-    if (ssiResult.collected) {
-      ssiSynced = true;
-      state = {
-        ...state,
-        userId: user.uid,
-        ssiLastSuccessAt: Date.now(),
-        ssiNextRetryAt: undefined,
-        ssiLastError: undefined,
-        ssiRetryKind: undefined,
-      };
-    } else {
-      const restricted = isRestrictionSignal(ssiResult.error);
-      state = {
-        ...state,
-        userId: user.uid,
-        ssiNextRetryAt:
-          Date.now() + (restricted ? PROFILE_ANALYTICS_RESTRICTION_RETRY_MS : PROFILE_ANALYTICS_RETRY_DELAY_MS),
-        ssiLastError: ssiResult.error,
-        ssiRetryKind: restricted ? 'restriction' : 'standard',
-      };
-    }
-    await setStoredState(state);
-  }
+      startedAt,
+      finishedAt: undefined,
+    },
+  };
+  await setStoredProfileAnalyticsSyncState(state);
 
-  if (
-    !currentRetryBlocked &&
-    (mustVerifyCurrentProfileAnalytics(trigger) || isCurrentProfileAnalyticsDue({ now: startedAt, state }))
-  ) {
-    state = {
-      ...state,
-      userId: user.uid,
-      lastAttemptAt: startedAt,
-      nextRetryAt: undefined,
-      lastError: undefined,
-      retryKind: undefined,
-    };
-    await setStoredState(state);
-    try {
-      const currentResult = await syncProfileAnalyticsFromLinkedInTabs({
-        preferredTabId,
-        currentSnapshot: snapshot,
-        forceCurrentMetrics: true,
-      });
-      snapshot = currentResult.snapshot;
-      currentSynced = true;
-      state = {
-        ...state,
-        userId: user.uid,
-        lastSuccessAt: Date.now(),
-        nextRetryAt: undefined,
-        lastError: undefined,
-        retryKind: undefined,
-      };
-      await setStoredState(state);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      const nextRetryAt =
-        Date.now() +
-        (isRestrictionSignal(error) ? PROFILE_ANALYTICS_RESTRICTION_RETRY_MS : PROFILE_ANALYTICS_RETRY_DELAY_MS);
-      state = {
-        ...state,
-        userId: user.uid,
-        nextRetryAt,
-        lastError: message,
-        retryKind: isRestrictionSignal(error) ? 'restriction' : 'standard',
-      };
-      await setStoredState(state);
-      await scheduleAlarm(nextRetryAt);
-      console.warn('[profile-analytics] current snapshot failed', { trigger, error: message });
-      return {
-        ran: true,
-        success: false,
-        currentSynced: false,
-        historySynced: false,
-        reason: 'failed',
-        error: message,
-      };
-    }
-  }
+  console.info('[profile-analytics] sync evaluation started', {
+    trigger,
+    linkedInTabCount: availableLinkedInTabs.length,
+    linkedInTabIds,
+    preferredTabId,
+    selectedTabId: linkedInTab?.id,
+    networkLastSuccessAt: state.networkLastSuccessAt,
+    networkNextDueAt: state.networkNextDueAt,
+    searchLastSuccessAt: state.searchLastSuccessAt,
+    ssiLastSuccessAt: state.ssiLastSuccessAt,
+  });
 
-  if (
-    !currentRetryBlocked &&
-    snapshot?.profile &&
-    isConnectionHistoryDue({
-      now: Date.now(),
-      historyComplete: snapshot.profile.connectionDateCountsComplete === true,
+  const bootstrap = await runProfileAnalyticsBootstrapTask({
+    state,
+    snapshot,
+    trigger,
+    linkedInTabId: linkedInTab?.id,
+    startedAt,
+  });
+  state = bootstrap.state;
+  snapshot = bootstrap.snapshot;
+  currentSynced = bootstrap.currentSynced;
+  metricsRan.push(...bootstrap.metrics);
+
+  const networkTask = await runProfileAnalyticsNetworkTask({
+    userId: user.uid,
+    state,
+    snapshot,
+    trigger,
+    linkedInTabIds,
+    startedAt,
+  });
+  state = networkTask.state;
+  snapshot = networkTask.snapshot;
+  currentSynced = currentSynced || networkTask.currentSynced;
+  metricsRan.push(...networkTask.metrics);
+
+  const acceptanceTask = await runDueAcceptanceTask({
+    userId: user.uid,
+    state,
+    snapshot,
+    trigger,
+    startedAt,
+  });
+  state = acceptanceTask.state;
+  currentSynced = currentSynced || acceptanceTask.currentSynced;
+  metricsRan.push(...acceptanceTask.metrics);
+
+  const searchTask = await runSearchAppearancesTask({
+    userId: user.uid,
+    state,
+    snapshot,
+    trigger,
+    startedAt,
+  });
+  state = searchTask.state;
+  snapshot = searchTask.snapshot;
+  metricsRan.push(...searchTask.metrics);
+
+  const ssiTask = await runSocialSellingIndexTask({
+    userId: user.uid,
+    state,
+    snapshot,
+    trigger,
+    linkedInTabId: linkedInTab?.id,
+    startedAt,
+  });
+  state = ssiTask.state;
+  snapshot = ssiTask.snapshot;
+  metricsRan.push(...ssiTask.metrics);
+
+  // Connection-history pagination is intentionally a first-bootstrap-only
+  // operation. It must never block routine hourly or dashboard-open refreshes.
+  if (bootstrap.currentSynced && bootstrap.metrics.length > 0) {
+    const historyTask = await runConnectionHistoryTask({
       state,
-    })
-  ) {
-    if (!state?.historyLastAttemptAt && trigger !== 'alarm') {
-      state = {
-        ...state,
-        userId: user.uid,
-        historyNextRetryAt: Date.now() + PROFILE_ANALYTICS_HISTORY_START_DELAY_MS,
-      };
-      await setStoredState(state);
-    } else {
-      const historyStartedAt = Date.now();
-      state = {
-        ...state,
-        userId: user.uid,
-        historyLastAttemptAt: historyStartedAt,
-        historyNextRetryAt: undefined,
-        historyLastError: undefined,
-      };
-      await setStoredState(state);
-      try {
-        snapshot = await syncConnectionHistoryFromLinkedIn(preferredTabId);
-        historySynced = snapshot.profile?.connectionDateCountsComplete === true;
-        state = {
-          ...state,
-          userId: user.uid,
-          historyCompletedAt: historySynced ? Date.now() : undefined,
-          historyNextRetryAt: historySynced ? undefined : Date.now() + PROFILE_ANALYTICS_HISTORY_RETRY_DELAY_MS,
-          historyLastError: historySynced ? undefined : snapshot.profile?.connectionDateCountsError,
-        };
-        await setStoredState(state);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        state = {
-          ...state,
-          userId: user.uid,
-          historyNextRetryAt:
-            Date.now() +
-            (isRestrictionSignal(error)
-              ? PROFILE_ANALYTICS_RESTRICTION_RETRY_MS
-              : PROFILE_ANALYTICS_HISTORY_RETRY_DELAY_MS),
-          historyLastError: message,
-        };
-        await setStoredState(state);
-        console.warn('[profile-analytics] connection history failed', { trigger, error: message });
-      }
-    }
+      snapshot,
+      trigger: 'alarm',
+      linkedInTabId: linkedInTab?.id,
+    });
+    state = historyTask.state;
+    snapshot = historyTask.snapshot;
+    historySynced = historyTask.historySynced;
+  } else if (state.historyNextRetryAt) {
+    state = { ...state, historyNextRetryAt: undefined };
   }
 
-  const nextCurrentAt = state?.nextRetryAt || (state?.lastSuccessAt || Date.now()) + PROFILE_ANALYTICS_SYNC_INTERVAL_MS;
-  const nextSsiAt =
-    state?.ssiNextRetryAt || (state?.ssiLastSuccessAt || Date.now()) + SOCIAL_SELLING_INDEX_SYNC_TTL_MS;
-  const nextAlarmAt = Math.min(
-    nextCurrentAt,
-    nextSsiAt,
-    state?.historyNextRetryAt || Number.POSITIVE_INFINITY
-  );
-  await scheduleAlarm(Number.isFinite(nextAlarmAt) ? nextAlarmAt : nextCurrentAt);
+  const now = Date.now();
+  if (!state.networkNextDueAt && !state.networkNextRetryAt) {
+    state.networkNextDueAt = now + getProfileAnalyticsScheduledIntervalMs();
+  }
+  const nextScheduledAt = getNextProfileAnalyticsAlarmAt(state, now);
+  state = finishProfileAnalyticsSyncState(state, trigger, startedAt, Array.from(new Set(metricsRan)), nextScheduledAt);
+  await setStoredProfileAnalyticsSyncState(state);
+  await scheduleProfileAnalyticsAlarm(nextScheduledAt, 'next_due_check');
 
+  console.info('[profile-analytics] next checks planned', {
+    trigger,
+    metricsRan: Array.from(new Set(metricsRan)),
+    status: state.status.status,
+    networkNextDueAt: state.networkNextRetryAt || state.networkNextDueAt,
+    networkNextDueAtIso: toIso(state.networkNextRetryAt || state.networkNextDueAt),
+    searchNextDueAt:
+      state.searchNextRetryAt || (state.searchLastSuccessAt || now) + PROFILE_ANALYTICS_DAILY_SYNC_INTERVAL_MS,
+    ssiNextDueAt: state.ssiNextRetryAt || (state.ssiLastSuccessAt || now) + PROFILE_ANALYTICS_DAILY_SYNC_INTERVAL_MS,
+    historyNextRetryAt: state.historyNextRetryAt,
+    nextScheduledAt,
+    nextScheduledAtIso: toIso(nextScheduledAt),
+  });
+
+  const failures = Object.values(state.status.metrics).filter(
+    (metric) => metric?.status === 'failed' || metric?.status === 'blocked'
+  );
+  const noLinkedInTab = failures.some((metric) => metric?.errorCode === 'no_linkedin_tab');
   return {
-    ran: currentSynced || historySynced || ssiSynced,
-    success: true,
+    ran: metricsRan.length > 0 || historySynced,
+    success: failures.length === 0 || currentSynced,
     currentSynced,
     historySynced,
-    reason: currentSynced || historySynced || ssiSynced ? 'synced' : 'fresh',
+    reason: noLinkedInTab ? 'no_linkedin_tab' : metricsRan.length > 0 || historySynced ? 'synced' : 'fresh',
   };
 }
 
-/** Deduplicates only Profile Analytics work; other extension domains keep running independently. */
+/** Deduplicates only Profile Analytics work; other extension domains remain independent. */
 export function queueProfileAnalyticsSync(
   trigger: ProfileAnalyticsSyncTrigger,
   preferredTabId?: number

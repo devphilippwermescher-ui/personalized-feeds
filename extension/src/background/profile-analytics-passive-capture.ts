@@ -11,6 +11,11 @@ interface PassiveAnalyticsCapture {
   socialSellingIndexScore?: number;
 }
 
+interface PassiveCapturePersistResult {
+  written: boolean;
+  reason?: 'no_auth' | 'unchanged';
+}
+
 let activeWrite: Promise<void> = Promise.resolve();
 
 function normalizeCount(value: unknown): number | undefined {
@@ -44,9 +49,9 @@ function normalizeCapture(value: unknown): PassiveAnalyticsCapture | null {
   };
 }
 
-async function persistPassiveCapture(capture: PassiveAnalyticsCapture): Promise<void> {
+async function persistPassiveCapture(capture: PassiveAnalyticsCapture): Promise<PassiveCapturePersistResult> {
   const user = await getAuthenticatedFeedsUser();
-  if (!user) return;
+  if (!user) return { written: false, reason: 'no_auth' };
   const current = await getProfileAnalyticsSnapshot(user.uid);
   const currentProfile = current?.profile;
 
@@ -66,7 +71,9 @@ async function persistPassiveCapture(capture: PassiveAnalyticsCapture): Promise<
   const socialSellingIndexChanged =
     typeof capture.socialSellingIndexScore === 'number' &&
     capture.socialSellingIndexScore !== current?.socialSellingIndex?.score;
-  if (!connectionsChanged && !followersChanged && !followersExactChanged && !socialSellingIndexChanged) return;
+  if (!connectionsChanged && !followersChanged && !followersExactChanged && !socialSellingIndexChanged) {
+    return { written: false, reason: 'unchanged' };
+  }
 
   const profile: ProfileAnalyticsProfileSnapshot | undefined = currentProfile
     ? {
@@ -101,6 +108,7 @@ async function persistPassiveCapture(capture: PassiveAnalyticsCapture): Promise<
     socialSellingIndexScore: socialSellingIndexChanged ? capture.socialSellingIndexScore : undefined,
     sourceUrl: capture.sourceUrl,
   });
+  return { written: true };
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -114,7 +122,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     sendResponse({ success: false });
     return false;
   }
-  activeWrite = activeWrite.catch(() => undefined).then(() => persistPassiveCapture(capture));
-  activeWrite.then(() => sendResponse({ success: true })).catch(() => sendResponse({ success: false }));
+  const operation = activeWrite.catch(() => undefined).then(() => persistPassiveCapture(capture));
+  activeWrite = operation.then(() => undefined);
+  operation
+    .then((result) => sendResponse({ success: true, ...result }))
+    .catch((error) => {
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn('[profile-analytics] passive LinkedIn response could not be persisted', { error: message });
+      sendResponse({ success: false, error: message });
+    });
   return true;
 });

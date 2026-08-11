@@ -7,9 +7,12 @@ import {
   collectFollowersAnalyticsRscInLinkedInPage,
   type LinkedInFollowersAnalyticsRscResponse,
 } from './linkedin-followers-analytics-page-collector';
+import { withPromiseTimeout } from './promise-timeout';
 
 const LINKEDIN_FOLLOWERS_ANALYTICS_COMPONENT_ID =
   'com.linkedin.sdui.generated.creator.analytics.dsl.impl.audienceAnalyticsFollowersModule';
+const FOLLOWERS_REQUEST_TIMEOUT_MS = 12_000;
+const FOLLOWERS_SCRIPT_TIMEOUT_MS = 15_000;
 
 function toLinkedInDate(timestamp: number): { $type: string; day: number; month: number; year: number } {
   const date = new Date(timestamp);
@@ -90,12 +93,16 @@ export async function fetchFollowersAnalyticsFromLinkedInTab(
   if (typeof linkedInTabId !== 'number') return null;
 
   const request = createFollowersAnalyticsRequest(collectedAt);
-  const results = await chrome.scripting.executeScript({
-    target: { tabId: linkedInTabId },
-    world: 'MAIN',
-    func: collectFollowersAnalyticsRscInLinkedInPage,
-    args: [csrfToken, request.url, request.body],
-  });
+  const results = await withPromiseTimeout(
+    chrome.scripting.executeScript({
+      target: { tabId: linkedInTabId },
+      world: 'MAIN',
+      func: collectFollowersAnalyticsRscInLinkedInPage,
+      args: [csrfToken, request.url, request.body, FOLLOWERS_REQUEST_TIMEOUT_MS],
+    }),
+    FOLLOWERS_SCRIPT_TIMEOUT_MS,
+    'LinkedIn Followers tab script'
+  );
   const result = results[0]?.result || null;
   if (result?.httpStatus && [401, 403, 429, 999].includes(result.httpStatus)) {
     const error = new Error(`LinkedIn Audience Analytics request was blocked with ${result.httpStatus}`) as Error & {

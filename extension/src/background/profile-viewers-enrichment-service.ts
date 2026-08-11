@@ -3,7 +3,6 @@ import { findLinkedInPeopleSearchResultByUsername, type LinkedInPeopleSearchResu
 import {
   getAmbiguousProfileViewerImageUrls,
   isUsableLinkedInProfileImageUrl,
-  isWeakProfileViewerDisplayName,
 } from 'shared/profile-viewer-quality';
 import { fetchWithTimeout } from './fetch-with-timeout';
 import { mergeProfileViewerWithPageMetadata, parseProfileViewerPageMetadata } from './profile-viewers-enrichment';
@@ -85,18 +84,15 @@ async function enrichProfileViewerFromProfilePage(
   const peopleSearchImageUrl = isUsableLinkedInProfileImageUrl(peopleSearchMatch?.profileImageUrl)
     ? peopleSearchMatch.profileImageUrl
     : '';
-  const shouldUsePeopleSearchDisplayName = isWeakProfileViewerDisplayName(
-    viewer.displayName,
-    viewer.linkedinUsername
-  );
   const viewerWithTrustedData: ProfileViewerInput = {
     ...viewer,
-    displayName: shouldUsePeopleSearchDisplayName
-      ? peopleSearchMatch?.displayName || viewer.displayName
-      : viewer.displayName,
+    // People Search is matched by the exact public identifier, so its
+    // identity fields are stronger than display-name associations in RSC.
+    displayName: peopleSearchMatch?.displayName || viewer.displayName,
     headline: viewer.headline || peopleSearchMatch?.headline || '',
     connectionDegree: viewer.connectionDegree || peopleSearchMatch?.connectionDegree || '',
-    profileImageUrl: viewer.profileImageUrl || peopleSearchImageUrl,
+    profileImageUrl: peopleSearchImageUrl || viewer.profileImageUrl,
+    identityUncertain: peopleSearchMatch ? false : viewer.identityUncertain,
   };
   const createResult = (
     enrichedViewer: ProfileViewerInput,

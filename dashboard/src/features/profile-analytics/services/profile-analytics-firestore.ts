@@ -6,6 +6,7 @@ import {
   getProfileViewerSummary,
   subscribeToChronologicalProfileViewers,
   subscribeToConnectionInvites,
+  subscribeToProfileAnalyticsDailySnapshots,
   subscribeToProfileAnalyticsSnapshot,
 } from 'shared/firestore-service';
 import type {
@@ -55,6 +56,14 @@ export function watchProfileAnalyticsSnapshot(
   onError: (error: Error) => void
 ): () => void {
   return subscribeToProfileAnalyticsSnapshot(userId, onValue, onError);
+}
+
+export function watchProfileAnalyticsDailySnapshots(
+  userId: string,
+  onValue: (snapshots: ProfileAnalyticsDailySnapshot[]) => void,
+  onError: (error: Error) => void
+): () => void {
+  return subscribeToProfileAnalyticsDailySnapshots(userId, 365, onValue, onError);
 }
 
 export function watchConnectionInvites(

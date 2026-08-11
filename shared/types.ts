@@ -59,6 +59,8 @@ export type ProfileViewerInput = Omit<
 > & {
   sourceIndex?: number;
   listPosition?: number;
+  /** Parser-only signal. It is intentionally not persisted to Firestore. */
+  identityUncertain?: boolean;
 };
 
 export interface ProfileViewerSearch {
@@ -277,4 +279,33 @@ export interface ProfileAnalyticsDailySnapshot {
   acceptanceRate?: number;
   profileViewsCount?: number;
   updatedAt: number;
+}
+
+export type ProfileAnalyticsSyncMetric =
+  | 'connections'
+  | 'followers'
+  | 'acceptanceRate'
+  | 'searchAppearances'
+  | 'socialSellingIndex';
+
+export type ProfileAnalyticsSyncMetricState = 'idle' | 'syncing' | 'success' | 'failed' | 'blocked';
+
+export interface ProfileAnalyticsSyncMetricStatus {
+  status: ProfileAnalyticsSyncMetricState;
+  lastAttemptAt?: number;
+  lastSuccessAt?: number;
+  nextRetryAt?: number;
+  errorCode?: string;
+  message?: string;
+  technicalMessage?: string;
+  sourceUrl?: string;
+}
+
+export interface ProfileAnalyticsSyncStatus {
+  status: 'idle' | 'syncing' | 'success' | 'partial' | 'failed' | 'blocked';
+  trigger?: string;
+  startedAt?: number;
+  finishedAt?: number;
+  nextScheduledAt?: number;
+  metrics: Partial<Record<ProfileAnalyticsSyncMetric, ProfileAnalyticsSyncMetricStatus>>;
 }

@@ -5,6 +5,7 @@ import {
   getAmbiguousProfileViewerImageUrls,
   humanizeLinkedInUsername,
   isUsableLinkedInProfileImageUrl,
+  profileViewerDisplayNameConflictsWithUsername,
 } from 'shared/profile-viewer-quality';
 
 describe('profile viewer data quality', () => {
@@ -27,6 +28,18 @@ describe('profile viewer data quality', () => {
         'alia-waleczek-806248315'
       )
     ).toBe('Alia Waleczek');
+  });
+
+  it('detects a stored display name copied from another vanity profile', () => {
+    expect(
+      profileViewerDisplayNameConflictsWithUsername('Alina Diachenko', 'mykola-leso')
+    ).toBe(true);
+    expect(
+      profileViewerDisplayNameConflictsWithUsername('Mykola Leso', 'mykola-leso')
+    ).toBe(false);
+    expect(
+      profileViewerDisplayNameConflictsWithUsername('Alexandra Mitskevich', 'alexandrushka')
+    ).toBe(false);
   });
 
   it('rejects expired profile images and keeps a valid existing image', () => {

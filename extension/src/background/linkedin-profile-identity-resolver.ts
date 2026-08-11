@@ -1,5 +1,6 @@
 import { normalizeLinkedInUsername } from 'shared/linkedin-identity';
 import { fetchWithTimeout } from './fetch-with-timeout';
+import { findFirstStringByKey } from './linkedin/json-utils';
 import { getLinkedInCsrfToken } from './profile-viewers-api-client';
 
 const PROFILE_IDENTITY_QUERY_ID = 'voyagerIdentityDashProfiles.273a499c117721535e6da078bee17e9c';
@@ -11,6 +12,7 @@ export interface LinkedInProfileIdentity {
   linkedinUsername: string;
   profileUrn: string;
   displayName?: string;
+  location?: string;
 }
 
 function isRecord(value: unknown): value is UnknownRecord {
@@ -49,6 +51,14 @@ function findProfileIdentity(value: unknown): LinkedInProfileIdentity | null {
   return null;
 }
 
+export function parseLinkedInProfileIdentity(payload: unknown): LinkedInProfileIdentity | null {
+  const identity = findProfileIdentity(payload);
+  if (!identity) return null;
+
+  const location = findFirstStringByKey(payload, /^(?:geoLocationName|locationName)$/i);
+  return { ...identity, location };
+}
+
 export async function resolveLinkedInProfileIdentity(
   username: string
 ): Promise<LinkedInProfileIdentity | null> {
@@ -84,10 +94,11 @@ export async function resolveLinkedInProfileIdentity(
     throw new Error(`LinkedIn profile identity request returned ${response.status}.`);
   }
 
-  const identity = findProfileIdentity(await response.json());
-  console.info('[connection-invites] LinkedIn profile identity resolved', {
+  const identity = parseLinkedInProfileIdentity(await response.json());
+  console.info('[linkedin-profile] LinkedIn profile identity resolved', {
     linkedinUsername,
     profileUrn: identity?.profileUrn || '',
+    location: identity?.location || '',
   });
   return identity;
 }

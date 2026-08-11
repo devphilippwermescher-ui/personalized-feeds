@@ -1,6 +1,7 @@
 import { getCurrentUser } from '../services/auth';
 import { updateUserFeatureSettings } from 'shared/firestore-service';
 import type { UserFeatureSettings } from 'shared/types';
+import { getProfileAnalyticsSyncStatus, queueProfileAnalyticsSync } from './profile-analytics-sync-coordinator';
 import {
   formatUserInfo,
   getAuthenticatedFeedsUser,
@@ -75,6 +76,29 @@ function handleDashboardMessage(message: DashboardMessage, sendResponse: (respon
       })
       .catch((error) => {
         sendResponse({ success: false, error: error instanceof Error ? error.message : String(error) });
+      });
+    return true;
+  }
+
+  if (message.type === 'DASHBOARD_PROFILE_ANALYTICS_OPENED') {
+    void queueProfileAnalyticsSync('dashboard_open').catch((error) => {
+      console.warn('[profile-analytics] dashboard-triggered sync failed', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
+    sendResponse({ success: true, queued: true });
+    return false;
+  }
+
+  if (message.type === 'DASHBOARD_GET_PROFILE_ANALYTICS_SYNC_STATUS') {
+    getProfileAnalyticsSyncStatus()
+      .then((status) => sendResponse({ success: true, status }))
+      .catch((error) => {
+        sendResponse({
+          success: false,
+          status: null,
+          error: error instanceof Error ? error.message : String(error),
+        });
       });
     return true;
   }

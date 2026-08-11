@@ -8,6 +8,7 @@ import {
 
 export function hasCompleteProfileViewerIdentity(viewer: ProfileViewerInput): boolean {
   return (
+    viewer.identityUncertain !== true &&
     !isWeakProfileViewerDisplayName(viewer.displayName, viewer.linkedinUsername) &&
     isUsableLinkedInProfileImageUrl(viewer.profileImageUrl)
   );
@@ -18,6 +19,20 @@ export function profileViewerNeedsEnrichment(
   existingViewer: ProfileViewer | undefined,
   existingImageIsAmbiguous: boolean
 ): boolean {
+  if (viewer.identityUncertain === true) {
+    return true;
+  }
+
+  // If the current LinkedIn response no longer confirms a stored avatar,
+  // verify it by the exact username before preserving it. This repairs image
+  // URLs that older RSC parsing attached to the wrong viewer.
+  if (
+    !isUsableLinkedInProfileImageUrl(viewer.profileImageUrl) &&
+    isUsableLinkedInProfileImageUrl(existingViewer?.profileImageUrl)
+  ) {
+    return true;
+  }
+
   if (hasCompleteProfileViewerIdentity(viewer)) {
     return false;
   }

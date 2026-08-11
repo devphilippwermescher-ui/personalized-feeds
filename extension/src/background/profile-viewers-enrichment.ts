@@ -106,23 +106,27 @@ export function mergeProfileViewerWithPageMetadata(
   metadata: ProfileViewerPageMetadata,
   existing?: Partial<ProfileViewer>
 ): ProfileViewerInput {
-  const parsedOrMetadataDisplayName = chooseProfileViewerDisplayName(
-    viewer.displayName,
-    metadata.displayName,
-    viewer.linkedinUsername
-  );
+  // An avatar alone proves only the image. It must not turn a display name
+  // guessed from a neighbouring RSC entity into a verified identity.
+  const hasTrustedDisplayName = Boolean(metadata.displayName);
+  const ignoreUnverifiedExistingIdentity = viewer.identityUncertain === true;
+  const parsedOrMetadataDisplayName =
+    ignoreUnverifiedExistingIdentity && metadata.displayName
+      ? metadata.displayName
+      : chooseProfileViewerDisplayName(viewer.displayName, metadata.displayName, viewer.linkedinUsername);
 
   return {
     ...viewer,
     displayName: chooseProfileViewerDisplayName(
       parsedOrMetadataDisplayName,
-      existing?.displayName,
+      ignoreUnverifiedExistingIdentity ? undefined : existing?.displayName,
       viewer.linkedinUsername
     ),
     profileImageUrl: chooseProfileViewerImageUrl(
       metadata.profileImageUrl || viewer.profileImageUrl,
-      existing?.profileImageUrl
+      ignoreUnverifiedExistingIdentity ? undefined : existing?.profileImageUrl
     ),
     isPremium: metadata.isPremium === true ? true : viewer.isPremium ?? existing?.isPremium,
+    identityUncertain: ignoreUnverifiedExistingIdentity && !hasTrustedDisplayName,
   };
 }

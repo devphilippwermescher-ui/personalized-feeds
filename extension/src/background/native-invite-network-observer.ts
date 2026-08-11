@@ -1,7 +1,7 @@
 import { trackConnectionInviteSent } from 'shared/firestore-service';
 import { getAuthenticatedFeedsUser } from './feeds-auth';
-import { queueConnectionInvitesStatusSync } from './connection-invites-sync';
 import { resolveLinkedInProfileIdentity } from './linkedin-profile-identity-resolver';
+import { queueProfileAnalyticsSync } from './profile-analytics-sync-coordinator';
 
 const INVITE_CONTEXT_MAX_AGE_MS = 2 * 60 * 1000;
 
@@ -17,8 +17,10 @@ const contextsByTabId = new Map<number, NativeInviteContext>();
 function isLinkedInInviteCreationRequest(urlValue: string): boolean {
   try {
     const url = new URL(urlValue);
-    return /\/voyager\/api\/voyagerRelationshipsDashMemberRelationships$/i.test(url.pathname) &&
-      url.searchParams.get('action') === 'verifyQuotaAndCreateV2';
+    return (
+      /\/voyager\/api\/voyagerRelationshipsDashMemberRelationships$/i.test(url.pathname) &&
+      url.searchParams.get('action') === 'verifyQuotaAndCreateV2'
+    );
   } catch {
     return false;
   }
@@ -66,29 +68,32 @@ async function trackCompletedNativeInvite(tabId: number): Promise<void> {
     linkedinUsername: identity.linkedinUsername,
     profileUrn: identity.profileUrn,
   });
-  await queueConnectionInvitesStatusSync('invite_sent', { urgent: true });
+  await queueProfileAnalyticsSync('invite_sent', tabId);
 }
 
 export function initNativeInviteNetworkObserver(): void {
-  chrome.webRequest?.onCompleted.addListener((details) => {
-    if (
-      details.tabId < 0 ||
-      details.method !== 'POST' ||
-      details.statusCode < 200 ||
-      details.statusCode >= 300 ||
-      !isLinkedInInviteCreationRequest(details.url)
-    ) {
-      return;
-    }
+  chrome.webRequest?.onCompleted.addListener(
+    (details) => {
+      if (
+        details.tabId < 0 ||
+        details.method !== 'POST' ||
+        details.statusCode < 200 ||
+        details.statusCode >= 300 ||
+        !isLinkedInInviteCreationRequest(details.url)
+      ) {
+        return;
+      }
 
-    console.info('[connection-invites] LinkedIn invite request completed', {
-      tabId: details.tabId,
-      statusCode: details.statusCode,
-    });
-    void trackCompletedNativeInvite(details.tabId).catch((error) => {
-      console.warn('[connection-invites] failed to track completed LinkedIn invite request', error);
-    });
-  }, {
-    urls: ['https://www.linkedin.com/voyager/api/voyagerRelationshipsDashMemberRelationships*'],
-  });
+      console.info('[connection-invites] LinkedIn invite request completed', {
+        tabId: details.tabId,
+        statusCode: details.statusCode,
+      });
+      void trackCompletedNativeInvite(details.tabId).catch((error) => {
+        console.warn('[connection-invites] failed to track completed LinkedIn invite request', error);
+      });
+    },
+    {
+      urls: ['https://www.linkedin.com/voyager/api/voyagerRelationshipsDashMemberRelationships*'],
+    }
+  );
 }

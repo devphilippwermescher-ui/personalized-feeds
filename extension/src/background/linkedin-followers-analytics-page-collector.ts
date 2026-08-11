@@ -11,8 +11,16 @@ export interface LinkedInFollowersAnalyticsRscResponse {
 export async function collectFollowersAnalyticsRscInLinkedInPage(
   csrfToken: string,
   requestUrl: string,
-  requestBody: string
+  requestBody: string,
+  requestTimeoutMs: number
 ): Promise<LinkedInFollowersAnalyticsRscResponse> {
+  const controller = new AbortController();
+  let timedOut = false;
+  const timeoutId = window.setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, requestTimeoutMs);
+
   try {
     const response = await fetch(requestUrl, {
       method: 'POST',
@@ -24,6 +32,7 @@ export async function collectFollowersAnalyticsRscInLinkedInPage(
         'x-li-rsc-stream': 'true',
       },
       body: requestBody,
+      signal: controller.signal,
     });
 
     if (!response.ok) {
@@ -38,6 +47,11 @@ export async function collectFollowersAnalyticsRscInLinkedInPage(
       httpStatus: response.status,
     };
   } catch (error) {
+    if (timedOut) {
+      return { error: `LinkedIn Audience Analytics request timed out after ${requestTimeoutMs}ms.` };
+    }
     return { error: error instanceof Error ? error.message : String(error) };
+  } finally {
+    window.clearTimeout(timeoutId);
   }
 }

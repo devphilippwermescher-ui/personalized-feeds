@@ -42,6 +42,9 @@ export async function collectSocialSellingIndexInLinkedInPage(url: string): Prom
     return null;
   }
 
+  const controller = new AbortController();
+  const requestTimeoutId = setTimeout(() => controller.abort(), 8_000);
+
   try {
     const response = await fetch(url, {
       method: 'GET',
@@ -49,6 +52,7 @@ export async function collectSocialSellingIndexInLinkedInPage(url: string): Prom
       cache: 'no-store',
       referrer: 'https://www.linkedin.com/sales/ssi',
       headers: { accept: '*/*' },
+      signal: controller.signal,
     });
     if (!response.ok) return (await waitForVisibleScore(response.status)) || { ok: false, status: response.status };
 
@@ -67,5 +71,7 @@ export async function collectSocialSellingIndexInLinkedInPage(url: string): Prom
     return (
       (await waitForVisibleScore()) || { ok: false, error: error instanceof Error ? error.message : String(error) }
     );
+  } finally {
+    clearTimeout(requestTimeoutId);
   }
 }

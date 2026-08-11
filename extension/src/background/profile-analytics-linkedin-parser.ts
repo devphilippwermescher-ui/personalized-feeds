@@ -62,11 +62,21 @@ export function profileSnapshotFromProfileView(
   const displayName =
     `${getString(profile.firstName || miniProfile?.firstName)} ${getString(profile.lastName || miniProfile?.lastName)}`.trim() ||
     fallback.displayName;
+  const geoLocation = isRecord(profile.geoLocation) ? profile.geoLocation : undefined;
+  const geoReference = getString(geoLocation?.['*geo']) || getString(profile['*geoLocation']);
+  const geoEntity = findIncludedEntity(payload, geoReference);
   const city =
     getString(profile.geoLocationName) ||
     getString(profile.locationName) ||
+    getString(geoLocation?.defaultLocalizedName) ||
+    getString(getNestedRecord(geoLocation || {}, ['geo'])?.defaultLocalizedName) ||
+    getString(geoEntity?.defaultLocalizedName) ||
     findFirstStringByKey(payload, /^(?:geoLocationName|locationName)$/i);
   const country = getString(profile.geoCountryName) || findFirstStringByKey(payload, /^geoCountryName$/i);
+  const location =
+    city && country && city.toLocaleLowerCase().includes(country.toLocaleLowerCase())
+      ? city
+      : compactJoin([city, country]);
 
   return {
     ...fallback,
@@ -79,7 +89,7 @@ export function profileSnapshotFromProfileView(
       chooseVectorImageUrl(profile.backgroundImage) ||
       chooseVectorImageUrl(miniProfile?.backgroundImage) ||
       fallback.backgroundImageUrl,
-    location: compactJoin([city, country]) || getString(profile.location) || fallback.location,
+    location: location || getString(profile.location) || fallback.location,
     updatedAt: collectedAt,
     sourceUrl,
   };

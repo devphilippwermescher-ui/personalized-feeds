@@ -1,10 +1,14 @@
 import { fetchWithTimeout } from './fetch-with-timeout';
 import { collectConnectionsInLinkedInPage } from './linkedin-connections-page-collector';
 import type { LinkedInConnectionsRscPage, LinkedInConnectionsSnapshot } from './linkedin-connections-types';
+import { withPromiseTimeout } from './promise-timeout';
 
 export type { LinkedInConnectionsRscPage, LinkedInConnectionsSnapshot } from './linkedin-connections-types';
 
 const CONNECTIONS_RSC_TIMEOUT_MS = 20_000;
+const CONNECTIONS_TAB_REQUEST_TIMEOUT_MS = 10_000;
+const CONNECTIONS_TAB_WORK_TIMEOUT_MS = 17_000;
+const CONNECTIONS_TAB_SCRIPT_TIMEOUT_MS = 20_000;
 const CONNECTIONS_PAGER_ID = 'com.linkedin.sdui.pagers.mynetwork.connectionsList';
 const CONNECTIONS_SORT_STATE_KEY = 'connectionsListSortOption';
 const CONNECTIONS_SORT_NAMESPACE = 'connectionsListSortOptionMenu';
@@ -345,34 +349,44 @@ async function fetchLinkedInConnectionsSnapshotFromBackground(
 export async function fetchLinkedInConnectionsSnapshot(
   csrfToken: string,
   linkedInTabId?: number,
-  options: { includeHistory?: boolean; knownConnectionIds?: string[] } = {}
+  options: { includeHistory?: boolean; knownConnectionIds?: string[]; maxPages?: number } = {}
 ): Promise<LinkedInConnectionsSnapshot> {
   const includeHistory = options.includeHistory !== false;
   const knownConnectionIds = options.knownConnectionIds || [];
-  const maxPages = includeHistory || knownConnectionIds.length > 0 ? MAX_CONNECTIONS_PAGES_PER_SYNC : 1;
+  const defaultMaxPages = includeHistory || knownConnectionIds.length > 0 ? MAX_CONNECTIONS_PAGES_PER_SYNC : 1;
+  const maxPages =
+    typeof options.maxPages === 'number' && Number.isSafeInteger(options.maxPages) && options.maxPages > 0
+      ? Math.min(options.maxPages, defaultMaxPages)
+      : defaultMaxPages;
 
   if (typeof linkedInTabId === 'number') {
     try {
-      const results = await chrome.scripting.executeScript({
-        target: { tabId: linkedInTabId },
-        world: 'MAIN',
-        func: collectConnectionsInLinkedInPage,
-        args: [
-          csrfToken,
-          CONNECTIONS_RSC_URL,
-          CONNECTIONS_PAGINATION_URL,
-          CONNECTIONS_RSC_BODY,
-          CONNECTIONS_PAGER_ID,
-          CONNECTIONS_SORT_STATE_KEY,
-          CONNECTIONS_SORT_NAMESPACE,
-          CONNECTIONS_SCREEN_ID,
-          maxPages,
-          knownConnectionIds,
-          CONNECTIONS_PAGINATION_DELAY_MS,
-          CONNECTIONS_PAGINATION_BATCH_SIZE,
-          CONNECTIONS_PAGINATION_BATCH_COOLDOWN_MS,
-        ],
-      });
+      const results = await withPromiseTimeout(
+        chrome.scripting.executeScript({
+          target: { tabId: linkedInTabId },
+          world: 'MAIN',
+          func: collectConnectionsInLinkedInPage,
+          args: [
+            csrfToken,
+            CONNECTIONS_RSC_URL,
+            CONNECTIONS_PAGINATION_URL,
+            CONNECTIONS_RSC_BODY,
+            CONNECTIONS_PAGER_ID,
+            CONNECTIONS_SORT_STATE_KEY,
+            CONNECTIONS_SORT_NAMESPACE,
+            CONNECTIONS_SCREEN_ID,
+            maxPages,
+            knownConnectionIds,
+            CONNECTIONS_PAGINATION_DELAY_MS,
+            CONNECTIONS_PAGINATION_BATCH_SIZE,
+            CONNECTIONS_PAGINATION_BATCH_COOLDOWN_MS,
+            CONNECTIONS_TAB_REQUEST_TIMEOUT_MS,
+            CONNECTIONS_TAB_WORK_TIMEOUT_MS,
+          ],
+        }),
+        CONNECTIONS_TAB_SCRIPT_TIMEOUT_MS,
+        'LinkedIn Connections tab script'
+      );
       const result = results[0]?.result;
       if (result && typeof result === 'object' && 'connectionDateCounts' in result) {
         const snapshot = result as LinkedInConnectionsSnapshot & { error?: string };

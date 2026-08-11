@@ -4,6 +4,7 @@ import {
   extractFollowersCountFromGraphql,
   extractFollowersCountFromNetworkInfo,
 } from '../profile-analytics-linkedin-api';
+import { profileSnapshotFromProfileView } from '../profile-analytics-linkedin-parser';
 
 describe('profile analytics LinkedIn API parsing', () => {
   it('prefers the precise My Network connection total over the public profile count', () => {
@@ -53,5 +54,31 @@ describe('profile analytics LinkedIn API parsing', () => {
         data: { data: { messagingDashAffiliatedMailboxesAll: { totalResultCount: 99 } } },
       })
     ).toBeUndefined();
+  });
+
+  it('resolves location from the current normalized profile geo entity', () => {
+    const fallback = {
+      linkedinUrl: 'https://www.linkedin.com/in/example-user/',
+      linkedinUsername: 'example-user',
+      displayName: 'Example User',
+      updatedAt: 1,
+      sourceUrl: 'https://www.linkedin.com/voyager/api/me',
+    };
+
+    expect(
+      profileSnapshotFromProfileView(
+        {
+          data: {
+            firstName: 'Example',
+            lastName: 'User',
+            geoLocation: { '*geo': 'urn:li:fs_geo:123' },
+          },
+          included: [{ entityUrn: 'urn:li:fs_geo:123', defaultLocalizedName: 'Lviv, Ukraine' }],
+        },
+        fallback,
+        2,
+        'https://www.linkedin.com/voyager/api/identity/profiles/example-user'
+      ).location
+    ).toBe('Lviv, Ukraine');
   });
 });

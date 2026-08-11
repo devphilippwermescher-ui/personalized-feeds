@@ -51,4 +51,53 @@ describe('profile viewer page enrichment', () => {
 
     expect(result.displayName).toBe('Alia Waleczek');
   });
+
+  it('repairs an uncertain mixed identity with metadata from the exact profile URL', () => {
+    const result = mergeProfileViewerWithPageMetadata(
+      {
+        linkedinUrl: 'https://www.linkedin.com/in/julia-mozharova/',
+        linkedinUsername: 'julia-mozharova',
+        displayName: 'Julia Mozharova',
+        profileImageUrl:
+          'https://media.licdn.com/dms/image/v2/adam/profile-displayphoto-shrink_100_100/photo?e=4102444800',
+        identityUncertain: true,
+      },
+      {
+        displayName: 'Julia Mozharova',
+        profileImageUrl:
+          'https://media.licdn.com/dms/image/v2/julia/profile-displayphoto-shrink_100_100/photo?e=4102444800',
+      },
+      {
+        displayName: 'Julia Mozharova',
+        profileImageUrl:
+          'https://media.licdn.com/dms/image/v2/adam/profile-displayphoto-shrink_100_100/photo?e=4102444800',
+      }
+    );
+
+    expect(result.profileImageUrl).toContain('/julia/');
+    expect(result.profileImageUrl).not.toContain('/adam/');
+    expect(result.identityUncertain).toBe(false);
+  });
+
+  it('does not verify an uncertain display name when the exact page yields only an avatar', () => {
+    const result = mergeProfileViewerWithPageMetadata(
+      {
+        linkedinUrl: 'https://www.linkedin.com/in/ACoAAAdamToken123/',
+        linkedinUsername: 'acoaaadamtoken123',
+        displayName: 'Julia Mozharova',
+        profileImageUrl: '',
+        identityUncertain: true,
+      },
+      {
+        displayName: '',
+        profileImageUrl:
+          'https://media.licdn.com/dms/image/v2/adam/profile-displayphoto-shrink_100_100/photo?e=4102444800',
+      },
+      undefined
+    );
+
+    expect(result.displayName).toBe('Julia Mozharova');
+    expect(result.profileImageUrl).toContain('/adam/');
+    expect(result.identityUncertain).toBe(true);
+  });
 });

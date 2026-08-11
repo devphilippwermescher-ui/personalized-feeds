@@ -245,7 +245,8 @@ async function runProfileViewersSyncCoordinator(
       },
       {
         ignoreRequestBudget: force,
-        pruneStaleAfterComplete: force && trigger === 'manual',
+        pruneStaleAfterComplete: false,
+        repairStoredIdentityMismatches: force && trigger === 'manual',
       }
     );
     const finishedAt = Date.now();

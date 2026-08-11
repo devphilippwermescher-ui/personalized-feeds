@@ -160,4 +160,42 @@ describe('parseProfileViewersFromPayload', () => {
       })
     );
   });
+
+  it('marks a cross-profile RSC context as uncertain and refuses its avatar', () => {
+    const payload = [
+      '"url":"https://www.linkedin.com/in/julia-mozharova/"',
+      '"children":[[null,"Adam Ivaniush"',
+      '"children":["Backend Developer"]',
+      '"a11yText":"Adam Ivaniush","shape":"circle","renderPayload":{"rootUrl":"https://media.licdn.com/dms/image/v2/adam/profile-displayphoto-shrink_",',
+      '"imageRenditions":[{"width":100,"height":100,"suffixUrl":"100_100/photo"}],"assetUrn":"urn:li:digitalmediaAsset:adam"}',
+    ].join(',');
+
+    expect(parseProfileViewersFromPayload(payload)).toEqual([
+      expect.objectContaining({
+        linkedinUsername: 'julia-mozharova',
+        displayName: 'Julia Mozharova',
+        profileImageUrl: '',
+        identityUncertain: true,
+      }),
+    ]);
+  });
+
+  it('never trusts a display name associated only by an opaque LinkedIn member token', () => {
+    const payload = [
+      '"url":"https://www.linkedin.com/in/ACoAAVeryOpaqueMemberToken123/"',
+      '"children":[[null,"Alina Diachenko"',
+      '"children":["Back-end Developer"]',
+      '"a11yText":"Alina Diachenko","shape":"circle","renderPayload":{"rootUrl":"https://media.licdn.com/dms/image/v2/alina/profile-displayphoto-shrink_",',
+      '"imageRenditions":[{"width":100,"height":100,"suffixUrl":"100_100/photo"}],"assetUrn":"urn:li:digitalmediaAsset:alina"}',
+    ].join(',');
+
+    expect(parseProfileViewersFromPayload(payload)).toEqual([
+      expect.objectContaining({
+        linkedinUsername: 'acoaaveryopaquemembertoken123',
+        displayName: 'Alina Diachenko',
+        profileImageUrl: '',
+        identityUncertain: true,
+      }),
+    ]);
+  });
 });

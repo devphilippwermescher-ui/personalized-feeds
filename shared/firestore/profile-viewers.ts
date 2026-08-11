@@ -129,6 +129,7 @@ export async function upsertProfileViewers(
     }))
     .filter(
       (entry) =>
+        entry.viewer.identityUncertain !== true &&
         isValidLinkedInProfileUsername(entry.linkedinUsername) &&
         Boolean(entry.viewer.linkedinUrl) &&
         Boolean(entry.viewer.displayName.trim())

@@ -1,9 +1,9 @@
 import { normalizeFeedsError } from './feeds-errors';
 import { trackConnectionInviteSent } from 'shared/firestore-service';
 import { getAuthenticatedFeedsUser } from './feeds-auth';
-import { queueConnectionInvitesStatusSync } from './connection-invites-sync';
 import { resolveLinkedInProfileIdentity } from './linkedin-profile-identity-resolver';
 import { rememberNativeInviteContext } from './native-invite-network-observer';
+import { queueProfileAnalyticsSync } from './profile-analytics-sync-coordinator';
 import {
   resolveLinkedInRelationshipStatusInBackground,
   sendLinkedInConnectRequestInBackground,
@@ -120,7 +120,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           hasProfileUrn: typeof invite.profileUrn === 'string' && invite.profileUrn.length > 0,
           hasMemberNumericId: typeof invite.memberNumericId === 'string' && invite.memberNumericId.length > 0,
         });
-        await queueConnectionInvitesStatusSync('invite_sent', { urgent: true }).catch(() => undefined);
+        await queueProfileAnalyticsSync('invite_sent', sender.tab?.id).catch(() => undefined);
         sendResponse({ success: true });
       })
       .catch((error) => {

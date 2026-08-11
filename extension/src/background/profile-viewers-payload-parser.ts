@@ -127,6 +127,7 @@ function extractProfileViewerFromAnchor(
     viewedAgoText,
     mutualConnectionsText,
     isPremium: hasExplicitProfileViewerPremiumSignal(anchorHtml) || undefined,
+    identityUncertain: false,
     sourceIndex,
   };
 }
@@ -212,6 +213,13 @@ function getMeaningfulSlugParts(linkedinUsername: string): string[] {
   return linkedinUsername
     .split(/[-_]+/)
     .filter((part) => part.length > 2 && !/^\d+$/.test(part));
+}
+
+function isOpaqueLinkedInProfileUsername(linkedinUsername: string): boolean {
+  // LinkedIn frequently uses member tokens such as ACoAA... in Wvmp links.
+  // Unlike a public vanity slug, the token contains no name parts that can be
+  // used to prove that a nearby RSC text node belongs to this profile.
+  return /^aco[a-z0-9_-]{8,}$/i.test(linkedinUsername);
 }
 
 function chooseDisplayNameForProfileContext(
@@ -350,9 +358,14 @@ function parseProfileViewersFromRscPayload(payload: string): ProfileViewerInput[
     );
     const referenceContext = normalizedPayload.slice(referenceContextStart, referenceContextEnd);
     const referenceStrings = extractQuotedStrings(referenceContext);
-    const displayNameCandidate =
-      pickDisplayNameFromStrings(referenceStrings, profile.linkedinUsername) ||
-      humanizeLinkedInUsername(profile.linkedinUsername);
+    const parsedDisplayNameCandidate = pickDisplayNameFromStrings(referenceStrings, profile.linkedinUsername);
+    const displayNameCandidate = parsedDisplayNameCandidate || humanizeLinkedInUsername(profile.linkedinUsername);
+    const meaningfulSlugParts = getMeaningfulSlugParts(profile.linkedinUsername);
+    const identityUncertain =
+      !parsedDisplayNameCandidate ||
+      isOpaqueLinkedInProfileUsername(profile.linkedinUsername) ||
+      (meaningfulSlugParts.length >= 2 &&
+        scoreProfileSlugMatch(parsedDisplayNameCandidate, profile.linkedinUsername) === 0);
     const displayName = chooseDisplayNameForProfileContext(
       displayNameCandidate,
       profile.linkedinUsername
@@ -374,11 +387,16 @@ function parseProfileViewersFromRscPayload(payload: string): ProfileViewerInput[
       ...profile,
       displayName,
       headline: pickHeadlineFromStrings(referenceStrings, displayName, profile.linkedinUsername),
-      profileImageUrl: imageUrlsByDisplayName.get(displayName.toLowerCase()) || '',
+      // A name synthesized from the slug must never claim an avatar found in
+      // a neighbouring RSC component. Enrichment will resolve it by username.
+      profileImageUrl: identityUncertain
+        ? ''
+        : imageUrlsByDisplayName.get(displayName.toLowerCase()) || '',
       connectionDegree,
       viewedAgoText,
       mutualConnectionsText,
       isPremium: hasExplicitProfileViewerPremiumSignal(referenceContext) || undefined,
+      identityUncertain,
       sourceIndex: profile.index,
     });
   }

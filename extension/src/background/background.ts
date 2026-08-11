@@ -6,11 +6,7 @@ import {
   queueProfileViewersStatusSync,
   runProfileViewersStatusSync,
 } from './profile-viewers-status-sync';
-import {
-  CONNECTION_INVITES_STATUS_ALARM_NAME,
-  queueConnectionInvitesStatusSync,
-  runConnectionInvitesStatusSync,
-} from './connection-invites-sync';
+import { CONNECTION_INVITES_STATUS_ALARM_NAME } from './connection-invites-sync';
 import { initNativeInviteNetworkObserver } from './native-invite-network-observer';
 import {
   forgetProfileAnalyticsLinkedInTab,
@@ -30,7 +26,6 @@ chrome.runtime.onInstalled.addListener((details) => {
   });
   void queueProfileViewersSync(trigger);
   void queueProfileViewersStatusSync({ trigger, urgent: true });
-  void queueConnectionInvitesStatusSync(trigger);
   void queueProfileAnalyticsSync(trigger);
 });
 
@@ -41,20 +36,23 @@ chrome.runtime.onStartup.addListener(() => {
   });
   void queueProfileViewersSync('chrome_startup');
   void queueProfileViewersStatusSync({ trigger: 'chrome_startup' });
-  void queueConnectionInvitesStatusSync('chrome_startup');
   void queueProfileAnalyticsSync('chrome_startup');
 });
 
 chrome.alarms?.onAlarm.addListener((alarm) => {
   if (alarm.name === PROFILE_ANALYTICS_ALARM_NAME) {
+    const receivedAt = Date.now();
+    console.info('[profile-analytics] alarm fired', {
+      alarmName: alarm.name,
+      scheduledAt: alarm.scheduledTime,
+      scheduledAtIso: new Date(alarm.scheduledTime).toISOString(),
+      receivedAt,
+      receivedAtIso: new Date(receivedAt).toISOString(),
+      delayMs: Math.max(0, receivedAt - alarm.scheduledTime),
+    });
     void queueProfileAnalyticsSync('alarm');
     return;
   }
-  if (alarm.name === CONNECTION_INVITES_STATUS_ALARM_NAME) {
-    void runConnectionInvitesStatusSync('alarm');
-    return;
-  }
-
   if (alarm.name === PROFILE_VIEWERS_STATUS_ALARM_NAME) {
     void runProfileViewersStatusSync('alarm');
     return;
@@ -82,7 +80,17 @@ void appendProfileViewersWakeEvent({
 });
 void queueProfileViewersSync('service_worker');
 void queueProfileViewersStatusSync({ trigger: 'service_worker' });
-void queueConnectionInvitesStatusSync('service_worker');
+// Acceptance Rate is now reconciled by the shared Profile Analytics alarm.
+// Remove the legacy standalone invitation-status alarm after upgrading.
+void chrome.alarms?.clear(CONNECTION_INVITES_STATUS_ALARM_NAME);
+void chrome.alarms?.get(PROFILE_ANALYTICS_ALARM_NAME).then((alarm) => {
+  console.info('[profile-analytics] alarm state on worker load', {
+    alarmName: PROFILE_ANALYTICS_ALARM_NAME,
+    exists: Boolean(alarm),
+    scheduledAt: alarm?.scheduledTime,
+    scheduledAtIso: alarm ? new Date(alarm.scheduledTime).toISOString() : undefined,
+  });
+});
 void migrateToIndependentLinkedInSync().then(() => queueProfileAnalyticsSync('service_worker'));
 
 import './external-message-handler';

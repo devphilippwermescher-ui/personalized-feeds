@@ -136,7 +136,9 @@ export function MetricTrendChart({
   }
 
   const tooltipX = hoveredIndex === null ? 0 : getX(hoveredIndex);
-  const tooltipLeft = Math.min(Math.max(tooltipX + 10, PLOT_LEFT), 472);
+  const tooltipValueLabel = hoveredPoint ? `${title}: ${valueFormatter(hoveredPoint.value)}` : '';
+  const tooltipWidth = Math.min(300, Math.max(126, tooltipValueLabel.length * 7 + 26));
+  const tooltipLeft = Math.min(Math.max(tooltipX + 10, PLOT_LEFT), PLOT_RIGHT - tooltipWidth);
 
   return (
     <section className="profile-analytics-card profile-analytics-metric-trend-card">
@@ -221,12 +223,12 @@ export function MetricTrendChart({
                   />
                 ) : null}
                 <g transform={`translate(${tooltipLeft} 76)`}>
-                  <rect width="126" height="62" rx="6" className="profile-analytics-chart-tooltip-bg" />
+                  <rect width={tooltipWidth} height="62" rx="6" className="profile-analytics-chart-tooltip-bg" />
                   <text x="13" y="23" className="profile-analytics-chart-tooltip-date">
                     {formatChartDate(hoveredPoint.date)}
                   </text>
                   <text x="13" y="48" fill={color} className="profile-analytics-chart-tooltip-value">
-                    {title}: {valueFormatter(hoveredPoint.value)}
+                    {tooltipValueLabel}
                   </text>
                 </g>
               </g>

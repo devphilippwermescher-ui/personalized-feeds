@@ -1,10 +1,27 @@
-export const PROFILE_ANALYTICS_SYNC_INTERVAL_MS = 6 * 60 * 60 * 1000;
+import type {
+  ProfileAnalyticsSyncMetric,
+  ProfileAnalyticsSyncMetricStatus,
+  ProfileAnalyticsSyncStatus,
+} from 'shared/types';
+
+export const PROFILE_ANALYTICS_NETWORK_SYNC_INTERVAL_MS = 60 * 60 * 1000;
+export const PROFILE_ANALYTICS_NETWORK_MIN_INTERVAL_MS = 55 * 60 * 1000;
+export const PROFILE_ANALYTICS_NETWORK_MAX_INTERVAL_MS = 65 * 60 * 1000;
+export const PROFILE_ANALYTICS_DASHBOARD_DEDUPE_MS = 2 * 60 * 1000;
+export const PROFILE_ANALYTICS_DAILY_SYNC_INTERVAL_MS = 24 * 60 * 60 * 1000;
 export const PROFILE_ANALYTICS_RETRY_DELAY_MS = 15 * 60 * 1000;
 export const PROFILE_ANALYTICS_RESTRICTION_RETRY_MS = 12 * 60 * 60 * 1000;
 export const PROFILE_ANALYTICS_HISTORY_START_DELAY_MS = 2 * 60 * 1000;
 export const PROFILE_ANALYTICS_HISTORY_RETRY_DELAY_MS = 60 * 60 * 1000;
-export const SEARCH_APPEARANCES_SYNC_TTL_MS = PROFILE_ANALYTICS_SYNC_INTERVAL_MS;
-export const SOCIAL_SELLING_INDEX_SYNC_TTL_MS = PROFILE_ANALYTICS_SYNC_INTERVAL_MS;
+export const PROFILE_ANALYTICS_ATTEMPT_LEASE_MS = 2 * 60 * 1000;
+export const PROFILE_ANALYTICS_REQUEST_WINDOW_MS = 24 * 60 * 60 * 1000;
+export const PROFILE_ANALYTICS_MAX_NETWORK_CYCLES_PER_WINDOW = 30;
+export const SEARCH_APPEARANCES_SYNC_TTL_MS = PROFILE_ANALYTICS_DAILY_SYNC_INTERVAL_MS;
+export const SOCIAL_SELLING_INDEX_SYNC_TTL_MS = PROFILE_ANALYTICS_DAILY_SYNC_INTERVAL_MS;
+
+// Compatibility name for callers that treat the current total collector as
+// the primary Profile Analytics cadence.
+export const PROFILE_ANALYTICS_SYNC_INTERVAL_MS = PROFILE_ANALYTICS_NETWORK_SYNC_INTERVAL_MS;
 
 export type ProfileAnalyticsSyncTrigger =
   | 'install'
@@ -14,7 +31,10 @@ export type ProfileAnalyticsSyncTrigger =
   | 'sign_in'
   | 'linkedin_open'
   | 'linkedin_activity'
-  | 'alarm';
+  | 'dashboard_open'
+  | 'invite_sent'
+  | 'alarm'
+  | 'manual';
 
 export type ProfileAnalyticsRetryKind = 'standard' | 'restriction';
 
@@ -23,26 +43,132 @@ export interface ProfileAnalyticsSyncRequest {
   preferredTabId?: number;
 }
 
+export interface ProfileAnalyticsSyncLog {
+  startedAt: number;
+  finishedAt: number;
+  trigger: ProfileAnalyticsSyncTrigger;
+  status: ProfileAnalyticsSyncStatus['status'];
+  metrics: ProfileAnalyticsSyncMetric[];
+  nextScheduledAt?: number;
+}
+
 export interface ProfileAnalyticsSyncState {
+  version: 1;
   userId: string;
-  lastAttemptAt?: number;
-  lastSuccessAt?: number;
-  nextRetryAt?: number;
+  networkLastAttemptAt?: number;
+  networkLastSuccessAt?: number;
+  networkNextDueAt?: number;
+  networkNextRetryAt?: number;
+  networkRetryKind?: ProfileAnalyticsRetryKind;
+  acceptanceNextDueAt?: number;
+  requestWindowStartedAt?: number;
+  networkCyclesInWindow: number;
+  searchLastAttemptAt?: number;
+  searchLastSuccessAt?: number;
+  searchNextRetryAt?: number;
+  searchRetryKind?: ProfileAnalyticsRetryKind;
   ssiLastAttemptAt?: number;
   ssiLastSuccessAt?: number;
   ssiNextRetryAt?: number;
-  ssiLastError?: string;
   ssiRetryKind?: ProfileAnalyticsRetryKind;
+  bootstrapLastAttemptAt?: number;
+  bootstrapCompletedAt?: number;
+  bootstrapNextRetryAt?: number;
+  bootstrapRetryKind?: ProfileAnalyticsRetryKind;
   historyLastAttemptAt?: number;
   historyCompletedAt?: number;
   historyNextRetryAt?: number;
-  lastError?: string;
-  retryKind?: ProfileAnalyticsRetryKind;
   historyLastError?: string;
+  attemptStartedAt?: number;
+  attemptExpiresAt?: number;
+  nextScheduledAt?: number;
+  status: ProfileAnalyticsSyncStatus;
+  logs: ProfileAnalyticsSyncLog[];
 }
 
-export function mustVerifyCurrentProfileAnalytics(trigger: ProfileAnalyticsSyncTrigger): boolean {
-  return trigger === 'install' || trigger === 'update' || trigger === 'sign_in' || trigger === 'linkedin_open';
+export function createProfileAnalyticsSyncState(userId: string): ProfileAnalyticsSyncState {
+  return {
+    version: 1,
+    userId,
+    networkCyclesInWindow: 0,
+    status: { status: 'idle', metrics: {} },
+    logs: [],
+  };
+}
+
+export function getProfileAnalyticsRequestBudgetResetAt(state: ProfileAnalyticsSyncState): number | undefined {
+  return state.requestWindowStartedAt ? state.requestWindowStartedAt + PROFILE_ANALYTICS_REQUEST_WINDOW_MS : undefined;
+}
+
+export function canRunProfileAnalyticsNetworkSync(state: ProfileAnalyticsSyncState, now: number): boolean {
+  const resetAt = getProfileAnalyticsRequestBudgetResetAt(state);
+  return !resetAt || now >= resetAt || state.networkCyclesInWindow < PROFILE_ANALYTICS_MAX_NETWORK_CYCLES_PER_WINDOW;
+}
+
+export function recordProfileAnalyticsNetworkSync(
+  state: ProfileAnalyticsSyncState,
+  now: number
+): ProfileAnalyticsSyncState {
+  const resetAt = getProfileAnalyticsRequestBudgetResetAt(state);
+  const resetWindow = !resetAt || now >= resetAt;
+  return {
+    ...state,
+    requestWindowStartedAt: resetWindow ? now : state.requestWindowStartedAt,
+    networkCyclesInWindow: resetWindow ? 1 : state.networkCyclesInWindow + 1,
+  };
+}
+
+export function getProfileAnalyticsScheduledIntervalMs(randomValue = Math.random()): number {
+  const normalized = Math.min(1, Math.max(0, randomValue));
+  return Math.round(
+    PROFILE_ANALYTICS_NETWORK_MIN_INTERVAL_MS +
+      normalized * (PROFILE_ANALYTICS_NETWORK_MAX_INTERVAL_MS - PROFILE_ANALYTICS_NETWORK_MIN_INTERVAL_MS)
+  );
+}
+
+export function isDashboardNetworkSyncDue(now: number, state?: ProfileAnalyticsSyncState): boolean {
+  return !state?.networkLastSuccessAt || now - state.networkLastSuccessAt >= PROFILE_ANALYTICS_DASHBOARD_DEDUPE_MS;
+}
+
+export function isCurrentProfileAnalyticsDue({
+  now,
+  state,
+}: {
+  now: number;
+  state?: ProfileAnalyticsSyncState;
+}): boolean {
+  if (!state?.networkLastSuccessAt) return true;
+  if (state.networkNextRetryAt && now < state.networkNextRetryAt) return false;
+  return state.networkNextDueAt
+    ? now >= state.networkNextDueAt
+    : now - state.networkLastSuccessAt >= PROFILE_ANALYTICS_NETWORK_SYNC_INTERVAL_MS;
+}
+
+function isDailyMetricDue(now: number, lastSuccessAt: number | undefined, nextRetryAt: number | undefined): boolean {
+  if (nextRetryAt && now < nextRetryAt) return false;
+  return !lastSuccessAt || now - lastSuccessAt >= PROFILE_ANALYTICS_DAILY_SYNC_INTERVAL_MS;
+}
+
+export function isSearchAppearancesDue({ now, state }: { now: number; state?: ProfileAnalyticsSyncState }): boolean {
+  return isDailyMetricDue(now, state?.searchLastSuccessAt, state?.searchNextRetryAt);
+}
+
+export function isSocialSellingIndexDue({ now, state }: { now: number; state?: ProfileAnalyticsSyncState }): boolean {
+  return isDailyMetricDue(now, state?.ssiLastSuccessAt, state?.ssiNextRetryAt);
+}
+
+function isRetryBlocked(
+  now: number,
+  nextRetryAt: number | undefined,
+  retryKind: ProfileAnalyticsRetryKind | undefined,
+  trigger: ProfileAnalyticsSyncTrigger
+): boolean {
+  if (!nextRetryAt || now >= nextRetryAt) return false;
+  if (retryKind === 'restriction') return true;
+  // A newly opened LinkedIn document can resolve a tab-specific network
+  // failure immediately. It may bypass only the short standard retry; real
+  // LinkedIn restrictions still remain blocked above.
+  return trigger !== 'manual' && trigger !== 'linkedin_open' && trigger !== 'sign_in';
 }
 
 export function isCurrentProfileAnalyticsRetryBlocked({
@@ -54,47 +180,19 @@ export function isCurrentProfileAnalyticsRetryBlocked({
   state?: ProfileAnalyticsSyncState;
   trigger: ProfileAnalyticsSyncTrigger;
 }): boolean {
-  if (typeof state?.nextRetryAt !== 'number' || now >= state.nextRetryAt) return false;
-
-  // A real LinkedIn restriction must be respected. Ordinary transient failures
-  // must not make reload/update/sign-in unable to repair stale Firestore data.
-  return state.retryKind === 'restriction' || !mustVerifyCurrentProfileAnalytics(trigger);
+  return isRetryBlocked(now, state?.networkNextRetryAt, state?.networkRetryKind, trigger);
 }
 
-function triggerPriority(trigger: ProfileAnalyticsSyncTrigger): number {
-  if (mustVerifyCurrentProfileAnalytics(trigger)) return 3;
-  if (trigger === 'chrome_startup' || trigger === 'service_worker') return 2;
-  return 1;
-}
-
-/** Keeps one strongest follow-up request while a per-domain sync is running. */
-export function selectPendingProfileAnalyticsRequest(
-  active: ProfileAnalyticsSyncRequest,
-  pending: ProfileAnalyticsSyncRequest | null,
-  incoming: ProfileAnalyticsSyncRequest
-): ProfileAnalyticsSyncRequest | null {
-  const incomingIsForced = mustVerifyCurrentProfileAnalytics(incoming.trigger);
-  const activeIsEquivalentForcedRequest =
-    incomingIsForced &&
-    incoming.trigger === active.trigger &&
-    incoming.preferredTabId === active.preferredTabId;
-  if (!incomingIsForced || activeIsEquivalentForcedRequest) return pending;
-  if (!pending || triggerPriority(incoming.trigger) >= triggerPriority(pending.trigger)) return incoming;
-  return pending;
-}
-
-export function isCurrentProfileAnalyticsDue({
+export function isSearchAppearancesRetryBlocked({
   now,
   state,
+  trigger,
 }: {
   now: number;
   state?: ProfileAnalyticsSyncState;
+  trigger: ProfileAnalyticsSyncTrigger;
 }): boolean {
-  // A newly installed sync-policy version must verify the current values once,
-  // even when an older extension recently touched the Firestore snapshot.
-  if (!state) return true;
-  if (state?.nextRetryAt && now < state.nextRetryAt) return false;
-  return !state.lastSuccessAt || now - state.lastSuccessAt >= PROFILE_ANALYTICS_SYNC_INTERVAL_MS;
+  return isRetryBlocked(now, state?.searchNextRetryAt, state?.searchRetryKind, trigger);
 }
 
 export function isSocialSellingIndexRetryBlocked({
@@ -106,19 +204,7 @@ export function isSocialSellingIndexRetryBlocked({
   state?: ProfileAnalyticsSyncState;
   trigger: ProfileAnalyticsSyncTrigger;
 }): boolean {
-  if (typeof state?.ssiNextRetryAt !== 'number' || now >= state.ssiNextRetryAt) return false;
-  return state.ssiRetryKind === 'restriction' || !mustVerifyCurrentProfileAnalytics(trigger);
-}
-
-export function isSocialSellingIndexDue({
-  now,
-  state,
-}: {
-  now: number;
-  state?: ProfileAnalyticsSyncState;
-}): boolean {
-  if (!state?.ssiLastSuccessAt) return true;
-  return now - state.ssiLastSuccessAt >= SOCIAL_SELLING_INDEX_SYNC_TTL_MS;
+  return isRetryBlocked(now, state?.ssiNextRetryAt, state?.ssiRetryKind, trigger);
 }
 
 export function isConnectionHistoryDue({
@@ -132,4 +218,47 @@ export function isConnectionHistoryDue({
 }): boolean {
   if (historyComplete) return false;
   return !state?.historyNextRetryAt || now >= state.historyNextRetryAt;
+}
+
+export function updateMetricStatus(
+  state: ProfileAnalyticsSyncState,
+  metric: ProfileAnalyticsSyncMetric,
+  patch: Partial<ProfileAnalyticsSyncMetricStatus> & Pick<ProfileAnalyticsSyncMetricStatus, 'status'>
+): ProfileAnalyticsSyncState {
+  return {
+    ...state,
+    status: {
+      ...state.status,
+      metrics: {
+        ...state.status.metrics,
+        [metric]: {
+          ...state.status.metrics[metric],
+          ...patch,
+        },
+      },
+    },
+  };
+}
+
+function triggerPriority(trigger: ProfileAnalyticsSyncTrigger): number {
+  if (trigger === 'manual') return 4;
+  if (trigger === 'dashboard_open') return 3;
+  if (trigger === 'sign_in' || trigger === 'install' || trigger === 'update') return 2;
+  return 1;
+}
+
+/** Keeps only one strongest follow-up request while the coordinator is active. */
+export function selectPendingProfileAnalyticsRequest(
+  active: ProfileAnalyticsSyncRequest,
+  pending: ProfileAnalyticsSyncRequest | null,
+  incoming: ProfileAnalyticsSyncRequest
+): ProfileAnalyticsSyncRequest | null {
+  if (incoming.trigger === active.trigger && incoming.preferredTabId === active.preferredTabId) {
+    return pending;
+  }
+  if (triggerPriority(incoming.trigger) <= triggerPriority(active.trigger) && incoming.trigger !== 'dashboard_open') {
+    return pending;
+  }
+  if (!pending || triggerPriority(incoming.trigger) >= triggerPriority(pending.trigger)) return incoming;
+  return pending;
 }

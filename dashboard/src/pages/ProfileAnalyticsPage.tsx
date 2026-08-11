@@ -12,6 +12,7 @@ import { ConnectionsFollowersChart } from '../features/profile-analytics/compone
 import { MetricCard } from '../features/profile-analytics/components/MetricCard';
 import { ProfileAnalyticsHero } from '../features/profile-analytics/components/ProfileAnalyticsHero';
 import { ProfileAnalyticsSkeleton } from '../features/profile-analytics/components/ProfileAnalyticsSkeleton';
+import { ProfileAnalyticsSyncNotice } from '../features/profile-analytics/components/ProfileAnalyticsSyncNotice';
 import { useAnalyticsDateRange } from '../features/profile-analytics/hooks/useAnalyticsDateRange';
 import { useProfileAnalyticsViewModel } from '../features/profile-analytics/hooks/useProfileAnalyticsViewModel';
 import { formatNumber, formatPercent } from '../utils/format';
@@ -50,6 +51,8 @@ export default function ProfileAnalyticsPage({ userId }: ProfileAnalyticsPagePro
         />
       </div>
 
+      <ProfileAnalyticsSyncNotice status={analytics.syncStatus} extensionError={analytics.syncStatusError} />
+
       {analytics.error ? (
         <div className="profile-analytics-alert profile-analytics-alert--error">{analytics.error}</div>
       ) : null}
@@ -66,7 +69,7 @@ export default function ProfileAnalyticsPage({ userId }: ProfileAnalyticsPagePro
           icon={<HiOutlineHeart />}
           value={formatNumber(analytics.followersCurrentTotal)}
           label="Followers"
-          rangeLabel="Current total"
+          rangeLabel={dateRange.rangeLabel}
           tone="cyan"
           tooltip="Current total. Past totals are reconstructed from LinkedIn follower growth."
         />

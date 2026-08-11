@@ -30,6 +30,7 @@ import {
   updateExistingProfileViewerSnapshot,
 } from './profile-viewers-enrichment-service';
 import type { ProfileViewersSyncResult } from './profile-viewers-sync-result';
+import { repairStoredProfileViewerIdentityMismatches } from './profile-viewers-stored-identity-repair';
 
 export async function syncProfileViewersViaApi(
   authenticatedUser: User | undefined,
@@ -38,6 +39,7 @@ export async function syncProfileViewersViaApi(
   options: {
     ignoreRequestBudget?: boolean;
     pruneStaleAfterComplete?: boolean;
+    repairStoredIdentityMismatches?: boolean;
   } = {}
 ): Promise<ProfileViewersSyncResult> {
   const user = authenticatedUser;
@@ -79,6 +81,7 @@ export async function syncProfileViewersViaApi(
   let recruiterViewerUrl: string | undefined;
   let responseLength = 0;
   let httpStatus = 200;
+  let hadUnresolvedIdentities = false;
   let cursor: ProfileViewersPaginationCursor | null =
     paginationMode === 'backfill' &&
     syncState.backfillStatus === 'in_progress' &&
@@ -105,9 +108,48 @@ export async function syncProfileViewersViaApi(
     responseLength += page.responseLength;
     httpStatus = page.httpStatus;
 
+    const untrustedRscIdentities = page.viewers
+      .filter((viewer) => viewer.identityUncertain === true)
+      .map((viewer) => ({
+        linkedinUsername: viewer.linkedinUsername,
+        linkedinUrl: viewer.linkedinUrl,
+        parsedDisplayName: viewer.displayName,
+      }));
+    if (untrustedRscIdentities.length > 0) {
+      console.warn('[profile-viewers-sync] untrusted identities parsed from WvmpEntityList', {
+        identities: untrustedRscIdentities,
+      });
+    }
+
     const existingSnapshot = Array.from(existingByUsername.values());
     const enrichment = await enrichVisibleProfileViewers(page.viewers, existingSnapshot);
     const pageViewers = enrichment.viewers;
+    const unresolvedIdentities = pageViewers
+      .filter((viewer) => viewer.identityUncertain === true)
+      .map((viewer) => ({
+        linkedinUsername: viewer.linkedinUsername,
+        linkedinUrl: viewer.linkedinUrl,
+        unverifiedDisplayName: viewer.displayName,
+      }));
+    if (unresolvedIdentities.length > 0) {
+      hadUnresolvedIdentities = true;
+      console.warn('[profile-viewers-sync] identities still unresolved after exact-profile enrichment', {
+        identities: unresolvedIdentities,
+        action: 'Skipped Firestore identity update',
+      });
+    }
+    const identityRepairs = enrichment.diagnostics.filter(
+      (diagnostic) =>
+        diagnostic.parsedDisplayName !== diagnostic.finalDisplayName ||
+        diagnostic.ignoredDuplicateExistingImage ||
+        diagnostic.removedAmbiguousFinalImage ||
+        (diagnostic.hadExistingImage && !diagnostic.hadRscImage && !diagnostic.skippedEnrichment)
+    );
+    if (identityRepairs.length > 0) {
+      console.info('[profile-viewers-sync] viewer identities revalidated', {
+        repairs: identityRepairs,
+      });
+    }
     const pageHasNewProfiles = pageViewers.some(
       (viewer) => !existingUsernames.has(viewer.linkedinUsername.toLowerCase())
     );
@@ -250,8 +292,20 @@ export async function syncProfileViewersViaApi(
     await persistSyncProgress(syncState);
   }
 
-  if (options.pruneStaleAfterComplete && paginationComplete) {
+  if (options.pruneStaleAfterComplete && paginationComplete && !hadUnresolvedIdentities) {
     await deleteStaleProfileViewerCache(user.uid, syncSeenAt);
+  }
+
+  if (options.repairStoredIdentityMismatches) {
+    const repairResults = await repairStoredProfileViewerIdentityMismatches(
+      user.uid,
+      existingViewers
+    );
+    if (repairResults.length > 0) {
+      console.info('[profile-viewers-sync] stored identity repair completed', {
+        results: repairResults,
+      });
+    }
   }
 
   return {
