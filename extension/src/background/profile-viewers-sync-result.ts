@@ -1,3 +1,5 @@
+import type { ProfileViewersCollectionTask } from './profile-viewers-sync-state';
+
 export interface ProfileViewersSyncResult {
   savedCount: number;
   newCount: number;
@@ -17,4 +19,6 @@ export interface ProfileViewersSyncResult {
   pagesFetched?: number;
   paginationComplete?: boolean;
   paginationMode?: 'backfill' | 'incremental';
+  collectionTask?: ProfileViewersCollectionTask;
+  privateViewerCountStart?: number;
 }

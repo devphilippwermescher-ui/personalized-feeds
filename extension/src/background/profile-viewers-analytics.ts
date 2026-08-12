@@ -12,22 +12,26 @@ export async function recordProfileViewsAnalytics({
   updatedAt,
 }: {
   userId: string;
-  visibleCount: number;
+  visibleCount?: number;
   privateCount?: number;
   recruiterCount?: number;
   updatedAt: number;
 }): Promise<void> {
+  const current = await getProfileAnalyticsSnapshot(userId);
+  const resolvedVisibleCount = visibleCount ?? current?.profileViews?.visibleCount;
+  if (typeof resolvedVisibleCount !== 'number') {
+    return;
+  }
   const storedSummary =
     typeof privateCount === 'number' && typeof recruiterCount === 'number'
       ? null
       : await getProfileViewerSummary(userId);
-  const safeVisibleCount = Math.max(0, Math.trunc(visibleCount));
+  const safeVisibleCount = Math.max(0, Math.trunc(resolvedVisibleCount));
   const safePrivateCount = Math.max(0, Math.trunc(privateCount ?? storedSummary?.privateViewerCount ?? 0));
   const resolvedRecruiterCount = recruiterCount ?? storedSummary?.recruiterViewerCount;
   const safeRecruiterCount =
     typeof resolvedRecruiterCount === 'number' ? Math.max(0, Math.trunc(resolvedRecruiterCount)) : undefined;
   const totalCount = safeVisibleCount + safePrivateCount + (safeRecruiterCount || 0);
-  const current = await getProfileAnalyticsSnapshot(userId);
   if (
     current?.profileViews?.visibleCount === safeVisibleCount &&
     current.profileViews.privateCount === safePrivateCount &&

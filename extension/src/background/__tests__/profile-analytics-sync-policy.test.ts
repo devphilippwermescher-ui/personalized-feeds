@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   createProfileAnalyticsSyncState,
   canRunProfileAnalyticsNetworkSync,
+  getProfileAnalyticsNetworkBudget,
   getProfileAnalyticsScheduledIntervalMs,
   isConnectionHistoryDue,
   isCurrentProfileAnalyticsDue,
@@ -11,8 +12,11 @@ import {
   isSocialSellingIndexDue,
   PROFILE_ANALYTICS_DAILY_SYNC_INTERVAL_MS,
   PROFILE_ANALYTICS_NETWORK_SYNC_INTERVAL_MS,
-  PROFILE_ANALYTICS_MAX_NETWORK_CYCLES_PER_WINDOW,
+  PROFILE_ANALYTICS_NETWORK_BACKGROUND_RESERVE,
+  PROFILE_ANALYTICS_NETWORK_BUDGET_CAPACITY,
+  PROFILE_ANALYTICS_NETWORK_BUDGET_REFILL_MS,
   recordProfileAnalyticsNetworkSync,
+  markProfileAnalyticsNetworkDirty,
   selectPendingProfileAnalyticsRequest,
 } from '../profile-analytics-sync-policy';
 
@@ -27,28 +31,49 @@ describe('profile analytics sync policy', () => {
     expect(isCurrentProfileAnalyticsDue({ now, state })).toBe(true);
   });
 
-  it('uses a 55-to-65 minute jitter for the next background check', () => {
-    expect(getProfileAnalyticsScheduledIntervalMs(0)).toBe(55 * 60 * 1000);
-    expect(getProfileAnalyticsScheduledIntervalMs(0.5)).toBe(60 * 60 * 1000);
+  it('uses a 60-to-65 minute jitter for the next background check', () => {
+    expect(getProfileAnalyticsScheduledIntervalMs(0)).toBe(60 * 60 * 1000);
+    expect(getProfileAnalyticsScheduledIntervalMs(0.5)).toBe(62.5 * 60 * 1000);
     expect(getProfileAnalyticsScheduledIntervalMs(1)).toBe(65 * 60 * 1000);
   });
 
-  it('caps foreground and alarm network cycles in a shared 24-hour budget', () => {
+  it('gradually refills the shared Connections and Followers network budget', () => {
     let state = createProfileAnalyticsSyncState('user');
-    for (let index = 0; index < PROFILE_ANALYTICS_MAX_NETWORK_CYCLES_PER_WINDOW; index += 1) {
+    state.networkBudgetUpdatedAt = now;
+    for (let index = 0; index < PROFILE_ANALYTICS_NETWORK_BUDGET_CAPACITY; index += 1) {
       expect(canRunProfileAnalyticsNetworkSync(state, now)).toBe(true);
       state = recordProfileAnalyticsNetworkSync(state, now);
     }
     expect(canRunProfileAnalyticsNetworkSync(state, now)).toBe(false);
-    expect(canRunProfileAnalyticsNetworkSync(state, now + 24 * 60 * 60 * 1000)).toBe(true);
+    expect(canRunProfileAnalyticsNetworkSync(state, now + PROFILE_ANALYTICS_NETWORK_BUDGET_REFILL_MS - 1)).toBe(false);
+    expect(canRunProfileAnalyticsNetworkSync(state, now + PROFILE_ANALYTICS_NETWORK_BUDGET_REFILL_MS)).toBe(true);
+    expect(getProfileAnalyticsNetworkBudget(state, now + PROFILE_ANALYTICS_NETWORK_BUDGET_REFILL_MS)).toEqual(
+      expect.objectContaining({ tokensAvailable: 1 })
+    );
   });
 
-  it('forces a dashboard refresh except inside the two-minute dedupe window', () => {
+  it('reserves the final network tokens for alarms instead of dashboard reloads', () => {
     const state = createProfileAnalyticsSyncState('user');
-    state.networkLastSuccessAt = now - 60_000;
+    state.networkBudgetTokens = PROFILE_ANALYTICS_NETWORK_BACKGROUND_RESERVE;
+    state.networkBudgetUpdatedAt = now;
+    expect(canRunProfileAnalyticsNetworkSync(state, now, 'dashboard_open')).toBe(false);
+    expect(canRunProfileAnalyticsNetworkSync(state, now, 'alarm')).toBe(true);
+  });
+
+  it('forces a dashboard refresh except inside the five-minute freshness window', () => {
+    const state = createProfileAnalyticsSyncState('user');
+    state.networkLastSuccessAt = now - 4 * 60_000;
     expect(isDashboardNetworkSyncDue(now, state)).toBe(false);
-    state.networkLastSuccessAt = now - 2 * 60 * 1000;
+    state.networkLastSuccessAt = now - 5 * 60 * 1000;
     expect(isDashboardNetworkSyncDue(now, state)).toBe(true);
+  });
+
+  it('refreshes a dirty network total even inside the dashboard freshness window', () => {
+    let state = createProfileAnalyticsSyncState('user');
+    state.networkLastSuccessAt = now - 60_000;
+    state = markProfileAnalyticsNetworkDirty(state, now);
+    expect(isDashboardNetworkSyncDue(now, state)).toBe(true);
+    expect(isCurrentProfileAnalyticsDue({ now, state })).toBe(true);
   });
 
   it('collects SSI and Search Appearances only once per 24 hours', () => {

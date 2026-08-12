@@ -10,6 +10,7 @@ import { runProfileAnalyticsMetadataTask } from './profile-analytics-metadata-ta
 import { selectLinkedInExecutionTabs } from './linkedin-tab-selection';
 import {
   createProfileAnalyticsSyncState,
+  getProfileAnalyticsNetworkBudget,
   getProfileAnalyticsScheduledIntervalMs,
   PROFILE_ANALYTICS_ATTEMPT_LEASE_MS,
   PROFILE_ANALYTICS_DAILY_SYNC_INTERVAL_MS,
@@ -97,6 +98,8 @@ async function runProfileAnalyticsSync(
     networkNextDueAt: state.networkNextDueAt,
     searchLastSuccessAt: state.searchLastSuccessAt,
     ssiLastSuccessAt: state.ssiLastSuccessAt,
+    networkBudget: getProfileAnalyticsNetworkBudget(state, startedAt),
+    networkDirtyAt: state.networkDirtyAt,
   });
 
   const bootstrap = await runProfileAnalyticsBootstrapTask({

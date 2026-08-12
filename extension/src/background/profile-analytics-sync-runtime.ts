@@ -4,6 +4,7 @@ import type {
   ProfileAnalyticsSyncStatus,
 } from 'shared/types';
 import {
+  PROFILE_ANALYTICS_NETWORK_BUDGET_CAPACITY,
   PROFILE_ANALYTICS_DAILY_SYNC_INTERVAL_MS,
   updateMetricStatus,
   type ProfileAnalyticsRetryKind,
@@ -107,7 +108,55 @@ export async function getStoredProfileAnalyticsSyncState(
 ): Promise<ProfileAnalyticsSyncState | undefined> {
   const stored = await chrome.storage.local.get(PROFILE_ANALYTICS_SYNC_STORAGE_KEY);
   const state = stored[PROFILE_ANALYTICS_SYNC_STORAGE_KEY] as ProfileAnalyticsSyncState | undefined;
-  return !userId || state?.userId === userId ? state : undefined;
+  if (!state || (userId && state.userId !== userId)) return undefined;
+  if (
+    state.version === 3 &&
+    typeof state.networkBudgetTokens === 'number' &&
+    typeof state.networkBudgetUpdatedAt === 'number'
+  ) {
+    return state;
+  }
+
+  const migratedAt = Date.now();
+  const clearLegacyBudgetFailure = (metricStatus: ProfileAnalyticsSyncMetricStatus | undefined) => {
+    if (metricStatus?.errorCode !== 'request_budget_reached') return metricStatus;
+    return {
+      ...metricStatus,
+      status: metricStatus.lastSuccessAt ? ('success' as const) : ('idle' as const),
+      nextRetryAt: undefined,
+      errorCode: undefined,
+      message: undefined,
+      technicalMessage: undefined,
+    };
+  };
+  const migrated: ProfileAnalyticsSyncState = {
+    ...state,
+    version: 3,
+    networkBudgetTokens: PROFILE_ANALYTICS_NETWORK_BUDGET_CAPACITY,
+    networkBudgetUpdatedAt: migratedAt,
+    requestWindowStartedAt: undefined,
+    networkCyclesInWindow: undefined,
+    networkNextRetryAt:
+      state.status.metrics.connections?.errorCode === 'request_budget_reached' ||
+      state.status.metrics.followers?.errorCode === 'request_budget_reached'
+        ? undefined
+        : state.networkNextRetryAt,
+    status: {
+      ...state.status,
+      metrics: {
+        ...state.status.metrics,
+        connections: clearLegacyBudgetFailure(state.status.metrics.connections),
+        followers: clearLegacyBudgetFailure(state.status.metrics.followers),
+      },
+    },
+  };
+  await setStoredProfileAnalyticsSyncState(migrated);
+  console.info('[profile-analytics] migrated network budget to gradual refill', {
+    tokensAvailable: PROFILE_ANALYTICS_NETWORK_BUDGET_CAPACITY,
+    migratedAt,
+    migratedAtIso: toIso(migratedAt),
+  });
+  return migrated;
 }
 
 export function setStoredProfileAnalyticsSyncState(state: ProfileAnalyticsSyncState): Promise<void> {
@@ -136,7 +185,7 @@ export function recoverInterruptedProfileAnalyticsState(state: ProfileAnalyticsS
 
   return {
     ...state,
-    version: 2,
+    version: 3,
     historyCheckpoint:
       state.historyCheckpoint?.status === 'running'
         ? { ...state.historyCheckpoint, status: 'pending' }

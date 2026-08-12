@@ -3,13 +3,12 @@ import { fetchWithTimeout } from './fetch-with-timeout';
 import { validateProfileViewersRscPayload } from './profile-viewers-response';
 import { parseProfileViewersFromPayload } from './profile-viewers-payload-parser';
 import { extractPrivateProfileViewerCount } from './profile-viewer-private-count';
-import {
-  extractRecruiterProfileViewerCount,
-  extractRecruiterProfileViewerUrl,
-} from './profile-viewer-recruiter-count';
+import { extractRecruiterProfileViewerCount, extractRecruiterProfileViewerUrl } from './profile-viewer-recruiter-count';
 import {
   createProfileViewersPaginationBody,
   extractNextProfileViewersPaginationCursor,
+  extractProfileViewersPaginationNeeded,
+  PROFILE_VIEWERS_PAGINATION_PAGE_SIZE,
   PROFILE_VIEWERS_PAGER_ID,
   type ProfileViewersPaginationCursor,
 } from './profile-viewers-pagination';
@@ -17,7 +16,8 @@ import { ProfileViewersSyncError } from './profile-viewers-error';
 import type { ProfileViewersSyncErrorCode } from './profile-viewers-sync-state';
 
 const PROFILE_VIEWERS_RSC_TIMEOUT_MS = 20_000;
-const PROFILE_VIEWERS_RSC_URL = 'https://www.linkedin.com/flagship-web/rsc-action/actions/server-request?sduiid=WvmpEntityList';
+const PROFILE_VIEWERS_RSC_URL =
+  'https://www.linkedin.com/flagship-web/rsc-action/actions/server-request?sduiid=WvmpEntityList';
 const PROFILE_VIEWERS_PAGINATION_URL =
   `https://www.linkedin.com/flagship-web/rsc-action/actions/pagination?sduiid=` +
   encodeURIComponent(PROFILE_VIEWERS_PAGER_ID);
@@ -86,9 +86,7 @@ export interface ProfileViewersRscPage {
 function assignVisibleViewerPositions(viewers: ProfileViewerInput[]): void {
   [...viewers]
     .sort(
-      (left, right) =>
-        (left.sourceIndex ?? Number.MAX_SAFE_INTEGER) -
-        (right.sourceIndex ?? Number.MAX_SAFE_INTEGER)
+      (left, right) => (left.sourceIndex ?? Number.MAX_SAFE_INTEGER) - (right.sourceIndex ?? Number.MAX_SAFE_INTEGER)
     )
     .forEach((viewer, listPosition) => {
       viewer.listPosition = listPosition;
@@ -99,7 +97,8 @@ async function fetchProfileViewersRscPage(
   url: string,
   body: string,
   csrfToken: string,
-  allowPremiumPaginationProbe = false
+  allowPremiumPaginationProbe = false,
+  requestedCursor?: ProfileViewersPaginationCursor
 ): Promise<ProfileViewersRscPage> {
   let response: Response;
   try {
@@ -151,7 +150,23 @@ async function fetchProfileViewersRscPage(
     const privateViewerCount = extractPrivateProfileViewerCount(payload);
     const recruiterViewerCount = extractRecruiterProfileViewerCount(payload);
     const recruiterViewerUrl = extractRecruiterProfileViewerUrl(payload);
+    const paginationNeeded = extractProfileViewersPaginationNeeded(payload);
     assignVisibleViewerPositions(viewers);
+
+    const parsedNextCursor = extractNextProfileViewersPaginationCursor(payload);
+    const probedNextCursor = requestedCursor
+      ? paginationNeeded === true
+        ? {
+            start: requestedCursor.start + requestedCursor.count,
+            count: requestedCursor.count,
+          }
+        : null
+      : allowPremiumPaginationProbe && privateViewerCount === null && viewers.length > 3
+        ? {
+            start: PROFILE_VIEWERS_PAGINATION_PAGE_SIZE,
+            count: PROFILE_VIEWERS_PAGINATION_PAGE_SIZE,
+          }
+        : null;
 
     return {
       viewers,
@@ -161,11 +176,7 @@ async function fetchProfileViewersRscPage(
       recruiterViewerUrl,
       httpStatus: response.status,
       responseLength: payload.length,
-      nextCursor:
-        extractNextProfileViewersPaginationCursor(payload) ||
-        (allowPremiumPaginationProbe && viewers.length > 3
-          ? { start: 10, count: 10 }
-          : null),
+      nextCursor: parsedNextCursor || probedNextCursor,
     };
   } catch (error) {
     throw new ProfileViewersSyncError(
@@ -177,12 +188,7 @@ async function fetchProfileViewersRscPage(
 }
 
 export async function fetchProfileViewersFromRsc(csrfToken: string): Promise<ProfileViewersRscPage> {
-  return fetchProfileViewersRscPage(
-    PROFILE_VIEWERS_RSC_URL,
-    PROFILE_VIEWERS_RSC_BODY,
-    csrfToken,
-    true
-  );
+  return fetchProfileViewersRscPage(PROFILE_VIEWERS_RSC_URL, PROFILE_VIEWERS_RSC_BODY, csrfToken, true);
 }
 
 export async function fetchProfileViewersPaginationPage(
@@ -192,6 +198,8 @@ export async function fetchProfileViewersPaginationPage(
   return fetchProfileViewersRscPage(
     PROFILE_VIEWERS_PAGINATION_URL,
     createProfileViewersPaginationBody(cursor),
-    csrfToken
+    csrfToken,
+    false,
+    cursor
   );
 }

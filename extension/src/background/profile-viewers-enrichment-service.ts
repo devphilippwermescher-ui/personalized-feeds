@@ -3,6 +3,7 @@ import { findLinkedInPeopleSearchResultByUsername, type LinkedInPeopleSearchResu
 import {
   getAmbiguousProfileViewerImageUrls,
   isUsableLinkedInProfileImageUrl,
+  profileViewerDisplayNameConflictsWithUsername,
 } from 'shared/profile-viewer-quality';
 import { fetchWithTimeout } from './fetch-with-timeout';
 import { mergeProfileViewerWithPageMetadata, parseProfileViewerPageMetadata } from './profile-viewers-enrichment';
@@ -80,7 +81,16 @@ async function enrichProfileViewerFromProfilePage(
   viewer: ProfileViewerInput;
   diagnostic: ProfileViewerEnrichmentDiagnostic;
 }> {
-  const peopleSearchMatch = await fetchProfileViewerPeopleSearchMatch(viewer, csrfToken);
+  const rawPeopleSearchMatch = await fetchProfileViewerPeopleSearchMatch(viewer, csrfToken);
+  const peopleSearchMatch =
+    rawPeopleSearchMatch &&
+    !profileViewerDisplayNameConflictsWithUsername(
+      rawPeopleSearchMatch.displayName,
+      viewer.linkedinUsername
+    )
+      ? rawPeopleSearchMatch
+      : null;
+  const rejectedConflictingPeopleSearchIdentity = Boolean(rawPeopleSearchMatch && !peopleSearchMatch);
   const peopleSearchImageUrl = isUsableLinkedInProfileImageUrl(peopleSearchMatch?.profileImageUrl)
     ? peopleSearchMatch.profileImageUrl
     : '';
@@ -93,6 +103,10 @@ async function enrichProfileViewerFromProfilePage(
     connectionDegree: viewer.connectionDegree || peopleSearchMatch?.connectionDegree || '',
     profileImageUrl: peopleSearchImageUrl || viewer.profileImageUrl,
     identityUncertain: peopleSearchMatch ? false : viewer.identityUncertain,
+    discardExistingProfileImage:
+      viewer.discardExistingProfileImage === true ||
+      rejectedConflictingPeopleSearchIdentity ||
+      undefined,
   };
   const createResult = (
     enrichedViewer: ProfileViewerInput,
@@ -185,26 +199,40 @@ export async function enrichVisibleProfileViewers(
     const storedViewer = existingByUsername.get(viewer.linkedinUsername.toLowerCase());
     const existingImageUrl = storedViewer?.profileImageUrl?.trim() || '';
     const ignoredDuplicateExistingImage = ambiguousExistingImages.has(existingImageUrl);
+    const storedIdentityConflicts = Boolean(
+      storedViewer &&
+        profileViewerDisplayNameConflictsWithUsername(
+          storedViewer.displayName,
+          viewer.linkedinUsername
+        )
+    );
+    const viewerWithIdentitySafety =
+      storedIdentityConflicts || ignoredDuplicateExistingImage
+        ? { ...viewer, discardExistingProfileImage: true }
+        : viewer;
     const existingViewer = storedViewer
       ? {
           ...storedViewer,
-          profileImageUrl: ignoredDuplicateExistingImage ? '' : storedViewer.profileImageUrl,
+          profileImageUrl:
+            ignoredDuplicateExistingImage || storedIdentityConflicts
+              ? ''
+              : storedViewer.profileImageUrl,
         }
       : undefined;
 
-    if (!profileViewerNeedsEnrichment(viewer, storedViewer, ignoredDuplicateExistingImage)) {
+    if (!profileViewerNeedsEnrichment(viewerWithIdentitySafety, storedViewer, ignoredDuplicateExistingImage)) {
       const mergedViewer = mergeProfileViewerWithPageMetadata(
-        viewer,
+        viewerWithIdentitySafety,
         { displayName: '', profileImageUrl: '' },
         existingViewer
       );
       return {
         viewer: mergedViewer,
         diagnostic: {
-          linkedinUsername: viewer.linkedinUsername,
-          parsedDisplayName: viewer.displayName,
+          linkedinUsername: viewerWithIdentitySafety.linkedinUsername,
+          parsedDisplayName: viewerWithIdentitySafety.displayName,
           finalDisplayName: mergedViewer.displayName,
-          hadRscImage: Boolean(viewer.profileImageUrl),
+          hadRscImage: Boolean(viewerWithIdentitySafety.profileImageUrl),
           hadPeopleSearchImage: false,
           hadProfilePageImage: false,
           hadExistingImage: Boolean(existingViewer?.profileImageUrl),
@@ -216,7 +244,12 @@ export async function enrichVisibleProfileViewers(
       };
     }
 
-    return enrichProfileViewerFromProfilePage(viewer, existingViewer, csrfToken, ignoredDuplicateExistingImage);
+    return enrichProfileViewerFromProfilePage(
+      viewerWithIdentitySafety,
+      existingViewer,
+      csrfToken,
+      ignoredDuplicateExistingImage
+    );
   });
   const enrichedViewers = enrichments.map((enrichment) => enrichment.viewer);
   const diagnostics = enrichments.map((enrichment) => enrichment.diagnostic);

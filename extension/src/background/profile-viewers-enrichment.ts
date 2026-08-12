@@ -3,6 +3,8 @@ import {
   chooseProfileViewerDisplayName,
   chooseProfileViewerImageUrl,
   isUsableLinkedInProfileImageUrl,
+  namesLikelyReferToSameProfile,
+  profileViewerDisplayNameConflictsWithUsername,
 } from 'shared/profile-viewer-quality';
 import { hasExplicitProfileViewerPremiumSignal } from './profile-viewers-premium';
 
@@ -108,12 +110,25 @@ export function mergeProfileViewerWithPageMetadata(
 ): ProfileViewerInput {
   // An avatar alone proves only the image. It must not turn a display name
   // guessed from a neighbouring RSC entity into a verified identity.
-  const hasTrustedDisplayName = Boolean(metadata.displayName);
+  const metadataIdentityConflicts = profileViewerDisplayNameConflictsWithUsername(
+    metadata.displayName,
+    viewer.linkedinUsername
+  );
+  const trustedMetadata = metadataIdentityConflicts
+    ? { ...metadata, displayName: '', profileImageUrl: '' }
+    : metadata;
+  const hasTrustedDisplayName =
+    Boolean(trustedMetadata.displayName) ||
+    namesLikelyReferToSameProfile(viewer.displayName, viewer.linkedinUsername);
   const ignoreUnverifiedExistingIdentity = viewer.identityUncertain === true;
   const parsedOrMetadataDisplayName =
-    ignoreUnverifiedExistingIdentity && metadata.displayName
-      ? metadata.displayName
-      : chooseProfileViewerDisplayName(viewer.displayName, metadata.displayName, viewer.linkedinUsername);
+    ignoreUnverifiedExistingIdentity && trustedMetadata.displayName
+      ? trustedMetadata.displayName
+      : chooseProfileViewerDisplayName(
+          viewer.displayName,
+          trustedMetadata.displayName,
+          viewer.linkedinUsername
+        );
 
   return {
     ...viewer,
@@ -123,10 +138,12 @@ export function mergeProfileViewerWithPageMetadata(
       viewer.linkedinUsername
     ),
     profileImageUrl: chooseProfileViewerImageUrl(
-      metadata.profileImageUrl || viewer.profileImageUrl,
+      trustedMetadata.profileImageUrl || viewer.profileImageUrl,
       ignoreUnverifiedExistingIdentity ? undefined : existing?.profileImageUrl
     ),
-    isPremium: metadata.isPremium === true ? true : viewer.isPremium ?? existing?.isPremium,
+    isPremium: trustedMetadata.isPremium === true ? true : viewer.isPremium ?? existing?.isPremium,
     identityUncertain: ignoreUnverifiedExistingIdentity && !hasTrustedDisplayName,
+    discardExistingProfileImage:
+      viewer.discardExistingProfileImage === true || metadataIdentityConflicts || undefined,
   };
 }

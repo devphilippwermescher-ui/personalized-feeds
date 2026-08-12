@@ -28,6 +28,10 @@ function mergeProfileViewer(existing: ProfileViewerInput, incoming: ProfileViewe
       : chooseProfileViewerImageUrl(incoming.profileImageUrl, existing.profileImageUrl),
     isPremium: incoming.isPremium === true ? true : existing.isPremium,
     identityUncertain,
+    discardExistingProfileImage:
+      existing.discardExistingProfileImage === true ||
+      incoming.discardExistingProfileImage === true ||
+      undefined,
     sourceIndex:
       existing.sourceIndex === undefined
         ? incoming.sourceIndex

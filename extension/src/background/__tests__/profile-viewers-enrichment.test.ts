@@ -100,4 +100,33 @@ describe('profile viewer page enrichment', () => {
     expect(result.profileImageUrl).toContain('/adam/');
     expect(result.identityUncertain).toBe(true);
   });
+
+  it('rejects a conflicting page identity and repairs the name from the vanity username', () => {
+    const result = mergeProfileViewerWithPageMetadata(
+      {
+        linkedinUrl: 'https://www.linkedin.com/in/oleksii-vakhniuk-9235412b7/',
+        linkedinUsername: 'oleksii-vakhniuk-9235412b7',
+        displayName: 'Oleksii Vakhniuk',
+        profileImageUrl: '',
+        identityUncertain: true,
+      },
+      {
+        displayName: 'Alina Diachaenko',
+        profileImageUrl:
+          'https://media.licdn.com/dms/image/v2/alina/profile-displayphoto-shrink_100_100/photo?e=4102444800',
+      },
+      {
+        displayName: 'Alina Diachaenko',
+        profileImageUrl:
+          'https://media.licdn.com/dms/image/v2/alina/profile-displayphoto-shrink_100_100/photo?e=4102444800',
+      }
+    );
+
+    expect(result).toMatchObject({
+      displayName: 'Oleksii Vakhniuk',
+      profileImageUrl: '',
+      identityUncertain: false,
+      discardExistingProfileImage: true,
+    });
+  });
 });

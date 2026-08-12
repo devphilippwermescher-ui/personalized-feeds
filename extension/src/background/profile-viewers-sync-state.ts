@@ -1,3 +1,5 @@
+import { PROFILE_VIEWERS_PAGINATION_PAGE_SIZE } from './profile-viewers-pagination';
+
 export const PROFILE_VIEWERS_SYNC_INTERVAL_MS = 30 * 60 * 1000;
 export const PROFILE_VIEWERS_MIN_SYNC_INTERVAL_MS = 25 * 60 * 1000;
 export const PROFILE_VIEWERS_MAX_SYNC_INTERVAL_MS = 35 * 60 * 1000;
@@ -6,9 +8,11 @@ export const PROFILE_VIEWERS_RESTRICTED_BACKOFF_MS = 12 * 60 * 60 * 1000;
 export const PROFILE_VIEWERS_FIRST_FAILURE_BACKOFF_MS = 60 * 60 * 1000;
 export const PROFILE_VIEWERS_REPEATED_FAILURE_BACKOFF_MS = 2 * 60 * 60 * 1000;
 export const PROFILE_VIEWERS_ATTEMPT_LEASE_MS = 5 * 60 * 1000;
-export const PROFILE_VIEWERS_RATE_LIMIT_WINDOW_MS = 24 * 60 * 60 * 1000;
-export const PROFILE_VIEWERS_MAX_REQUESTS_PER_WINDOW = 48;
-export const PROFILE_VIEWERS_SUMMARY_COLLECTION_VERSION = 1;
+export const PROFILE_VIEWERS_BUDGET_CAPACITY = 72;
+export const PROFILE_VIEWERS_BUDGET_REFILL_MS = 20 * 60 * 1000;
+export const PROFILE_VIEWERS_BACKGROUND_RESERVE = 8;
+export const PROFILE_VIEWERS_SCHEDULE_POLICY_VERSION = 3;
+export const PROFILE_VIEWERS_SUMMARY_COLLECTION_VERSION = 2;
 export const PROFILE_VIEWERS_AUTH_RECOVERY_DELAYS_MS = [
   2 * 60 * 1000,
   5 * 60 * 1000,
@@ -29,6 +33,9 @@ export type ProfileViewersSyncTrigger =
 
 export type ProfileViewersSyncRunType = 'initial' | 'scheduled' | 'retry';
 export type ProfileViewersBackfillStatus = 'not_started' | 'in_progress' | 'complete';
+export type ProfileViewersCollectionTask = 'visible' | 'private_summary';
+export type ProfileViewersPrivateSummaryStatus = 'not_started' | 'scanning' | 'ready';
+export type ProfileViewersPrivateSummaryScanOrigin = 'full' | 'known_position';
 
 export type ProfileViewersSyncErrorCode =
   | 'app_auth_required'
@@ -69,7 +76,11 @@ export interface ProfileViewersSyncLog {
   visibleProfileUsernames: string[];
   newProfileUsernames: string[];
   recoveredFromInterruptedAttempt?: boolean;
+  budgetTokensAvailable?: number;
+  budgetNextTokenAt?: number;
+  /** @deprecated Fixed-window diagnostics retained only in legacy logs. */
   requestCountInWindow?: number;
+  /** @deprecated Fixed-window diagnostics retained only in legacy logs. */
   rateLimitResetAt?: number;
   scheduledIntervalMs?: number;
   consecutiveFailedCycles?: number;
@@ -78,6 +89,7 @@ export interface ProfileViewersSyncLog {
   pagesFetched?: number;
   paginationComplete?: boolean;
   paginationMode?: 'backfill' | 'incremental';
+  collectionTask?: ProfileViewersCollectionTask;
   backfillStatus?: ProfileViewersBackfillStatus;
   errorCode?: ProfileViewersSyncErrorCode;
   errorMessage?: string;
@@ -86,8 +98,8 @@ export interface ProfileViewersSyncLog {
 
 export interface ProfileViewersSyncState {
   version: 1;
-  schedulePolicyVersion: 2;
-  summaryCollectionVersion: 1;
+  schedulePolicyVersion: 2 | 3;
+  summaryCollectionVersion: 2;
   userId: string;
   lastSuccessAt?: number;
   lastAttemptAt?: number;
@@ -97,8 +109,12 @@ export interface ProfileViewersSyncState {
   attemptStartedAt?: number;
   attemptExpiresAt?: number;
   cooldownUntil?: number;
+  /** @deprecated Fixed-window state retained only while old local data migrates. */
   requestWindowStartedAt?: number;
-  requestCountInWindow: number;
+  /** @deprecated Fixed-window state retained only while old local data migrates. */
+  requestCountInWindow?: number;
+  requestBudgetTokens: number;
+  requestBudgetUpdatedAt: number;
   consecutiveFailedCycles: number;
   authRecoveryAttempts: number;
   authRecoveryAt?: number;
@@ -110,6 +126,14 @@ export interface ProfileViewersSyncState {
   backfillPagesFetched: number;
   backfillProfilesSaved: number;
   recentProfileViewerUsernames: string[];
+  nextCollectionTask: ProfileViewersCollectionTask;
+  privateSummaryStatus: ProfileViewersPrivateSummaryStatus;
+  privateSummaryNextStart?: number;
+  privateSummaryPageSize?: number;
+  privateSummaryKnownStart?: number;
+  privateSummaryScanOrigin?: ProfileViewersPrivateSummaryScanOrigin;
+  privateSummaryLastAttemptAt?: number;
+  privateSummaryLastSuccessAt?: number;
   attemptsInCycle: 0 | 1 | 2;
   lastError?: ProfileViewersSyncErrorInfo;
   logs: ProfileViewersSyncLog[];
@@ -139,18 +163,52 @@ export type ProfileViewersAuthRecoveryPlan =
 export function createProfileViewersSyncState(userId: string, now: number): ProfileViewersSyncState {
   return {
     version: 1,
-    schedulePolicyVersion: 2,
+    schedulePolicyVersion: PROFILE_VIEWERS_SCHEDULE_POLICY_VERSION,
     summaryCollectionVersion: PROFILE_VIEWERS_SUMMARY_COLLECTION_VERSION,
     userId,
-    requestCountInWindow: 0,
+    requestBudgetTokens: PROFILE_VIEWERS_BUDGET_CAPACITY,
+    requestBudgetUpdatedAt: now,
     consecutiveFailedCycles: 0,
     authRecoveryAttempts: 0,
     backfillStatus: 'not_started',
     backfillPagesFetched: 0,
     backfillProfilesSaved: 0,
     recentProfileViewerUsernames: [],
+    nextCollectionTask: 'visible',
+    privateSummaryStatus: 'not_started',
     attemptsInCycle: 0,
     logs: [],
+    updatedAt: now,
+  };
+}
+
+export function scheduleProfileViewersPrivateSummaryCollection(
+  state: ProfileViewersSyncState,
+  continuationCursor: { start: number; count: number } | null,
+  now: number
+): ProfileViewersSyncState {
+  const hasKnownPosition = typeof state.privateSummaryKnownStart === 'number';
+  const hasCheckpoint = !hasKnownPosition && typeof state.privateSummaryNextStart === 'number';
+
+  return {
+    ...state,
+    nextCollectionTask: 'private_summary',
+    privateSummaryStatus: hasKnownPosition ? 'ready' : 'scanning',
+    privateSummaryNextStart: hasKnownPosition
+      ? undefined
+      : state.privateSummaryNextStart ||
+        continuationCursor?.start ||
+        PROFILE_VIEWERS_PAGINATION_PAGE_SIZE,
+    privateSummaryPageSize:
+      state.privateSummaryPageSize ||
+      continuationCursor?.count ||
+      PROFILE_VIEWERS_PAGINATION_PAGE_SIZE,
+    privateSummaryScanOrigin: hasKnownPosition
+      ? undefined
+      : hasCheckpoint && state.privateSummaryScanOrigin
+        ? state.privateSummaryScanOrigin
+        : 'full',
+    privateSummaryLastAttemptAt: now,
     updatedAt: now,
   };
 }
@@ -198,10 +256,7 @@ export function getProfileViewersAuthRecoveryPlan({
     };
   }
 
-  const attempts = Math.min(
-    Math.max(0, previousAttempts) + 1,
-    PROFILE_VIEWERS_AUTH_RECOVERY_DELAYS_MS.length
-  );
+  const attempts = Math.min(Math.max(0, previousAttempts) + 1, PROFILE_VIEWERS_AUTH_RECOVERY_DELAYS_MS.length);
   const delayIndex = Math.min(attempts - 1, PROFILE_VIEWERS_AUTH_RECOVERY_DELAYS_MS.length - 1);
 
   return {
@@ -212,21 +267,66 @@ export function getProfileViewersAuthRecoveryPlan({
   };
 }
 
-export function canMakeProfileViewersRequest(state: ProfileViewersSyncState, now: number): boolean {
-  return !isProfileViewersRateLimited(state, now);
+export interface ProfileViewersRequestBudget {
+  tokensAvailable: number;
+  nextTokenAt?: number;
+}
+
+export function getProfileViewersRequestBudget(
+  state: ProfileViewersSyncState,
+  now: number
+): ProfileViewersRequestBudget {
+  if (
+    typeof state.requestBudgetTokens !== 'number' ||
+    !Number.isFinite(state.requestBudgetTokens) ||
+    typeof state.requestBudgetUpdatedAt !== 'number' ||
+    !Number.isFinite(state.requestBudgetUpdatedAt)
+  ) {
+    return { tokensAvailable: PROFILE_VIEWERS_BUDGET_CAPACITY };
+  }
+
+  const elapsed = Math.max(0, now - state.requestBudgetUpdatedAt);
+  const tokensAvailable = Math.min(
+    PROFILE_VIEWERS_BUDGET_CAPACITY,
+    Math.max(0, state.requestBudgetTokens) + elapsed / PROFILE_VIEWERS_BUDGET_REFILL_MS
+  );
+  if (tokensAvailable >= PROFILE_VIEWERS_BUDGET_CAPACITY) {
+    return { tokensAvailable };
+  }
+
+  const nextWholeToken = Math.floor(tokensAvailable) + 1;
+  return {
+    tokensAvailable,
+    nextTokenAt:
+      now +
+      Math.ceil(
+        (nextWholeToken - tokensAvailable) *
+          PROFILE_VIEWERS_BUDGET_REFILL_MS
+      ),
+  };
+}
+
+export function canMakeProfileViewersRequest(
+  state: ProfileViewersSyncState,
+  now: number,
+  reserveTokens = 0
+): boolean {
+  return getProfileViewersRequestBudget(state, now).tokensAvailable >= reserveTokens + 1;
 }
 
 export function recordProfileViewersRequest(
   state: ProfileViewersSyncState,
   now: number
 ): ProfileViewersSyncState {
-  const rateLimitResetAt = getProfileViewersRateLimitResetAt(state);
-  const requestWindowExpired = !rateLimitResetAt || now >= rateLimitResetAt;
+  const { tokensAvailable } = getProfileViewersRequestBudget(state, now);
 
   return {
     ...state,
-    requestWindowStartedAt: requestWindowExpired ? now : state.requestWindowStartedAt,
-    requestCountInWindow: requestWindowExpired ? 1 : state.requestCountInWindow + 1,
+    schedulePolicyVersion: PROFILE_VIEWERS_SCHEDULE_POLICY_VERSION,
+    requestBudgetTokens: Math.max(0, tokensAvailable - 1),
+    requestBudgetUpdatedAt: now,
+    requestWindowStartedAt: undefined,
+    requestCountInWindow: undefined,
     updatedAt: now,
   };
 }
@@ -236,20 +336,6 @@ export function getProfileViewersScheduledIntervalMs(randomValue = Math.random()
   return Math.round(
     PROFILE_VIEWERS_MIN_SYNC_INTERVAL_MS +
       normalizedRandomValue * (PROFILE_VIEWERS_MAX_SYNC_INTERVAL_MS - PROFILE_VIEWERS_MIN_SYNC_INTERVAL_MS)
-  );
-}
-
-export function getProfileViewersRateLimitResetAt(state: ProfileViewersSyncState): number | undefined {
-  return state.requestWindowStartedAt
-    ? state.requestWindowStartedAt + PROFILE_VIEWERS_RATE_LIMIT_WINDOW_MS
-    : undefined;
-}
-
-function isProfileViewersRateLimited(state: ProfileViewersSyncState, now: number): boolean {
-  const resetAt = getProfileViewersRateLimitResetAt(state);
-  return (
-    Boolean(resetAt && now < resetAt) &&
-    state.requestCountInWindow >= PROFILE_VIEWERS_MAX_REQUESTS_PER_WINDOW
   );
 }
 
@@ -269,7 +355,8 @@ export function decideProfileViewersSync(
   trigger: ProfileViewersSyncTrigger,
   force = false
 ): ProfileViewersSyncDecision {
-  if (isProfileViewersRateLimited(state, now)) {
+  const reserveTokens = trigger === 'manual' ? PROFILE_VIEWERS_BACKGROUND_RESERVE : 0;
+  if (!canMakeProfileViewersRequest(state, now, reserveTokens)) {
     return { shouldRun: false };
   }
 
@@ -333,19 +420,22 @@ export function startProfileViewersSyncAttempt(
 ): ProfileViewersSyncState {
   const cycleStartedAt = attemptNumber === 1 ? now : state.cycleStartedAt || now;
 
-  return recordProfileViewersRequest({
-    ...state,
-    cycleStartedAt,
-    attemptsInCycle: attemptNumber,
-    lastAttemptAt: now,
-    attemptStartedAt: now,
-    attemptExpiresAt: attemptNumber === 1 ? now + PROFILE_VIEWERS_ATTEMPT_LEASE_MS : undefined,
-    nextDueAt: attemptNumber === 1 ? now + scheduledIntervalMs : state.nextDueAt,
-    retryAt: undefined,
-    cooldownUntil: undefined,
-    lastError: attemptNumber === 1 ? undefined : state.lastError,
-    updatedAt: now,
-  }, now);
+  return recordProfileViewersRequest(
+    {
+      ...state,
+      cycleStartedAt,
+      attemptsInCycle: attemptNumber,
+      lastAttemptAt: now,
+      attemptStartedAt: now,
+      attemptExpiresAt: attemptNumber === 1 ? now + PROFILE_VIEWERS_ATTEMPT_LEASE_MS : undefined,
+      nextDueAt: attemptNumber === 1 ? now + scheduledIntervalMs : state.nextDueAt,
+      retryAt: undefined,
+      cooldownUntil: undefined,
+      lastError: attemptNumber === 1 ? undefined : state.lastError,
+      updatedAt: now,
+    },
+    now
+  );
 }
 
 export function completeProfileViewersSyncSuccess(
@@ -378,13 +468,9 @@ export function completeProfileViewersSyncFailure(
   const cycleStartedAt = state.cycleStartedAt || finishedAt;
   const restrictedFailure = isRestrictedFailure(error);
   const failedCycles = attemptNumber === 2 ? state.consecutiveFailedCycles + 1 : state.consecutiveFailedCycles;
-  const retryDelay = restrictedFailure
-    ? PROFILE_VIEWERS_RESTRICTED_BACKOFF_MS
-    : PROFILE_VIEWERS_RETRY_DELAY_MS;
+  const retryDelay = restrictedFailure ? PROFILE_VIEWERS_RESTRICTED_BACKOFF_MS : PROFILE_VIEWERS_RETRY_DELAY_MS;
   const failedCycleBackoff =
-    failedCycles >= 2
-      ? PROFILE_VIEWERS_REPEATED_FAILURE_BACKOFF_MS
-      : PROFILE_VIEWERS_FIRST_FAILURE_BACKOFF_MS;
+    failedCycles >= 2 ? PROFILE_VIEWERS_REPEATED_FAILURE_BACKOFF_MS : PROFILE_VIEWERS_FIRST_FAILURE_BACKOFF_MS;
   const nextDueAt =
     attemptNumber === 1
       ? restrictedFailure
@@ -398,11 +484,7 @@ export function completeProfileViewersSyncFailure(
     cycleStartedAt,
     nextDueAt,
     retryAt: attemptNumber === 1 ? finishedAt + retryDelay : undefined,
-    cooldownUntil: restrictedFailure
-      ? attemptNumber === 1
-        ? finishedAt + retryDelay
-        : nextDueAt
-      : undefined,
+    cooldownUntil: restrictedFailure ? (attemptNumber === 1 ? finishedAt + retryDelay : nextDueAt) : undefined,
     attemptStartedAt: undefined,
     attemptExpiresAt: undefined,
     consecutiveFailedCycles: failedCycles,
@@ -414,19 +496,7 @@ export function completeProfileViewersSyncFailure(
   };
 }
 
-export function getNextProfileViewersAlarmAt(
-  state: ProfileViewersSyncState,
-  now = Date.now()
-): number | null {
-  const rateLimitResetAt = getProfileViewersRateLimitResetAt(state);
-  if (
-    state.requestCountInWindow >= PROFILE_VIEWERS_MAX_REQUESTS_PER_WINDOW &&
-    rateLimitResetAt &&
-    rateLimitResetAt > now
-  ) {
-    return rateLimitResetAt;
-  }
-
+export function getNextProfileViewersAlarmAt(state: ProfileViewersSyncState, now = Date.now()): number | null {
   if (
     state.attemptsInCycle === 1 &&
     state.attemptExpiresAt &&
@@ -435,13 +505,24 @@ export function getNextProfileViewersAlarmAt(
     return state.attemptExpiresAt;
   }
 
+  const budget = getProfileViewersRequestBudget(state, now);
+  const budgetAvailableAt =
+    budget.tokensAvailable < 1 ? budget.nextTokenAt || 0 : 0;
   const retryAt =
     state.attemptsInCycle === 1 && state.retryAt
-      ? Math.max(state.retryAt, state.cooldownUntil || 0)
+      ? Math.max(
+          state.retryAt,
+          state.cooldownUntil || 0,
+          budgetAvailableAt
+        )
       : undefined;
   const nextDueAt = state.nextDueAt
-    ? Math.max(state.nextDueAt, state.cooldownUntil || 0)
-    : undefined;
+    ? Math.max(
+        state.nextDueAt,
+        state.cooldownUntil || 0,
+        budgetAvailableAt
+      )
+    : budgetAvailableAt || undefined;
 
   if (retryAt && (!nextDueAt || retryAt < nextDueAt)) {
     return retryAt;

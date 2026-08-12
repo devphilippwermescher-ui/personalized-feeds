@@ -2,7 +2,6 @@ import {
   deleteDoc,
   doc,
   type DocumentData,
-  getCountFromServer,
   getDoc,
   getDocs,
   onSnapshot,
@@ -144,9 +143,11 @@ export async function upsertProfileViewers(
   for (const { viewer, lastSeenPosition, linkedinUsername } of validViewers) {
     const viewerRef = doc(profileViewersCollection(userId), linkedinUsername);
     const existingViewer: Partial<ProfileViewer> = existingByUsername.get(linkedinUsername) || {};
-    const existingProfileImageUrl = ambiguousExistingImages.has(existingViewer.profileImageUrl?.trim() || '')
-      ? ''
-      : existingViewer.profileImageUrl;
+    const existingProfileImageUrl =
+      viewer.discardExistingProfileImage === true ||
+      ambiguousExistingImages.has(existingViewer.profileImageUrl?.trim() || '')
+        ? ''
+        : existingViewer.profileImageUrl;
     const firstSeenAt = existingByUsername.has(linkedinUsername) ? existingViewer.firstSeenAt || now : now;
     const preservedRelationshipUpdates: Partial<ProfileViewer> = {};
     if (existingViewer.profileUrn) preservedRelationshipUpdates.profileUrn = existingViewer.profileUrn;
@@ -230,15 +231,6 @@ export async function getProfileViewers(userId: string): Promise<ProfileViewer[]
   return sortProfileViewersByRecency(
     viewers.filter((viewer) => isValidLinkedInProfileUsername(viewer.linkedinUsername || viewer.id))
   );
-}
-
-/**
- * Returns only the stored visible-viewer count. Dashboard analytics uses this
- * aggregate instead of downloading every sidebar profile document.
- */
-export async function getProfileViewerCount(userId: string): Promise<number> {
-  const snapshot = await getCountFromServer(profileViewersCollection(userId));
-  return snapshot.data().count;
 }
 
 function getChronologicalProfileViewersQuery(userId: string) {

@@ -36,12 +36,17 @@ export async function repairStoredProfileViewerIdentityMismatches(
         const identity = await resolveLinkedInProfileIdentity(linkedinUsername);
         const resolvedUsername = normalizeLinkedInUsername(identity?.linkedinUsername);
         const finalDisplayName = identity?.displayName?.trim() || '';
-        if (!identity || resolvedUsername !== linkedinUsername || !finalDisplayName) {
+        if (
+          !identity ||
+          resolvedUsername !== linkedinUsername ||
+          !finalDisplayName ||
+          profileViewerDisplayNameConflictsWithUsername(finalDisplayName, linkedinUsername)
+        ) {
           return {
             linkedinUsername,
             previousDisplayName: viewer.displayName,
             repaired: false,
-            error: 'Exact LinkedIn identity was unavailable or did not match the stored profile.',
+            error: 'Exact LinkedIn identity was unavailable or its name did not match the stored profile URL.',
           };
         }
 

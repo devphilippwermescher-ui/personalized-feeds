@@ -6,8 +6,9 @@ import {
   decideProfileViewersSync,
   getNextProfileViewersAlarmAt,
   getProfileViewersAuthRecoveryPlan,
-  getProfileViewersRateLimitResetAt,
+  getProfileViewersRequestBudget,
   getProfileViewersScheduledIntervalMs,
+  PROFILE_VIEWERS_BACKGROUND_RESERVE,
   startProfileViewersSyncAttempt,
   type ProfileViewersSyncErrorCode,
   type ProfileViewersSyncLog,
@@ -18,6 +19,7 @@ import {
 import { getAuthenticatedFeedsUser, getStoredFeedsAuthContext } from './feeds-auth';
 import { ProfileViewersSyncError } from './profile-viewers-error';
 import { syncProfileViewersViaApi } from './profile-viewers-sync-service';
+import { syncPrivateProfileViewerSummaryViaApi } from './profile-viewers-private-summary-sync';
 import {
   appendProfileViewersWakeEvent,
   clearProfileViewersAlarm,
@@ -30,8 +32,8 @@ import {
   type ProfileViewersSyncCoordinatorResult,
 } from './profile-viewers-coordinator-storage';
 import { queueProfileViewersStatusSync } from './profile-viewers-status-sync';
-import { getProfileViewerCount } from 'shared/firestore-service';
 import { recordProfileViewsAnalytics } from './profile-viewers-analytics';
+import type { ProfileViewersSyncResult } from './profile-viewers-sync-result';
 
 const PROFILE_VIEWERS_SYNC_LOG_LIMIT = 50;
 const PROFILE_VIEWERS_SYNC_LOG_USERNAME_LIMIT = 50;
@@ -96,9 +98,17 @@ function appendProfileViewersSyncLog(
   };
 }
 
-function getProfileViewersSyncSkipReason(state: ProfileViewersSyncState, now: number): string {
-  if (!canMakeProfileViewersRequest(state, now)) {
-    return 'request_rate_limit';
+function getProfileViewersSyncSkipReason(
+  state: ProfileViewersSyncState,
+  now: number,
+  trigger: ProfileViewersSyncTrigger
+): string {
+  const reserveTokens =
+    trigger === 'manual' ? PROFILE_VIEWERS_BACKGROUND_RESERVE : 0;
+  if (!canMakeProfileViewersRequest(state, now, reserveTokens)) {
+    return trigger === 'manual'
+      ? 'request_budget_reserved_for_background'
+      : 'request_budget_empty';
   }
 
   if (state.cooldownUntil && now < state.cooldownUntil) {
@@ -213,7 +223,7 @@ async function runProfileViewersSyncCoordinator(
     await appendProfileViewersWakeEvent({
       event: 'sync_skipped',
       trigger,
-      reason: getProfileViewersSyncSkipReason(state, decisionAt),
+      reason: getProfileViewersSyncSkipReason(state, decisionAt, trigger),
       nextDueAt: getNextProfileViewersAlarmAt(state) || undefined,
     });
     return { ran: false, success: true };
@@ -235,22 +245,42 @@ async function runProfileViewersSyncCoordinator(
     console.warn('[profile-viewers-sync] Failed to schedule attempt recovery alarm:', error);
   });
 
+  const collectionTask =
+    state.backfillStatus === 'complete' && state.nextCollectionTask === 'private_summary'
+      ? 'private_summary'
+      : 'visible';
+  console.info('[profile-viewers-sync] collection task selected', {
+    trigger,
+    collectionTask,
+    privateSummaryStatus: state.privateSummaryStatus,
+    privateSummaryNextStart: state.privateSummaryNextStart,
+    privateSummaryKnownStart: state.privateSummaryKnownStart,
+  });
+
   try {
-    const result = await syncProfileViewersViaApi(
-      user,
-      state,
-      async (progressState) => {
-        state = progressState;
-        await setProfileViewersSyncState(state);
-      },
-      {
-        ignoreRequestBudget: force,
+    const requestBudgetReserve =
+      trigger === 'manual' ? PROFILE_VIEWERS_BACKGROUND_RESERVE : 0;
+    const persistProgress = async (progressState: ProfileViewersSyncState) => {
+      state = progressState;
+      await setProfileViewersSyncState(state);
+    };
+    let result: ProfileViewersSyncResult;
+    if (collectionTask === 'private_summary') {
+      result = await syncPrivateProfileViewerSummaryViaApi(
+        user,
+        state,
+        persistProgress,
+        requestBudgetReserve
+      );
+    } else {
+      result = await syncProfileViewersViaApi(user, state, persistProgress, {
+        requestBudgetReserve,
         pruneStaleAfterComplete: false,
         repairStoredIdentityMismatches: force && trigger === 'manual',
-      }
-    );
+      });
+    }
     const finishedAt = Date.now();
-    const visibleViewerCount = await getProfileViewerCount(user.uid).catch(() => result.visibleCount);
+    const visibleViewerCount = collectionTask === 'visible' ? result.visibleCount : undefined;
     await recordProfileViewsAnalytics({
       userId: user.uid,
       visibleCount: visibleViewerCount,
@@ -262,6 +292,7 @@ async function runProfileViewersSyncCoordinator(
     });
     const scheduledIntervalMs = getProfileViewersScheduledIntervalMs();
     state = completeProfileViewersSyncSuccess(state, finishedAt, scheduledIntervalMs);
+    const requestBudget = getProfileViewersRequestBudget(state, finishedAt);
     const log: ProfileViewersSyncLog = {
       id: `${startedAt}-${attemptNumber}`,
       startedAt,
@@ -277,6 +308,7 @@ async function runProfileViewersSyncCoordinator(
       pagesFetched: result.pagesFetched,
       paginationComplete: result.paginationComplete,
       paginationMode: result.paginationMode,
+      collectionTask: result.collectionTask || collectionTask,
       backfillStatus: state.backfillStatus,
       visibleCount: result.visibleCount,
       visibleSearchCount: result.visibleSearchCount,
@@ -291,8 +323,8 @@ async function runProfileViewersSyncCoordinator(
       visibleProfileUsernames: result.visibleProfileUsernames.slice(0, PROFILE_VIEWERS_SYNC_LOG_USERNAME_LIMIT),
       newProfileUsernames: result.newProfileUsernames.slice(0, PROFILE_VIEWERS_SYNC_LOG_USERNAME_LIMIT),
       recoveredFromInterruptedAttempt: decision.recoveredFromInterruptedAttempt,
-      requestCountInWindow: state.requestCountInWindow,
-      rateLimitResetAt: getProfileViewersRateLimitResetAt(state),
+      budgetTokensAvailable: requestBudget.tokensAvailable,
+      budgetNextTokenAt: requestBudget.nextTokenAt,
       scheduledIntervalMs,
       consecutiveFailedCycles: state.consecutiveFailedCycles,
       nextScheduledAt: state.nextDueAt || finishedAt,
@@ -300,14 +332,16 @@ async function runProfileViewersSyncCoordinator(
     state = appendProfileViewersSyncLog(state, log);
     await setProfileViewersSyncState(state);
     await scheduleNextProfileViewersAlarm(state);
-    await queueProfileViewersStatusSync({
-      trigger: 'profile_viewers_sync',
-      priorityUsernames: result.newProfileUsernames,
-      urgent:
-        trigger === 'manual' || (result.paginationMode === 'incremental' && result.newProfileUsernames.length > 0),
-    }).catch((error) => {
-      console.warn('[profile-viewers-sync] Failed to queue profile viewer status sync:', error);
-    });
+    if (collectionTask === 'visible') {
+      await queueProfileViewersStatusSync({
+        trigger: 'profile_viewers_sync',
+        priorityUsernames: result.newProfileUsernames,
+        urgent:
+          trigger === 'manual' || (result.paginationMode === 'incremental' && result.newProfileUsernames.length > 0),
+      }).catch((error) => {
+        console.warn('[profile-viewers-sync] Failed to queue profile viewer status sync:', error);
+      });
+    }
     await notifyLinkedInTabsAboutProfileViewersSync().catch((error) => {
       console.warn('[profile-viewers-sync] Failed to notify LinkedIn tabs:', error);
     });
@@ -324,6 +358,7 @@ async function runProfileViewersSyncCoordinator(
     const finishedAt = Date.now();
     const syncError = getProfileViewersSyncError(error);
     state = completeProfileViewersSyncFailure(state, finishedAt, attemptNumber, syncError);
+    const requestBudget = getProfileViewersRequestBudget(state, finishedAt);
     const log: ProfileViewersSyncLog = {
       id: `${startedAt}-${attemptNumber}`,
       startedAt,
@@ -341,11 +376,12 @@ async function runProfileViewersSyncCoordinator(
       visibleProfileUsernames: [],
       newProfileUsernames: [],
       recoveredFromInterruptedAttempt: decision.recoveredFromInterruptedAttempt,
-      requestCountInWindow: state.requestCountInWindow,
-      rateLimitResetAt: getProfileViewersRateLimitResetAt(state),
+      budgetTokensAvailable: requestBudget.tokensAvailable,
+      budgetNextTokenAt: requestBudget.nextTokenAt,
       consecutiveFailedCycles: state.consecutiveFailedCycles,
       cooldownUntil: state.cooldownUntil,
       backfillStatus: state.backfillStatus,
+      collectionTask,
       errorCode: syncError.code,
       errorMessage: syncError.message,
       nextScheduledAt: getNextProfileViewersAlarmAt(state) || state.nextDueAt || finishedAt,

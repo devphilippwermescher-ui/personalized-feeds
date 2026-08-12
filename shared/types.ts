@@ -61,6 +61,8 @@ export type ProfileViewerInput = Omit<
   listPosition?: number;
   /** Parser-only signal. It is intentionally not persisted to Firestore. */
   identityUncertain?: boolean;
+  /** Enrichment-only signal. It prevents preserving an image attached to a conflicting stored identity. */
+  discardExistingProfileImage?: boolean;
 };
 
 export interface ProfileViewerSearch {

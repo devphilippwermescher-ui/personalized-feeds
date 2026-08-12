@@ -5,9 +5,9 @@ import type {
 } from 'shared/types';
 
 export const PROFILE_ANALYTICS_NETWORK_SYNC_INTERVAL_MS = 60 * 60 * 1000;
-export const PROFILE_ANALYTICS_NETWORK_MIN_INTERVAL_MS = 55 * 60 * 1000;
+export const PROFILE_ANALYTICS_NETWORK_MIN_INTERVAL_MS = 60 * 60 * 1000;
 export const PROFILE_ANALYTICS_NETWORK_MAX_INTERVAL_MS = 65 * 60 * 1000;
-export const PROFILE_ANALYTICS_DASHBOARD_DEDUPE_MS = 2 * 60 * 1000;
+export const PROFILE_ANALYTICS_DASHBOARD_DEDUPE_MS = 5 * 60 * 1000;
 export const PROFILE_ANALYTICS_DAILY_SYNC_INTERVAL_MS = 24 * 60 * 60 * 1000;
 export const PROFILE_ANALYTICS_RETRY_DELAY_MS = 15 * 60 * 1000;
 export const PROFILE_ANALYTICS_RESTRICTION_RETRY_MS = 12 * 60 * 60 * 1000;
@@ -15,8 +15,9 @@ export const PROFILE_ANALYTICS_HISTORY_START_DELAY_MS = 2 * 60 * 1000;
 export const PROFILE_ANALYTICS_HISTORY_BATCH_DELAY_MS = 60 * 1000;
 export const PROFILE_ANALYTICS_HISTORY_RETRY_DELAY_MS = 60 * 60 * 1000;
 export const PROFILE_ANALYTICS_ATTEMPT_LEASE_MS = 2 * 60 * 1000;
-export const PROFILE_ANALYTICS_REQUEST_WINDOW_MS = 24 * 60 * 60 * 1000;
-export const PROFILE_ANALYTICS_MAX_NETWORK_CYCLES_PER_WINDOW = 30;
+export const PROFILE_ANALYTICS_NETWORK_BUDGET_CAPACITY = 30;
+export const PROFILE_ANALYTICS_NETWORK_BUDGET_REFILL_MS = 48 * 60 * 1000;
+export const PROFILE_ANALYTICS_NETWORK_BACKGROUND_RESERVE = 3;
 export const SEARCH_APPEARANCES_SYNC_TTL_MS = PROFILE_ANALYTICS_DAILY_SYNC_INTERVAL_MS;
 export const SOCIAL_SELLING_INDEX_SYNC_TTL_MS = PROFILE_ANALYTICS_DAILY_SYNC_INTERVAL_MS;
 
@@ -68,7 +69,7 @@ export interface ProfileAnalyticsConnectionHistoryCheckpoint {
 }
 
 export interface ProfileAnalyticsSyncState {
-  version: 1 | 2;
+  version: 1 | 2 | 3;
   userId: string;
   networkLastAttemptAt?: number;
   networkLastSuccessAt?: number;
@@ -76,8 +77,14 @@ export interface ProfileAnalyticsSyncState {
   networkNextRetryAt?: number;
   networkRetryKind?: ProfileAnalyticsRetryKind;
   acceptanceNextDueAt?: number;
+  /** @deprecated Fixed-window diagnostics retained only while old local state migrates. */
   requestWindowStartedAt?: number;
-  networkCyclesInWindow: number;
+  /** @deprecated Fixed-window diagnostics retained only while old local state migrates. */
+  networkCyclesInWindow?: number;
+  networkBudgetTokens?: number;
+  networkBudgetUpdatedAt?: number;
+  /** A known LinkedIn relationship change invalidates even a recently collected total. */
+  networkDirtyAt?: number;
   searchLastAttemptAt?: number;
   searchLastSuccessAt?: number;
   searchNextRetryAt?: number;
@@ -109,33 +116,83 @@ export interface ProfileAnalyticsSyncState {
 
 export function createProfileAnalyticsSyncState(userId: string): ProfileAnalyticsSyncState {
   return {
-    version: 2,
+    version: 3,
     userId,
-    networkCyclesInWindow: 0,
+    networkBudgetTokens: PROFILE_ANALYTICS_NETWORK_BUDGET_CAPACITY,
+    networkBudgetUpdatedAt: Date.now(),
     status: { status: 'idle', metrics: {} },
     logs: [],
   };
 }
 
-export function getProfileAnalyticsRequestBudgetResetAt(state: ProfileAnalyticsSyncState): number | undefined {
-  return state.requestWindowStartedAt ? state.requestWindowStartedAt + PROFILE_ANALYTICS_REQUEST_WINDOW_MS : undefined;
+export interface ProfileAnalyticsNetworkBudget {
+  tokensAvailable: number;
+  nextTokenAt?: number;
 }
 
-export function canRunProfileAnalyticsNetworkSync(state: ProfileAnalyticsSyncState, now: number): boolean {
-  const resetAt = getProfileAnalyticsRequestBudgetResetAt(state);
-  return !resetAt || now >= resetAt || state.networkCyclesInWindow < PROFILE_ANALYTICS_MAX_NETWORK_CYCLES_PER_WINDOW;
+/**
+ * Returns a gradually refilling request budget. Legacy fixed-window state gets
+ * a full bucket once so an extension upgrade cannot remain blocked for hours.
+ */
+export function getProfileAnalyticsNetworkBudget(
+  state: ProfileAnalyticsSyncState,
+  now: number
+): ProfileAnalyticsNetworkBudget {
+  if (
+    typeof state.networkBudgetTokens !== 'number' ||
+    !Number.isFinite(state.networkBudgetTokens) ||
+    typeof state.networkBudgetUpdatedAt !== 'number' ||
+    !Number.isFinite(state.networkBudgetUpdatedAt)
+  ) {
+    return { tokensAvailable: PROFILE_ANALYTICS_NETWORK_BUDGET_CAPACITY };
+  }
+
+  const elapsed = Math.max(0, now - state.networkBudgetUpdatedAt);
+  const tokensAvailable = Math.min(
+    PROFILE_ANALYTICS_NETWORK_BUDGET_CAPACITY,
+    Math.max(0, state.networkBudgetTokens) + elapsed / PROFILE_ANALYTICS_NETWORK_BUDGET_REFILL_MS
+  );
+  if (tokensAvailable >= PROFILE_ANALYTICS_NETWORK_BUDGET_CAPACITY) return { tokensAvailable };
+  const nextWholeToken = Math.floor(tokensAvailable) + 1;
+  return {
+    tokensAvailable,
+    nextTokenAt: now + Math.ceil((nextWholeToken - tokensAvailable) * PROFILE_ANALYTICS_NETWORK_BUDGET_REFILL_MS),
+  };
+}
+
+export function canRunProfileAnalyticsNetworkSync(
+  state: ProfileAnalyticsSyncState,
+  now: number,
+  trigger: ProfileAnalyticsSyncTrigger = 'alarm'
+): boolean {
+  const { tokensAvailable } = getProfileAnalyticsNetworkBudget(state, now);
+  const requiredTokens = trigger === 'dashboard_open' ? PROFILE_ANALYTICS_NETWORK_BACKGROUND_RESERVE + 1 : 1;
+  return tokensAvailable >= requiredTokens;
 }
 
 export function recordProfileAnalyticsNetworkSync(
   state: ProfileAnalyticsSyncState,
   now: number
 ): ProfileAnalyticsSyncState {
-  const resetAt = getProfileAnalyticsRequestBudgetResetAt(state);
-  const resetWindow = !resetAt || now >= resetAt;
+  const { tokensAvailable } = getProfileAnalyticsNetworkBudget(state, now);
   return {
     ...state,
-    requestWindowStartedAt: resetWindow ? now : state.requestWindowStartedAt,
-    networkCyclesInWindow: resetWindow ? 1 : state.networkCyclesInWindow + 1,
+    version: 3,
+    networkBudgetTokens: Math.max(0, tokensAvailable - 1),
+    networkBudgetUpdatedAt: now,
+    requestWindowStartedAt: undefined,
+    networkCyclesInWindow: undefined,
+  };
+}
+
+export function markProfileAnalyticsNetworkDirty(
+  state: ProfileAnalyticsSyncState,
+  dirtyAt: number
+): ProfileAnalyticsSyncState {
+  return {
+    ...state,
+    networkDirtyAt: Math.max(state.networkDirtyAt || 0, dirtyAt),
+    networkNextDueAt: Math.min(state.networkNextDueAt || dirtyAt, dirtyAt),
   };
 }
 
@@ -148,7 +205,11 @@ export function getProfileAnalyticsScheduledIntervalMs(randomValue = Math.random
 }
 
 export function isDashboardNetworkSyncDue(now: number, state?: ProfileAnalyticsSyncState): boolean {
-  return !state?.networkLastSuccessAt || now - state.networkLastSuccessAt >= PROFILE_ANALYTICS_DASHBOARD_DEDUPE_MS;
+  return (
+    !state?.networkLastSuccessAt ||
+    Boolean(state.networkDirtyAt && state.networkDirtyAt > state.networkLastSuccessAt) ||
+    now - state.networkLastSuccessAt >= PROFILE_ANALYTICS_DASHBOARD_DEDUPE_MS
+  );
 }
 
 export function isCurrentProfileAnalyticsDue({
@@ -160,6 +221,7 @@ export function isCurrentProfileAnalyticsDue({
 }): boolean {
   if (!state?.networkLastSuccessAt) return true;
   if (state.networkNextRetryAt && now < state.networkNextRetryAt) return false;
+  if (state.networkDirtyAt && state.networkDirtyAt > state.networkLastSuccessAt) return true;
   return state.networkNextDueAt
     ? now >= state.networkNextDueAt
     : now - state.networkLastSuccessAt >= PROFILE_ANALYTICS_NETWORK_SYNC_INTERVAL_MS;

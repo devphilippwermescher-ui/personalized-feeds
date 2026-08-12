@@ -4,6 +4,7 @@ import {
   PROFILE_ANALYTICS_NETWORK_SYNC_INTERVAL_MS,
   PROFILE_ANALYTICS_RESTRICTION_RETRY_MS,
   PROFILE_ANALYTICS_RETRY_DELAY_MS,
+  markProfileAnalyticsNetworkDirty,
   updateMetricStatus,
   type ProfileAnalyticsSyncState,
   type ProfileAnalyticsSyncTrigger,
@@ -56,6 +57,9 @@ export async function runDueAcceptanceTask({
       lastSuccessAt: completedAt,
     });
     state.acceptanceNextDueAt = result.nextDueAt || completedAt + PROFILE_ANALYTICS_NETWORK_SYNC_INTERVAL_MS;
+    if ((result.acceptedCount || 0) > 0) {
+      state = markProfileAnalyticsNetworkDirty(state, completedAt);
+    }
     console.info('[profile-analytics] due acceptance reconciliation completed', {
       trigger,
       checkedCount: result.checkedCount,

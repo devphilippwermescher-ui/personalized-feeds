@@ -2,7 +2,7 @@ import type { ProfileAnalyticsSnapshot, ProfileAnalyticsSyncMetric } from 'share
 import { syncProfileNetworkMetrics } from './profile-analytics-network-sync';
 import {
   canRunProfileAnalyticsNetworkSync,
-  getProfileAnalyticsRequestBudgetResetAt,
+  getProfileAnalyticsNetworkBudget,
   getProfileAnalyticsScheduledIntervalMs,
   isCurrentProfileAnalyticsDue,
   isCurrentProfileAnalyticsRetryBlocked,
@@ -61,18 +61,28 @@ export async function runProfileAnalyticsNetworkTask({
   }
 
   let state = initialState;
-  const budgetAvailable = canRunProfileAnalyticsNetworkSync(state, startedAt);
+  const budget = getProfileAnalyticsNetworkBudget(state, startedAt);
+  const budgetAvailable = canRunProfileAnalyticsNetworkSync(state, startedAt, trigger);
   if (!budgetAvailable) {
-    const budgetResetAt =
-      getProfileAnalyticsRequestBudgetResetAt(state) || startedAt + PROFILE_ANALYTICS_RETRY_DELAY_MS;
+    // Dashboard refreshes keep three tokens in reserve for scheduled work. A
+    // foreground skip must not block the alarm that owns those reserve tokens.
+    if (budget.tokensAvailable >= 1) {
+      console.info('[profile-analytics] dashboard network sync skipped to preserve background budget', {
+        trigger,
+        tokensAvailable: budget.tokensAvailable,
+      });
+      return { state, snapshot: initialSnapshot, currentSynced: false, metrics: [] };
+    }
+
+    const budgetResetAt = budget.nextTokenAt || startedAt + PROFILE_ANALYTICS_RETRY_DELAY_MS;
     NETWORK_METRICS.forEach((metric) => {
       state = updateMetricStatus(state, metric, {
         status: 'blocked',
         lastAttemptAt: startedAt,
         nextRetryAt: budgetResetAt,
         errorCode: 'request_budget_reached',
-        message: 'Analytics refresh is paused briefly to avoid overloading LinkedIn.',
-        technicalMessage: 'The 24-hour Profile Analytics network-cycle budget was reached.',
+        message: 'The next Connections and Followers refresh slot is still recovering.',
+        technicalMessage: 'The Profile Analytics token bucket has no network cycle available yet.',
       });
     });
     state.networkNextRetryAt = budgetResetAt;
@@ -85,13 +95,16 @@ export async function runProfileAnalyticsNetworkTask({
   }
 
   state = markProfileAnalyticsMetricsRunning(state, NETWORK_METRICS, startedAt);
-  state = recordProfileAnalyticsNetworkSync(state, startedAt);
   state.networkLastAttemptAt = startedAt;
   await setStoredProfileAnalyticsSyncState(state);
   let snapshot = initialSnapshot;
 
   try {
     if (linkedInTabIds.length === 0) throw new Error('No LinkedIn tab is open.');
+    // Consume only when a LinkedIn tab exists and the actual collection task
+    // is about to start. Merely waking the worker never spends the budget.
+    state = recordProfileAnalyticsNetworkSync(state, Date.now());
+    await setStoredProfileAnalyticsSyncState(state);
     console.info('[profile-analytics] light network sync started', { trigger, linkedInTabIds });
     const result = await syncProfileNetworkMetrics({
       userId,
@@ -135,6 +148,7 @@ export async function runProfileAnalyticsNetworkTask({
         ? undefined
         : completedAt + (restricted ? PROFILE_ANALYTICS_RESTRICTION_RETRY_MS : PROFILE_ANALYTICS_RETRY_DELAY_MS),
       networkRetryKind: totalsSucceeded ? undefined : restricted ? 'restriction' : 'standard',
+      networkDirtyAt: totalsSucceeded ? undefined : state.networkDirtyAt,
       acceptanceNextDueAt: state.acceptanceNextDueAt || completedAt + PROFILE_ANALYTICS_NETWORK_SYNC_INTERVAL_MS,
       ...(result.connections.repairNeeded
         ? {
