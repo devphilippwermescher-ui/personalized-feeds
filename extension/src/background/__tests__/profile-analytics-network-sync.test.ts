@@ -57,6 +57,10 @@ describe('Profile Analytics light network sync', () => {
       connectionDateCountsComplete: false,
       recentConnectionIds: ['new-user', 'known-user'],
       newConnectionDateCounts: { '2026-08-11': 2 },
+      connectionRecords: [
+        { id: 'new-user-a', connectedDate: '2026-08-11' },
+        { id: 'new-user-b', connectedDate: '2026-08-11' },
+      ],
       boundaryFound: true,
     });
     mocks.fetchFollowersAnalyticsFromLinkedInTab.mockResolvedValue({
@@ -83,6 +87,7 @@ describe('Profile Analytics light network sync', () => {
       includeHistory: false,
       knownConnectionIds: ['known-user'],
       maxPages: 3,
+      startIndex: undefined,
     });
     expect(mocks.markTrackedConnectionsAccepted).toHaveBeenCalledWith('user', ['new-user', 'known-user'], collectedAt);
     expect(mocks.upsertProfileAnalyticsSnapshot).toHaveBeenCalledWith(
@@ -157,7 +162,7 @@ describe('Profile Analytics light network sync', () => {
     expect(result.followers).toMatchObject({ collected: true, value: 95 });
   });
 
-  it('accepts a real authoritative total decrease and schedules history repair', async () => {
+  it('accepts an authoritative total decrease without invalidating the completed baseline', async () => {
     mocks.fetchLinkedInConnectionsSnapshot.mockResolvedValue({
       connectionsCount: 89,
       connectionsCountExact: true,
@@ -175,10 +180,10 @@ describe('Profile Analytics light network sync', () => {
       collectedAt,
     });
 
-    expect(result.connections).toMatchObject({ collected: true, value: 89, repairNeeded: true });
+    expect(result.connections).toMatchObject({ collected: true, value: 89, repairNeeded: false });
     expect(mocks.upsertProfileAnalyticsSnapshot).toHaveBeenCalledWith(
       'user',
-      { profile: expect.objectContaining({ connectionsCount: 89, connectionDateCountsComplete: false }) },
+      { profile: expect.objectContaining({ connectionsCount: 89, connectionDateCountsComplete: true }) },
       { updatedAt: collectedAt }
     );
   });
@@ -191,7 +196,13 @@ describe('Profile Analytics light network sync', () => {
       connectionDateCountsComplete: false,
       recentConnectionIds: ['unknown-a', 'unknown-b'],
       newConnectionDateCounts: { '2026-08-11': 3 },
+      connectionRecords: [
+        { id: 'unknown-a', connectedDate: '2026-08-11' },
+        { id: 'unknown-b', connectedDate: '2026-08-11' },
+      ],
       boundaryFound: false,
+      nextStartIndex: 30,
+      paginationComplete: false,
     });
 
     const result = await syncProfileNetworkMetrics({
@@ -208,10 +219,72 @@ describe('Profile Analytics light network sync', () => {
         profile: expect.objectContaining({
           connectionsCount: 95,
           connectionDateCounts: { '2026-08-01': 90 },
-          connectionDateCountsComplete: false,
+          connectionDateCountsComplete: true,
+          connectionIncrementalStatus: 'catch_up_pending',
         }),
       },
       { updatedAt: collectedAt }
+    );
+    expect(result.connectionCatchUpCheckpoint).toMatchObject({ nextStartIndex: 30, expectedTotal: 95 });
+  });
+
+  it('resumes only the incremental gap and merges it after reaching the frozen known boundary', async () => {
+    mocks.fetchLinkedInConnectionsSnapshot
+      .mockResolvedValueOnce({
+        connectionsCount: 93,
+        connectionsCountExact: true,
+        connectionDateCounts: {},
+        connectionDateCountsComplete: false,
+        recentConnectionIds: ['new-a', 'new-b'],
+        connectionRecords: [
+          { id: 'new-a', connectedDate: '2026-08-11' },
+          { id: 'new-b', connectedDate: '2026-08-11' },
+        ],
+        boundaryFound: false,
+        nextStartIndex: 30,
+        paginationComplete: false,
+      })
+      .mockResolvedValueOnce({
+        connectionsCount: 93,
+        connectionsCountExact: true,
+        connectionDateCounts: {},
+        connectionDateCountsComplete: false,
+        connectionRecords: [{ id: 'new-c', connectedDate: '2026-08-10' }],
+        boundaryFound: true,
+        paginationComplete: false,
+      });
+
+    const first = await syncProfileNetworkMetrics({
+      userId: 'user',
+      linkedInTabIds: [42],
+      currentSnapshot,
+      collectedAt,
+    });
+    const second = await syncProfileNetworkMetrics({
+      userId: 'user',
+      linkedInTabIds: [42],
+      currentSnapshot,
+      connectionCatchUpCheckpoint: first.connectionCatchUpCheckpoint,
+      collectedAt: collectedAt + 1,
+    });
+
+    expect(mocks.fetchLinkedInConnectionsSnapshot).toHaveBeenLastCalledWith('csrf', 42, {
+      includeHistory: false,
+      knownConnectionIds: ['known-user'],
+      maxPages: 3,
+      startIndex: 30,
+    });
+    expect(second.connectionCatchUpCheckpoint).toBeUndefined();
+    expect(mocks.upsertProfileAnalyticsSnapshot).toHaveBeenLastCalledWith(
+      'user',
+      {
+        profile: expect.objectContaining({
+          connectionDateCounts: { '2026-08-01': 90, '2026-08-11': 2, '2026-08-10': 1 },
+          connectionDateCountsComplete: true,
+          connectionIncrementalStatus: 'current',
+        }),
+      },
+      { updatedAt: collectedAt + 1 }
     );
   });
 });

@@ -24,9 +24,10 @@ chrome.runtime.onInstalled.addListener((details) => {
     trigger,
     reason: details.reason,
   });
-  void queueProfileViewersSync(trigger);
-  void queueProfileViewersStatusSync({ trigger, urgent: true });
-  void queueProfileAnalyticsSync(trigger);
+  void queueProfileAnalyticsSync(trigger).finally(() => {
+    void queueProfileViewersSync(trigger);
+    void queueProfileViewersStatusSync({ trigger, urgent: true });
+  });
 });
 
 chrome.runtime.onStartup.addListener(() => {
@@ -34,9 +35,10 @@ chrome.runtime.onStartup.addListener(() => {
     event: 'chrome_startup',
     trigger: 'chrome_startup',
   });
-  void queueProfileViewersSync('chrome_startup');
-  void queueProfileViewersStatusSync({ trigger: 'chrome_startup' });
-  void queueProfileAnalyticsSync('chrome_startup');
+  void queueProfileAnalyticsSync('chrome_startup').finally(() => {
+    void queueProfileViewersSync('chrome_startup');
+    void queueProfileViewersStatusSync({ trigger: 'chrome_startup' });
+  });
 });
 
 chrome.alarms?.onAlarm.addListener((alarm) => {
@@ -78,8 +80,6 @@ void appendProfileViewersWakeEvent({
   event: 'worker_loaded',
   trigger: 'service_worker',
 });
-void queueProfileViewersSync('service_worker');
-void queueProfileViewersStatusSync({ trigger: 'service_worker' });
 // Acceptance Rate is now reconciled by the shared Profile Analytics alarm.
 // Remove the legacy standalone invitation-status alarm after upgrading.
 void chrome.alarms?.clear(CONNECTION_INVITES_STATUS_ALARM_NAME);
@@ -91,7 +91,12 @@ void chrome.alarms?.get(PROFILE_ANALYTICS_ALARM_NAME).then((alarm) => {
     scheduledAtIso: alarm ? new Date(alarm.scheduledTime).toISOString() : undefined,
   });
 });
-void migrateToIndependentLinkedInSync().then(() => queueProfileAnalyticsSync('service_worker'));
+void migrateToIndependentLinkedInSync()
+  .then(() => queueProfileAnalyticsSync('service_worker'))
+  .finally(() => {
+    void queueProfileViewersSync('service_worker');
+    void queueProfileViewersStatusSync({ trigger: 'service_worker' });
+  });
 
 import './external-message-handler';
 import './auth-settings-message-handler';

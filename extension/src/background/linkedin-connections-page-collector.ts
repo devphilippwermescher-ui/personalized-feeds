@@ -311,8 +311,5 @@ export async function collectConnectionsInLinkedInPage(
     pagesFetched,
     connectionRecords: Array.from(connectionRecordsById.values()),
     ...(recentConnectionIds.length > 0 ? { recentConnectionIds } : {}),
-    ...(typeof total === 'number' && paginationComplete && !connectionDateCountsComplete && !boundaryFound
-      ? { error: `LinkedIn returned ${collected} dated connections out of ${total}.` }
-      : {}),
   };
 }

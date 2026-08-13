@@ -34,6 +34,7 @@ import {
 import { queueProfileViewersStatusSync } from './profile-viewers-status-sync';
 import { recordProfileViewsAnalytics } from './profile-viewers-analytics';
 import type { ProfileViewersSyncResult } from './profile-viewers-sync-result';
+import { getActiveLinkedInHeavySyncLock } from './linkedin-heavy-sync-lock';
 
 const PROFILE_VIEWERS_SYNC_LOG_LIMIT = 50;
 const PROFILE_VIEWERS_SYNC_LOG_USERNAME_LIMIT = 50;
@@ -211,6 +212,25 @@ async function runProfileViewersSyncCoordinator(
       authRecoveryAt: undefined,
       updatedAt: Date.now(),
     };
+  }
+
+  const heavySyncLock = await getActiveLinkedInHeavySyncLock(user.uid);
+  if (heavySyncLock) {
+    const scheduledAt = heavySyncLock.expiresAt + 5_000;
+    if (hadAuthRecoveryState) await setProfileViewersSyncState(state);
+    await scheduleProfileViewersAlarmAt(scheduledAt, 'connections_history_bootstrap');
+    await appendProfileViewersWakeEvent({
+      event: 'sync_skipped',
+      trigger,
+      reason: 'connections_history_bootstrap',
+      scheduledAt,
+    });
+    console.info('[profile-viewers-sync] deferred for Connections history bootstrap', {
+      trigger,
+      scheduledAt,
+      accountKey: heavySyncLock.accountKey,
+    });
+    return { ran: false, success: true };
   }
 
   const decisionAt = Date.now();

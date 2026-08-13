@@ -1,12 +1,16 @@
-import { getDoc, getDocs, limit, onSnapshot, orderBy, query, writeBatch } from 'firebase/firestore';
+import { getDoc, getDocs, limit, onSnapshot, orderBy, query, where, writeBatch } from 'firebase/firestore';
 import { getFirebaseDb } from '../firebase-config';
 import type { ProfileAnalyticsDailySnapshot, ProfileAnalyticsSnapshot } from '../types';
 import {
   docToProfileAnalyticsDailySnapshot,
+  legacyProfileAnalyticsDailyCollection,
+  legacyProfileAnalyticsDoc,
+  profileAnalyticsMigrationDoc,
   profileAnalyticsDailyCollection,
   profileAnalyticsDailyDoc,
   profileAnalyticsDoc,
   profileAnalyticsSampleDoc,
+  profileConnectionInviteDoc,
 } from './refs';
 
 function getUtcDateKey(timestamp: number): string {
@@ -99,9 +103,55 @@ function hasRangeMetric(snapshot: Partial<ProfileAnalyticsDailySnapshot>): boole
   ].some((value) => typeof value === 'number');
 }
 
+/**
+ * One-way, non-destructive migration from the old mixed metadata collection.
+ * Legacy documents remain readable during rollout, but every new write uses a
+ * dedicated Profile Analytics collection.
+ */
+export async function migrateLegacyProfileAnalyticsStorage(userId: string): Promise<void> {
+  const marker = await getDoc(profileAnalyticsMigrationDoc(userId));
+  if (marker.exists()) return;
+
+  const [current, legacyCurrent, legacyDailyDocuments, legacyInviteDocuments] = await Promise.all([
+    getDoc(profileAnalyticsDoc(userId)),
+    getDoc(legacyProfileAnalyticsDoc(userId)),
+    getDocs(query(legacyProfileAnalyticsDailyCollection(userId), where('sampleKind', '==', 'daily'))),
+    getDocs(query(legacyProfileAnalyticsDailyCollection(userId), where('kind', '==', 'connectionInvite'))),
+  ]);
+  const writes: Array<(batch: ReturnType<typeof writeBatch>) => void> = [];
+  if (!current.exists() && legacyCurrent.exists()) {
+    writes.push((batch) => batch.set(profileAnalyticsDoc(userId), legacyCurrent.data(), { merge: true }));
+  }
+  legacyDailyDocuments.docs.forEach((document) => {
+    if (document.id.startsWith('profileAnalyticsDaily_')) {
+      const date = document.id.slice('profileAnalyticsDaily_'.length);
+      writes.push((batch) => batch.set(profileAnalyticsDailyDoc(userId, date), document.data(), { merge: true }));
+    }
+  });
+  legacyInviteDocuments.docs.forEach((document) => {
+    if (document.id.startsWith('connectionInvite_')) {
+      const storageKey = document.id.slice('connectionInvite_'.length);
+      writes.push((batch) =>
+        batch.set(profileConnectionInviteDoc(userId, storageKey), document.data(), { merge: true })
+      );
+    }
+  });
+
+  for (let index = 0; index < writes.length; index += 400) {
+    const batch = writeBatch(getFirebaseDb());
+    writes.slice(index, index + 400).forEach((write) => write(batch));
+    await batch.commit();
+  }
+  const finalBatch = writeBatch(getFirebaseDb());
+  finalBatch.set(profileAnalyticsMigrationDoc(userId), { version: 2, completedAt: Date.now() });
+  await finalBatch.commit();
+}
+
 export async function getProfileAnalyticsSnapshot(userId: string): Promise<ProfileAnalyticsSnapshot | null> {
   const snapshot = await getDoc(profileAnalyticsDoc(userId));
-  return snapshot.exists() ? (snapshot.data() as ProfileAnalyticsSnapshot) : null;
+  if (snapshot.exists()) return snapshot.data() as ProfileAnalyticsSnapshot;
+  const legacySnapshot = await getDoc(legacyProfileAnalyticsDoc(userId));
+  return legacySnapshot.exists() ? (legacySnapshot.data() as ProfileAnalyticsSnapshot) : null;
 }
 
 export function subscribeToProfileAnalyticsSnapshot(
@@ -109,11 +159,36 @@ export function subscribeToProfileAnalyticsSnapshot(
   onValue: (snapshot: ProfileAnalyticsSnapshot | null) => void,
   onError?: (error: Error) => void
 ): () => void {
-  return onSnapshot(
+  let current: ProfileAnalyticsSnapshot | null = null;
+  let legacy: ProfileAnalyticsSnapshot | null = null;
+  let currentLoaded = false;
+  let legacyLoaded = false;
+  const emit = () => {
+    if (!currentLoaded || !legacyLoaded) return;
+    onValue(current || legacy);
+  };
+  const unsubscribeCurrent = onSnapshot(
     profileAnalyticsDoc(userId),
-    (snapshot) => onValue(snapshot.exists() ? (snapshot.data() as ProfileAnalyticsSnapshot) : null),
+    (snapshot) => {
+      current = snapshot.exists() ? (snapshot.data() as ProfileAnalyticsSnapshot) : null;
+      currentLoaded = true;
+      emit();
+    },
     (error) => onError?.(error)
   );
+  const unsubscribeLegacy = onSnapshot(
+    legacyProfileAnalyticsDoc(userId),
+    (snapshot) => {
+      legacy = snapshot.exists() ? (snapshot.data() as ProfileAnalyticsSnapshot) : null;
+      legacyLoaded = true;
+      emit();
+    },
+    (error) => onError?.(error)
+  );
+  return () => {
+    unsubscribeCurrent();
+    unsubscribeLegacy();
+  };
 }
 
 export async function upsertProfileAnalyticsSnapshot(
@@ -151,7 +226,18 @@ export async function getProfileAnalyticsDailySnapshots(
 ): Promise<ProfileAnalyticsDailySnapshot[]> {
   const q = query(profileAnalyticsDailyCollection(userId), orderBy('date', 'desc'), limit(maxCount));
   const snapshot = await getDocs(q);
-  return snapshot.docs
+  const current = snapshot.docs
+    .map(docToProfileAnalyticsDailySnapshot)
+    .sort((left, right) => left.date.localeCompare(right.date));
+  if (current.length > 0) return current;
+
+  // Read-only compatibility for users collected before analytics was split
+  // out of profileViewerMetadata. New writes never return to that collection.
+  const legacySnapshot = await getDocs(
+    query(legacyProfileAnalyticsDailyCollection(userId), orderBy('date', 'desc'), limit(maxCount * 3))
+  );
+  return legacySnapshot.docs
+    .filter((document) => document.id.startsWith('profileAnalyticsDaily_'))
     .map(docToProfileAnalyticsDailySnapshot)
     .sort((left, right) => left.date.localeCompare(right.date));
 }
@@ -163,12 +249,44 @@ export function subscribeToProfileAnalyticsDailySnapshots(
   onError?: (error: Error) => void
 ): () => void {
   const q = query(profileAnalyticsDailyCollection(userId), orderBy('date', 'desc'), limit(maxCount));
-  return onSnapshot(
+  const legacyQuery = query(
+    legacyProfileAnalyticsDailyCollection(userId),
+    orderBy('date', 'desc'),
+    limit(maxCount * 3)
+  );
+  let current: ProfileAnalyticsDailySnapshot[] = [];
+  let legacy: ProfileAnalyticsDailySnapshot[] = [];
+  let currentLoaded = false;
+  let legacyLoaded = false;
+  const emit = () => {
+    if (!currentLoaded || !legacyLoaded) return;
+    onValue(current.length > 0 ? current : legacy);
+  };
+  const unsubscribeCurrent = onSnapshot(
     q,
-    (snapshot) =>
-      onValue(
-        snapshot.docs.map(docToProfileAnalyticsDailySnapshot).sort((left, right) => left.date.localeCompare(right.date))
-      ),
+    (snapshot) => {
+      current = snapshot.docs
+        .map(docToProfileAnalyticsDailySnapshot)
+        .sort((left, right) => left.date.localeCompare(right.date));
+      currentLoaded = true;
+      emit();
+    },
     (error) => onError?.(error)
   );
+  const unsubscribeLegacy = onSnapshot(
+    legacyQuery,
+    (snapshot) => {
+      legacy = snapshot.docs
+        .filter((document) => document.id.startsWith('profileAnalyticsDaily_'))
+        .map(docToProfileAnalyticsDailySnapshot)
+        .sort((left, right) => left.date.localeCompare(right.date));
+      legacyLoaded = true;
+      emit();
+    },
+    (error) => onError?.(error)
+  );
+  return () => {
+    unsubscribeCurrent();
+    unsubscribeLegacy();
+  };
 }

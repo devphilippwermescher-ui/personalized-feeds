@@ -4,6 +4,7 @@ import { markTrackedConnectionsAccepted } from './connection-invite-lifecycle';
 import { fetchLinkedInConnectionsSnapshot, type LinkedInConnectionsSnapshot } from './linkedin-connections-api';
 import { fetchFollowersAnalyticsFromLinkedInTab } from './linkedin-followers-analytics-api';
 import { getLinkedInCsrfToken } from './profile-viewers-api-client';
+import type { ProfileAnalyticsConnectionCatchUpCheckpoint } from './profile-analytics-sync-policy';
 
 const LIGHT_CONNECTION_PAGE_LIMIT = 3;
 const CONNECTIONS_SOURCE_URL = 'https://www.linkedin.com/flagship-web/mynetwork/invite-connect/connections';
@@ -21,6 +22,7 @@ export interface ProfileNetworkMetricsSyncResult {
   snapshot: ProfileAnalyticsSnapshot;
   connections: NetworkMetricResult;
   followers: NetworkMetricResult;
+  connectionCatchUpCheckpoint?: ProfileAnalyticsConnectionCatchUpCheckpoint;
 }
 
 function valuesChanged(current: ProfileAnalyticsProfileSnapshot, next: ProfileAnalyticsProfileSnapshot): boolean {
@@ -34,6 +36,8 @@ function valuesChanged(current: ProfileAnalyticsProfileSnapshot, next: ProfileAn
     current.followersCount !== next.followersCount ||
     current.followersCountExact !== next.followersCountExact ||
     JSON.stringify(current.recentConnectionIds || []) !== JSON.stringify(next.recentConnectionIds || []) ||
+    current.connectionIncrementalStatus !== next.connectionIncrementalStatus ||
+    current.connectionIncrementalLastGapAt !== next.connectionIncrementalLastGapAt ||
     JSON.stringify(current.followerGrowthByDate || {}) !== JSON.stringify(next.followerGrowthByDate || {})
   );
 }
@@ -48,11 +52,13 @@ export async function syncProfileNetworkMetrics({
   userId,
   linkedInTabIds,
   currentSnapshot,
+  connectionCatchUpCheckpoint,
   collectedAt = Date.now(),
 }: {
   userId: string;
   linkedInTabIds: number[];
   currentSnapshot: ProfileAnalyticsSnapshot;
+  connectionCatchUpCheckpoint?: ProfileAnalyticsConnectionCatchUpCheckpoint;
   collectedAt?: number;
 }): Promise<ProfileNetworkMetricsSyncResult> {
   if (!currentSnapshot.profile) {
@@ -78,8 +84,9 @@ export async function syncProfileNetworkMetrics({
     console.info('[profile-analytics] Connections collector started', { linkedInTabId });
     const candidate = await fetchLinkedInConnectionsSnapshot(csrfToken, linkedInTabId, {
       includeHistory: false,
-      knownConnectionIds: currentProfile.recentConnectionIds,
+      knownConnectionIds: connectionCatchUpCheckpoint?.boundaryConnectionIds || currentProfile.recentConnectionIds,
       maxPages: LIGHT_CONNECTION_PAGE_LIMIT,
+      startIndex: connectionCatchUpCheckpoint?.nextStartIndex,
     }).catch(
       (error): LinkedInConnectionsSnapshot => ({
         connectionDateCounts: {},
@@ -105,24 +112,51 @@ export async function syncProfileNetworkMetrics({
     error: connectionsSnapshot.error,
   });
   const connectionsCollected = typeof connectionsSnapshot.connectionsCount === 'number';
-  let connectionHistoryRepairNeeded = false;
+  let connectionCatchUpNeeded = false;
+  let nextCatchUpCheckpoint: ProfileAnalyticsConnectionCatchUpCheckpoint | undefined;
   if (connectionsCollected) {
-    const newDateCounts = connectionsSnapshot.newConnectionDateCounts || {};
-    const newConnectionCount = Object.values(newDateCounts).reduce((sum, count) => sum + count, 0);
-    const totalDelta = connectionsSnapshot.connectionsCount! - (currentProfile.connectionsCount || 0);
+    const checkpointMatchesTotal =
+      !connectionCatchUpCheckpoint ||
+      connectionCatchUpCheckpoint.expectedTotal === connectionsSnapshot.connectionsCount;
+    const connectionDatesById = checkpointMatchesTotal
+      ? { ...(connectionCatchUpCheckpoint?.connectionDatesById || {}) }
+      : {};
+    if (checkpointMatchesTotal) {
+      (connectionsSnapshot.connectionRecords || []).forEach((record) => {
+        connectionDatesById[record.id] = record.connectedDate;
+      });
+    }
+    const newDateCounts = Object.values(connectionDatesById).reduce<Record<string, number>>((counts, date) => {
+      counts[date] = (counts[date] || 0) + 1;
+      return counts;
+    }, {});
     const hasKnownBoundary = currentProfile.recentConnectionIds && currentProfile.recentConnectionIds.length > 0;
-    const incrementalReliable = Boolean(hasKnownBoundary && connectionsSnapshot.boundaryFound);
+    const incrementalReliable = Boolean(
+      checkpointMatchesTotal && hasKnownBoundary && connectionsSnapshot.boundaryFound
+    );
     const nextDateCounts = { ...(currentProfile.connectionDateCounts || {}) };
     if (incrementalReliable) {
       Object.entries(newDateCounts).forEach(([date, count]) => {
         nextDateCounts[date] = (nextDateCounts[date] || 0) + count;
       });
     }
-    connectionHistoryRepairNeeded = Boolean(
-      (hasKnownBoundary && !connectionsSnapshot.boundaryFound) ||
-      (currentProfile.connectionDateCountsComplete &&
-        (totalDelta < 0 || !incrementalReliable || totalDelta !== newConnectionCount))
+    connectionCatchUpNeeded = Boolean(
+      hasKnownBoundary && (!checkpointMatchesTotal || !connectionsSnapshot.boundaryFound)
     );
+    if (connectionCatchUpNeeded && connectionsSnapshot.paginationComplete !== true) {
+      nextCatchUpCheckpoint = {
+        version: 1,
+        expectedTotal: connectionsSnapshot.connectionsCount!,
+        nextStartIndex: checkpointMatchesTotal ? connectionsSnapshot.nextStartIndex || 0 : 0,
+        connectionDatesById: checkpointMatchesTotal ? connectionDatesById : {},
+        boundaryConnectionIds:
+          connectionCatchUpCheckpoint?.boundaryConnectionIds || currentProfile.recentConnectionIds || [],
+        recentConnectionIds: checkpointMatchesTotal
+          ? connectionCatchUpCheckpoint?.recentConnectionIds || connectionsSnapshot.recentConnectionIds || []
+          : connectionsSnapshot.recentConnectionIds || [],
+        lastAttemptAt: collectedAt,
+      };
+    }
     nextProfile = {
       ...nextProfile,
       connectionsCount: connectionsSnapshot.connectionsCount,
@@ -135,11 +169,19 @@ export async function syncProfileNetworkMetrics({
             connectionDateCountsUpdatedAt: collectedAt,
           }
         : {}),
-      ...(connectionHistoryRepairNeeded ? { connectionDateCountsComplete: false } : {}),
+      // A light sync never invalidates the immutable one-time baseline. If it
+      // cannot reach the known boundary, a separate incremental catch-up is
+      // marked pending instead of scheduling another full-history crawl.
+      connectionIncrementalStatus: connectionCatchUpNeeded ? 'catch_up_pending' : 'current',
+      ...(connectionCatchUpNeeded ? { connectionIncrementalLastGapAt: collectedAt } : {}),
       recentConnectionIds:
-        connectionsSnapshot.recentConnectionIds && connectionsSnapshot.recentConnectionIds.length > 0
+        incrementalReliable &&
+        (connectionCatchUpCheckpoint?.recentConnectionIds || connectionsSnapshot.recentConnectionIds)?.length
           ? Array.from(
-              new Set([...connectionsSnapshot.recentConnectionIds, ...(currentProfile.recentConnectionIds || [])])
+              new Set([
+                ...(connectionCatchUpCheckpoint?.recentConnectionIds || connectionsSnapshot.recentConnectionIds || []),
+                ...(currentProfile.recentConnectionIds || []),
+              ])
             ).slice(0, 100)
           : currentProfile.recentConnectionIds,
     };
@@ -213,7 +255,7 @@ export async function syncProfileNetworkMetrics({
       changed: connectionsCollected && currentProfile.connectionsCount !== nextProfile.connectionsCount,
       value: nextProfile.connectionsCount,
       sourceUrl: CONNECTIONS_SOURCE_URL,
-      repairNeeded: connectionHistoryRepairNeeded,
+      repairNeeded: connectionCatchUpNeeded,
       ...(!connectionsCollected
         ? { error: connectionsSnapshot.error || 'LinkedIn did not return an exact Connections total.' }
         : {}),
@@ -227,5 +269,6 @@ export async function syncProfileNetworkMetrics({
         ? { error: followersSnapshot?.error || 'LinkedIn did not return an exact Followers total.' }
         : {}),
     },
+    connectionCatchUpCheckpoint: nextCatchUpCheckpoint,
   };
 }

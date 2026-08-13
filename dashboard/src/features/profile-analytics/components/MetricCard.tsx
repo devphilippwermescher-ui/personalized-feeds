@@ -8,16 +8,24 @@ interface MetricCardProps {
   rangeLabel: string;
   tone: 'blue' | 'cyan' | 'mint' | 'sky' | 'violet' | 'amber';
   tooltip?: string;
+  loading?: boolean;
 }
 
-export function MetricCard({ icon, label, value, rangeLabel, tone, tooltip }: MetricCardProps) {
+export function MetricCard({ icon, label, value, rangeLabel, tone, tooltip, loading = false }: MetricCardProps) {
   const tooltipId = useId();
 
   return (
     <div className="profile-analytics-metric">
       <div className={`profile-analytics-metric-icon profile-analytics-metric-icon--${tone}`}>{icon}</div>
       <div>
-        <div className="profile-analytics-metric-value">{value}</div>
+        {loading ? (
+          <div
+            className="profile-analytics-skeleton-block profile-analytics-skeleton-line profile-analytics-skeleton-line--value"
+            aria-label={`Collecting ${label} history from LinkedIn`}
+          />
+        ) : (
+          <div className="profile-analytics-metric-value">{value}</div>
+        )}
         <div className="profile-analytics-metric-label">
           {label} <span>({rangeLabel})</span>
           {tooltip ? (

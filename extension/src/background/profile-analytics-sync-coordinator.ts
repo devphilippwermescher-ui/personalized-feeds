@@ -1,4 +1,8 @@
-import { CONNECTION_INVITE_FIRST_CHECK_DELAY_MS, getProfileAnalyticsSnapshot } from 'shared/firestore-service';
+import {
+  CONNECTION_INVITE_FIRST_CHECK_DELAY_MS,
+  getProfileAnalyticsSnapshot,
+  migrateLegacyProfileAnalyticsStorage,
+} from 'shared/firestore-service';
 import type { ProfileAnalyticsSyncMetric } from 'shared/types';
 import { getAuthenticatedFeedsUser } from './feeds-auth';
 import { runDueAcceptanceTask } from './profile-analytics-acceptance-task';
@@ -7,6 +11,7 @@ import { runSearchAppearancesTask, runSocialSellingIndexTask } from './profile-a
 import { runConnectionHistoryTask } from './profile-analytics-history-task';
 import { runProfileAnalyticsNetworkTask } from './profile-analytics-network-task';
 import { runProfileAnalyticsMetadataTask } from './profile-analytics-metadata-task';
+import { getActiveLinkedInHeavySyncLock } from './linkedin-heavy-sync-lock';
 import { selectLinkedInExecutionTabs } from './linkedin-tab-selection';
 import {
   createProfileAnalyticsSyncState,
@@ -62,6 +67,7 @@ async function runProfileAnalyticsSync(
   const startedAt = Date.now();
   let state = (await getStoredProfileAnalyticsSyncState(user.uid)) || createProfileAnalyticsSyncState(user.uid);
   state = recoverInterruptedProfileAnalyticsState(state);
+  await migrateLegacyProfileAnalyticsStorage(user.uid);
   let snapshot = await getProfileAnalyticsSnapshot(user.uid);
   const metricsRan: ProfileAnalyticsSyncMetric[] = [];
   let currentSynced = false;
@@ -114,78 +120,102 @@ async function runProfileAnalyticsSync(
   currentSynced = bootstrap.currentSynced;
   metricsRan.push(...bootstrap.metrics);
 
-  const metadataTask = await runProfileAnalyticsMetadataTask({
-    userId: user.uid,
-    state,
-    snapshot,
-    trigger,
-    linkedInTabId: linkedInTab?.id,
-    startedAt,
-    bootstrapRan: bootstrap.currentSynced,
-  });
-  state = metadataTask.state;
-  snapshot = metadataTask.snapshot;
-  currentSynced = currentSynced || metadataTask.currentSynced;
-  metricsRan.push(...metadataTask.metrics);
+  const heavySyncLock = await getActiveLinkedInHeavySyncLock(user.uid);
+  const exclusiveHistoryMode = heavySyncLock?.owner === 'connections_history_bootstrap';
+  if (exclusiveHistoryMode && trigger === 'profile_metadata_changed') {
+    // Preserve the edit signal. Metadata will be refreshed by the first alarm
+    // after the one-time history bootstrap releases its exclusive lock.
+    state.metadataNextRetryAt = state.metadataNextRetryAt
+      ? Math.min(state.metadataNextRetryAt, heavySyncLock.expiresAt + 1_000)
+      : heavySyncLock.expiresAt + 1_000;
+  }
 
-  const networkTask = await runProfileAnalyticsNetworkTask({
-    userId: user.uid,
-    state,
-    snapshot,
-    trigger,
-    linkedInTabIds,
-    startedAt,
-  });
-  state = networkTask.state;
-  snapshot = networkTask.snapshot;
-  currentSynced = currentSynced || networkTask.currentSynced;
-  metricsRan.push(...networkTask.metrics);
+  if (!exclusiveHistoryMode) {
+    const metadataTask = await runProfileAnalyticsMetadataTask({
+      userId: user.uid,
+      state,
+      snapshot,
+      trigger,
+      linkedInTabId: linkedInTab?.id,
+      startedAt,
+      bootstrapRan: bootstrap.currentSynced,
+    });
+    state = metadataTask.state;
+    snapshot = metadataTask.snapshot;
+    currentSynced = currentSynced || metadataTask.currentSynced;
+    metricsRan.push(...metadataTask.metrics);
 
-  const acceptanceTask = await runDueAcceptanceTask({
-    userId: user.uid,
-    state,
-    snapshot,
-    trigger,
-    startedAt,
-  });
-  state = acceptanceTask.state;
-  currentSynced = currentSynced || acceptanceTask.currentSynced;
-  metricsRan.push(...acceptanceTask.metrics);
+    const networkTask = await runProfileAnalyticsNetworkTask({
+      userId: user.uid,
+      state,
+      snapshot,
+      trigger,
+      linkedInTabIds,
+      startedAt,
+    });
+    state = networkTask.state;
+    snapshot = networkTask.snapshot;
+    currentSynced = currentSynced || networkTask.currentSynced;
+    metricsRan.push(...networkTask.metrics);
 
-  const searchTask = await runSearchAppearancesTask({
-    userId: user.uid,
-    state,
-    snapshot,
-    trigger,
-    startedAt,
-  });
-  state = searchTask.state;
-  snapshot = searchTask.snapshot;
-  metricsRan.push(...searchTask.metrics);
+    const acceptanceTask = await runDueAcceptanceTask({
+      userId: user.uid,
+      state,
+      snapshot,
+      trigger,
+      startedAt,
+    });
+    state = acceptanceTask.state;
+    currentSynced = currentSynced || acceptanceTask.currentSynced;
+    metricsRan.push(...acceptanceTask.metrics);
 
-  const ssiTask = await runSocialSellingIndexTask({
-    userId: user.uid,
-    state,
-    snapshot,
-    trigger,
-    linkedInTabId: linkedInTab?.id,
-    startedAt,
-  });
-  state = ssiTask.state;
-  snapshot = ssiTask.snapshot;
-  metricsRan.push(...ssiTask.metrics);
+    const searchTask = await runSearchAppearancesTask({
+      userId: user.uid,
+      state,
+      snapshot,
+      trigger,
+      startedAt,
+    });
+    state = searchTask.state;
+    snapshot = searchTask.snapshot;
+    metricsRan.push(...searchTask.metrics);
+
+    const ssiTask = await runSocialSellingIndexTask({
+      userId: user.uid,
+      state,
+      snapshot,
+      trigger,
+      linkedInTabId: linkedInTab?.id,
+      startedAt,
+    });
+    state = ssiTask.state;
+    snapshot = ssiTask.snapshot;
+    metricsRan.push(...ssiTask.metrics);
+  } else {
+    console.info('[profile-analytics] routine metrics deferred for Connections history bootstrap', {
+      trigger,
+      accountKey: heavySyncLock.accountKey,
+      lockExpiresAt: heavySyncLock.expiresAt,
+    });
+  }
 
   // History runs in resumable batches. Bootstrap schedules the first batch;
   // alarms continue it without blocking routine dashboard-open refreshes.
   const shouldEvaluateHistory =
-    Boolean(snapshot?.profile && snapshot.profile.connectionDateCountsComplete !== true) &&
-    (bootstrap.currentSynced || trigger === 'alarm' || trigger === 'manual');
+    Boolean(snapshot?.profile) &&
+    (bootstrap.currentSynced ||
+      trigger === 'alarm' ||
+      trigger === 'manual' ||
+      trigger === 'history_resume' ||
+      trigger === 'history_repair' ||
+      exclusiveHistoryMode);
   if (shouldEvaluateHistory) {
     const historyTask = await runConnectionHistoryTask({
       state,
       snapshot,
       trigger,
       linkedInTabId: linkedInTab?.id,
+      allowCreate: bootstrap.currentSynced,
     });
     state = historyTask.state;
     snapshot = historyTask.snapshot;
@@ -196,7 +226,12 @@ async function runProfileAnalyticsSync(
   if (!state.networkNextDueAt && !state.networkNextRetryAt) {
     state.networkNextDueAt = now + getProfileAnalyticsScheduledIntervalMs();
   }
-  const nextScheduledAt = getNextProfileAnalyticsAlarmAt(state, now);
+  const remainingHeavySyncLock = await getActiveLinkedInHeavySyncLock(user.uid, now);
+  // Routine due timestamps intentionally stay unchanged while history owns
+  // LinkedIn. Scheduling from them would create a one-second alarm loop.
+  const nextScheduledAt = remainingHeavySyncLock
+    ? state.historyNextRetryAt || remainingHeavySyncLock.expiresAt
+    : getNextProfileAnalyticsAlarmAt(state, now);
   state = finishProfileAnalyticsSyncState(state, trigger, startedAt, Array.from(new Set(metricsRan)), nextScheduledAt);
   await setStoredProfileAnalyticsSyncState(state);
   await scheduleProfileAnalyticsAlarm(nextScheduledAt, 'next_due_check');

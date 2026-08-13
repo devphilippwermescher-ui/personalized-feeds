@@ -10,6 +10,7 @@ import {
   PROFILE_VIEWERS_STATUS_STALE_MS,
   selectProfileViewersForStatusSync,
 } from './profile-viewers-status-sync-selection';
+import { getActiveLinkedInHeavySyncLock } from './linkedin-heavy-sync-lock';
 
 export {
   PROFILE_VIEWERS_STATUS_BATCH_LIMIT,
@@ -245,6 +246,26 @@ export async function runProfileViewersStatusSync(
   let state = await getStoredStatusSyncState();
   if (state?.userId && state.userId !== user.uid) {
     state = null;
+  }
+
+  const heavySyncLock = await getActiveLinkedInHeavySyncLock(user.uid, now);
+  if (heavySyncLock) {
+    const nextDueAt = heavySyncLock.expiresAt + 5_000;
+    await setStoredStatusSyncState({
+      ...(state || {}),
+      userId: user.uid,
+      priorityUsernames: state?.priorityUsernames || [],
+      inProgressUntil: undefined,
+      nextDueAt,
+      updatedAt: now,
+    });
+    await scheduleStatusSyncAlarmAt(nextDueAt);
+    console.info('[profile-viewers-status-sync] deferred for Connections history bootstrap', {
+      trigger,
+      nextDueAt,
+      accountKey: heavySyncLock.accountKey,
+    });
+    return { ran: false, success: true, nextDueAt };
   }
 
   if (state?.inProgressUntil && now < state.inProgressUntil) {

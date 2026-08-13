@@ -1,9 +1,4 @@
-import {
-  collection,
-  doc,
-  type DocumentData,
-  type QueryDocumentSnapshot,
-} from 'firebase/firestore';
+import { collection, doc, type DocumentData, type QueryDocumentSnapshot } from 'firebase/firestore';
 import { getFirebaseDb } from '../firebase-config';
 import type {
   Feed,
@@ -45,23 +40,55 @@ export function profileViewerSummaryDoc(userId: string) {
 }
 
 export function profileAnalyticsDoc(userId: string) {
-  return doc(getFirebaseDb(), 'users', userId, 'profileViewerMetadata', 'profileAnalytics');
+  return doc(getFirebaseDb(), 'users', userId, 'profileAnalytics', 'current');
 }
 
 export function profileAnalyticsDailyCollection(userId: string) {
-  return collection(getFirebaseDb(), 'users', userId, 'profileViewerMetadata');
+  return collection(getFirebaseDb(), 'users', userId, 'profileAnalyticsDaily');
 }
 
 export function profileAnalyticsDailyDoc(userId: string, date: string) {
-  return doc(getFirebaseDb(), 'users', userId, 'profileViewerMetadata', `profileAnalyticsDaily_${date}`);
+  return doc(getFirebaseDb(), 'users', userId, 'profileAnalyticsDaily', date);
 }
 
 export function profileAnalyticsSampleDoc(userId: string, timestamp: number) {
-  return doc(getFirebaseDb(), 'users', userId, 'profileViewerMetadata', `profileAnalyticsSample_${timestamp}`);
+  return doc(getFirebaseDb(), 'users', userId, 'profileAnalyticsSamples', String(timestamp));
 }
 
 export function profileConnectionInviteDoc(userId: string, linkedinUsername: string) {
+  return doc(getFirebaseDb(), 'users', userId, 'connectionInvites', linkedinUsername);
+}
+
+export function legacyProfileAnalyticsDoc(userId: string) {
+  return doc(getFirebaseDb(), 'users', userId, 'profileViewerMetadata', 'profileAnalytics');
+}
+
+export function legacyProfileAnalyticsDailyCollection(userId: string) {
+  return collection(getFirebaseDb(), 'users', userId, 'profileViewerMetadata');
+}
+
+export function legacyConnectionInvitesCollection(userId: string) {
+  return collection(getFirebaseDb(), 'users', userId, 'profileViewerMetadata');
+}
+
+export function legacyProfileConnectionInviteDoc(userId: string, linkedinUsername: string) {
   return doc(getFirebaseDb(), 'users', userId, 'profileViewerMetadata', `connectionInvite_${linkedinUsername}`);
+}
+
+export function profileAnalyticsHistoryJobDoc(userId: string, jobId: string) {
+  return doc(getFirebaseDb(), 'users', userId, 'profileAnalyticsJobs', jobId);
+}
+
+export function profileAnalyticsMigrationDoc(userId: string) {
+  return doc(getFirebaseDb(), 'users', userId, 'profileAnalyticsJobs', 'storageMigrationV2');
+}
+
+export function profileAnalyticsHistoryChunksCollection(userId: string) {
+  return collection(getFirebaseDb(), 'users', userId, 'profileAnalyticsHistoryChunks');
+}
+
+export function profileAnalyticsHistoryChunkDoc(userId: string, chunkId: string) {
+  return doc(getFirebaseDb(), 'users', userId, 'profileAnalyticsHistoryChunks', chunkId);
 }
 
 export function emailIndexCollection() {
@@ -84,21 +111,15 @@ export function docToMember(d: QueryDocumentSnapshot<DocumentData, DocumentData>
   return { id: d.id, ...d.data() } as FeedMember;
 }
 
-export function docToShareAccess(
-  d: QueryDocumentSnapshot<DocumentData, DocumentData>
-): FeedShareAccess {
+export function docToShareAccess(d: QueryDocumentSnapshot<DocumentData, DocumentData>): FeedShareAccess {
   return d.data() as FeedShareAccess;
 }
 
-export function docToProfileViewer(
-  d: QueryDocumentSnapshot<DocumentData, DocumentData>
-): ProfileViewer {
+export function docToProfileViewer(d: QueryDocumentSnapshot<DocumentData, DocumentData>): ProfileViewer {
   return { id: d.id, ...d.data() } as ProfileViewer;
 }
 
-export function docToProfileViewerSearch(
-  d: QueryDocumentSnapshot<DocumentData, DocumentData>
-): ProfileViewerSearch {
+export function docToProfileViewerSearch(d: QueryDocumentSnapshot<DocumentData, DocumentData>): ProfileViewerSearch {
   return { id: d.id, ...d.data() } as ProfileViewerSearch;
 }
 

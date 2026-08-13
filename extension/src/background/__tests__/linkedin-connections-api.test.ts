@@ -105,6 +105,44 @@ describe('LinkedIn connections RSC parsing', () => {
     }
   });
 
+  it('finishes pagination without treating undated rows as a request failure', async () => {
+    const originalFetch = window.fetch;
+    window.fetch = async () =>
+      new Response(
+        'x{"id":"totalConnectionsCount","value":{"intValue":2}}' +
+          '"url":"https://www.linkedin.com/in/dated-user/" Connected on August 10, 2026',
+        { status: 200 }
+      );
+
+    try {
+      const result = await collectConnectionsInLinkedInPage(
+        'csrf',
+        'https://www.linkedin.com/flagship-web/mynetwork/invite-connect/connections',
+        'https://www.linkedin.com/flagship-web/rsc-action/actions/pagination?sduiid=test',
+        '{}',
+        'pager',
+        'sort',
+        'namespace',
+        'screen',
+        1,
+        0,
+        [],
+        0,
+        10,
+        0,
+        1_000,
+        5_000
+      );
+
+      expect(result.paginationComplete).toBe(true);
+      expect(result.connectionRecords).toEqual([{ id: 'dated-user', connectedDate: '2026-08-10' }]);
+      expect(result.connectionDateCountsComplete).toBe(false);
+      expect(result.error).toBeUndefined();
+    } finally {
+      window.fetch = originalFetch;
+    }
+  });
+
   it('allows pagination responses without a repeated nextPageRequest', () => {
     const page = parseLinkedInConnectionsRscPage('2:["$","p",null,{"children":["Connected on July 29, 2026"]}]');
 

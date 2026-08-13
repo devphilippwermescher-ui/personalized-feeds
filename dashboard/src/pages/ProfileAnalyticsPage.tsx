@@ -13,6 +13,7 @@ import { MetricCard } from '../features/profile-analytics/components/MetricCard'
 import { ProfileAnalyticsHero } from '../features/profile-analytics/components/ProfileAnalyticsHero';
 import {
   ProfileAnalyticsDataSkeleton,
+  ProfileAnalyticsChartSkeleton,
   ProfileAnalyticsSkeleton,
 } from '../features/profile-analytics/components/ProfileAnalyticsSkeleton';
 import { ProfileAnalyticsSyncNotice } from '../features/profile-analytics/components/ProfileAnalyticsSyncNotice';
@@ -29,8 +30,12 @@ export default function ProfileAnalyticsPage({ userId }: ProfileAnalyticsPagePro
   const analytics = useProfileAnalyticsViewModel(userId, dateRange.selectedDateRange);
 
   if (analytics.loading) return <ProfileAnalyticsSkeleton />;
-  const showDataSkeleton =
-    !analytics.supportingDataLoaded || !analytics.syncStatusLoaded || analytics.syncStatus?.status === 'syncing';
+  const routineSyncRunning =
+    analytics.syncStatus?.status === 'syncing' && !analytics.connectionHistoryLoading;
+  // A routine refresh hides stale cards until Firestore has been reread. The
+  // one-time Connections bootstrap is different: current totals are already
+  // authoritative, so only range-dependent Connections UI stays skeletal.
+  const showDataSkeleton = !analytics.snapshot || routineSyncRunning;
 
   return (
     <div className="profile-analytics-page">
@@ -59,6 +64,26 @@ export default function ProfileAnalyticsPage({ userId }: ProfileAnalyticsPagePro
 
       <ProfileAnalyticsSyncNotice status={analytics.syncStatus} extensionError={analytics.syncStatusError} />
 
+      {analytics.connectionHistoryLoading ? (
+        <div className="profile-analytics-sync-notice profile-analytics-sync-notice--info" role="status">
+          <span>
+            Collecting your Connections history from LinkedIn… Current totals are ready now; date ranges and the
+            Connections chart will appear automatically when the one-time import finishes.
+            {typeof analytics.connectionHistoryBootstrap?.collectedCount === 'number' &&
+            typeof analytics.connectionHistoryBootstrap?.expectedTotal === 'number'
+              ? ` ${analytics.connectionHistoryBootstrap.collectedCount} of ${analytics.connectionHistoryBootstrap.expectedTotal} processed.`
+              : ''}
+          </span>
+        </div>
+      ) : null}
+
+      {analytics.connectionHistoryNeedsRepair ? (
+        <div className="profile-analytics-sync-notice profile-analytics-sync-notice--warning" role="status">
+          Current Connections total is available, but the one-time history import needs to be resumed before date ranges
+          can be shown.
+        </div>
+      ) : null}
+
       {analytics.error ? (
         <div className="profile-analytics-alert profile-analytics-alert--error">{analytics.error}</div>
       ) : null}
@@ -74,6 +99,7 @@ export default function ProfileAnalyticsPage({ userId }: ProfileAnalyticsPagePro
               label="Connections"
               rangeLabel={dateRange.rangeLabel}
               tone="blue"
+              loading={!analytics.isTotalRange && analytics.connectionHistoryLoading}
             />
             <MetricCard
               icon={<HiOutlineHeart />}
@@ -88,6 +114,7 @@ export default function ProfileAnalyticsPage({ userId }: ProfileAnalyticsPagePro
               label="Acceptance Rate"
               rangeLabel={dateRange.rangeLabel}
               tone="mint"
+              loading={!analytics.supportingDataLoaded}
               tooltip={
                 analytics.acceptanceRate.sentCount
                   ? `${analytics.acceptanceRate.acceptedCount} of ${analytics.acceptanceRate.sentCount} tracked invites accepted. Only invites sent while the extension is active count.`
@@ -100,6 +127,7 @@ export default function ProfileAnalyticsPage({ userId }: ProfileAnalyticsPagePro
               label="Profile Visitors"
               rangeLabel={dateRange.rangeLabel}
               tone="sky"
+              loading={!analytics.supportingDataLoaded}
             />
             <MetricCard
               icon={<HiOutlineMagnifyingGlass />}
@@ -122,11 +150,17 @@ export default function ProfileAnalyticsPage({ userId }: ProfileAnalyticsPagePro
           </div>
 
           <div className="profile-analytics-chart-grid">
-            <ConnectionsFollowersChart
-              points={analytics.connectionsFollowersPoints}
-              rangeLabel={dateRange.rangeLabel}
-              connectionsAddedEstimated={analytics.profile?.connectionHistoryKind === 'backfilled_current_connections'}
-            />
+            {analytics.connectionHistoryLoading ? (
+              <ProfileAnalyticsChartSkeleton title="Connections history" />
+            ) : (
+              <ConnectionsFollowersChart
+                points={analytics.connectionsFollowersPoints}
+                rangeLabel={dateRange.rangeLabel}
+                connectionsAddedEstimated={
+                  analytics.profile?.connectionHistoryKind === 'backfilled_current_connections'
+                }
+              />
+            )}
             <MetricTrendChart
               title="Acceptance Rate"
               summary={

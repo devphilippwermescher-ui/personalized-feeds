@@ -31,6 +31,19 @@ export function ProfileAnalyticsDataSkeleton() {
   );
 }
 
+export function ProfileAnalyticsChartSkeleton({ title }: { title: string }) {
+  return (
+    <section
+      className="profile-analytics-card profile-analytics-card--wide profile-analytics-skeleton-chart"
+      aria-label={`${title} is being collected from LinkedIn`}
+      aria-busy="true"
+    >
+      <div className="profile-analytics-skeleton-block profile-analytics-skeleton-line profile-analytics-skeleton-line--chart-title" />
+      <div className="profile-analytics-skeleton-block profile-analytics-skeleton-chart-body" />
+    </section>
+  );
+}
+
 export function ProfileAnalyticsSkeleton() {
   return (
     <div className="profile-analytics-skeleton" aria-label="Loading profile analytics" aria-busy="true">

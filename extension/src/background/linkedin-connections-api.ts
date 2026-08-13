@@ -68,7 +68,18 @@ const CONNECTIONS_RSC_BODY = JSON.stringify({
 export async function fetchLinkedInConnectionsSnapshot(
   csrfToken: string,
   linkedInTabId?: number,
-  options: { includeHistory?: boolean; knownConnectionIds?: string[]; maxPages?: number; startIndex?: number } = {}
+  options: {
+    includeHistory?: boolean;
+    knownConnectionIds?: string[];
+    maxPages?: number;
+    startIndex?: number;
+    paginationDelayMs?: number;
+    paginationBatchSize?: number;
+    paginationBatchCooldownMs?: number;
+    requestTimeoutMs?: number;
+    workTimeoutMs?: number;
+    scriptTimeoutMs?: number;
+  } = {}
 ): Promise<LinkedInConnectionsSnapshot> {
   const includeHistory = options.includeHistory !== false;
   const knownConnectionIds = options.knownConnectionIds || [];
@@ -81,6 +92,19 @@ export async function fetchLinkedInConnectionsSnapshot(
     typeof options.startIndex === 'number' && Number.isSafeInteger(options.startIndex) && options.startIndex > 0
       ? options.startIndex
       : 0;
+  const positiveNumber = (value: number | undefined, fallback: number) =>
+    typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : fallback;
+  const nonNegativeInteger = (value: number | undefined, fallback: number) =>
+    typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : fallback;
+  const paginationDelayMs = positiveNumber(options.paginationDelayMs, CONNECTIONS_PAGINATION_DELAY_MS);
+  const paginationBatchSize = nonNegativeInteger(options.paginationBatchSize, CONNECTIONS_PAGINATION_BATCH_SIZE);
+  const paginationBatchCooldownMs = positiveNumber(
+    options.paginationBatchCooldownMs,
+    CONNECTIONS_PAGINATION_BATCH_COOLDOWN_MS
+  );
+  const requestTimeoutMs = positiveNumber(options.requestTimeoutMs, CONNECTIONS_TAB_REQUEST_TIMEOUT_MS);
+  const workTimeoutMs = positiveNumber(options.workTimeoutMs, CONNECTIONS_TAB_WORK_TIMEOUT_MS);
+  const scriptTimeoutMs = positiveNumber(options.scriptTimeoutMs, CONNECTIONS_TAB_SCRIPT_TIMEOUT_MS);
 
   if (typeof linkedInTabId !== 'number') {
     return {
@@ -109,14 +133,14 @@ export async function fetchLinkedInConnectionsSnapshot(
           maxPages,
           startIndex,
           knownConnectionIds,
-          CONNECTIONS_PAGINATION_DELAY_MS,
-          CONNECTIONS_PAGINATION_BATCH_SIZE,
-          CONNECTIONS_PAGINATION_BATCH_COOLDOWN_MS,
-          CONNECTIONS_TAB_REQUEST_TIMEOUT_MS,
-          CONNECTIONS_TAB_WORK_TIMEOUT_MS,
+          paginationDelayMs,
+          paginationBatchSize,
+          paginationBatchCooldownMs,
+          requestTimeoutMs,
+          workTimeoutMs,
         ],
       }),
-      CONNECTIONS_TAB_SCRIPT_TIMEOUT_MS,
+      scriptTimeoutMs,
       'LinkedIn Connections tab script'
     );
     const result = results[0]?.result;

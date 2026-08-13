@@ -110,6 +110,7 @@ export async function runProfileAnalyticsNetworkTask({
       userId,
       linkedInTabIds,
       currentSnapshot: snapshot,
+      connectionCatchUpCheckpoint: state.connectionCatchUpCheckpoint,
       collectedAt: startedAt,
     });
     snapshot = result.snapshot;
@@ -142,7 +143,10 @@ export async function runProfileAnalyticsNetworkTask({
       ...state,
       networkLastSuccessAt: totalsSucceeded ? completedAt : state.networkLastSuccessAt,
       networkNextDueAt: totalsSucceeded
-        ? completedAt + getProfileAnalyticsScheduledIntervalMs()
+        ? completedAt +
+          (result.connectionCatchUpCheckpoint
+            ? PROFILE_ANALYTICS_HISTORY_BATCH_DELAY_MS
+            : getProfileAnalyticsScheduledIntervalMs())
         : state.networkNextDueAt,
       networkNextRetryAt: totalsSucceeded
         ? undefined
@@ -150,20 +154,14 @@ export async function runProfileAnalyticsNetworkTask({
       networkRetryKind: totalsSucceeded ? undefined : restricted ? 'restriction' : 'standard',
       networkDirtyAt: totalsSucceeded ? undefined : state.networkDirtyAt,
       acceptanceNextDueAt: state.acceptanceNextDueAt || completedAt + PROFILE_ANALYTICS_NETWORK_SYNC_INTERVAL_MS,
-      ...(result.connections.repairNeeded
-        ? {
-            historyNextRetryAt: completedAt + PROFILE_ANALYTICS_HISTORY_BATCH_DELAY_MS,
-            historyCompletedAt: undefined,
-            historyCheckpoint: undefined,
-            historyLastError: 'Incremental Connections boundary was not reliable; a history repair was scheduled.',
-          }
-        : {}),
+      connectionCatchUpCheckpoint: result.connectionCatchUpCheckpoint,
     };
     console.info('[profile-analytics] light network sync finished', {
       trigger,
       connectionsCollected: result.connections.collected,
       connectionsCount: result.connections.value,
       connectionsChanged: result.connections.changed,
+      incrementalCatchUpNeeded: result.connections.repairNeeded,
       followersCollected: result.followers.collected,
       followersCount: result.followers.value,
       followersChanged: result.followers.changed,

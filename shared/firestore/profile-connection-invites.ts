@@ -2,7 +2,12 @@ import { collection, getDoc, getDocs, onSnapshot, query, serverTimestamp, setDoc
 import { getFirebaseDb } from '../firebase-config';
 import type { ProfileAnalyticsAcceptanceSnapshot, ProfileAnalyticsConnectionInvite } from '../types';
 import { extractProfileToken, normalizeLinkedInUsername, normalizeMemberNumericId } from '../linkedin-identity';
-import { docToProfileAnalyticsConnectionInvite, profileConnectionInviteDoc } from './refs';
+import {
+  docToProfileAnalyticsConnectionInvite,
+  legacyConnectionInvitesCollection,
+  legacyProfileConnectionInviteDoc,
+  profileConnectionInviteDoc,
+} from './refs';
 
 export type TrackConnectionInviteInput = Pick<
   ProfileAnalyticsConnectionInvite,
@@ -91,7 +96,14 @@ export async function markConnectionInviteAccepted(
   }
 
   const inviteRef = profileConnectionInviteDoc(userId, normalizedUsername);
-  const existingInvite = await getDoc(inviteRef);
+  let existingInvite = await getDoc(inviteRef);
+  if (!existingInvite.exists()) {
+    const legacyInvite = await getDoc(legacyProfileConnectionInviteDoc(userId, normalizedUsername));
+    if (legacyInvite.exists()) {
+      await setDoc(inviteRef, legacyInvite.data());
+      existingInvite = await getDoc(inviteRef);
+    }
+  }
   if (!existingInvite.exists()) {
     return;
   }
@@ -145,12 +157,13 @@ export async function markConnectionInviteChecked(
 }
 
 export async function getConnectionInvites(userId: string): Promise<ProfileAnalyticsConnectionInvite[]> {
-  const invitesQuery = query(
-    collection(getFirebaseDb(), 'users', userId, 'profileViewerMetadata'),
-    where('kind', '==', 'connectionInvite')
-  );
+  const invitesQuery = collection(getFirebaseDb(), 'users', userId, 'connectionInvites');
   const snapshot = await getDocs(invitesQuery);
-  return snapshot.docs.map(docToProfileAnalyticsConnectionInvite);
+  if (!snapshot.empty) return snapshot.docs.map(docToProfileAnalyticsConnectionInvite);
+  const legacySnapshot = await getDocs(
+    query(legacyConnectionInvitesCollection(userId), where('kind', '==', 'connectionInvite'))
+  );
+  return legacySnapshot.docs.map(docToProfileAnalyticsConnectionInvite);
 }
 
 export function subscribeToConnectionInvites(
@@ -158,16 +171,38 @@ export function subscribeToConnectionInvites(
   onValue: (invites: ProfileAnalyticsConnectionInvite[]) => void,
   onError?: (error: Error) => void
 ): () => void {
-  const invitesQuery = query(
-    collection(getFirebaseDb(), 'users', userId, 'profileViewerMetadata'),
-    where('kind', '==', 'connectionInvite')
-  );
-
-  return onSnapshot(
+  const invitesQuery = collection(getFirebaseDb(), 'users', userId, 'connectionInvites');
+  const legacyInvitesQuery = query(legacyConnectionInvitesCollection(userId), where('kind', '==', 'connectionInvite'));
+  let current: ProfileAnalyticsConnectionInvite[] = [];
+  let legacy: ProfileAnalyticsConnectionInvite[] = [];
+  let currentLoaded = false;
+  let legacyLoaded = false;
+  const emit = () => {
+    if (!currentLoaded || !legacyLoaded) return;
+    onValue(current.length > 0 ? current : legacy);
+  };
+  const unsubscribeCurrent = onSnapshot(
     invitesQuery,
-    (snapshot) => onValue(snapshot.docs.map(docToProfileAnalyticsConnectionInvite)),
+    (snapshot) => {
+      current = snapshot.docs.map(docToProfileAnalyticsConnectionInvite);
+      currentLoaded = true;
+      emit();
+    },
     (error) => onError?.(error)
   );
+  const unsubscribeLegacy = onSnapshot(
+    legacyInvitesQuery,
+    (snapshot) => {
+      legacy = snapshot.docs.map(docToProfileAnalyticsConnectionInvite);
+      legacyLoaded = true;
+      emit();
+    },
+    (error) => onError?.(error)
+  );
+  return () => {
+    unsubscribeCurrent();
+    unsubscribeLegacy();
+  };
 }
 
 export async function getConnectionInviteAcceptanceSnapshot(

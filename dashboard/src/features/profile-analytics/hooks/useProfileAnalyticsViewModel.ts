@@ -20,6 +20,9 @@ export function useProfileAnalyticsViewModel(userId: string, selectedDateRange: 
   const searchAppearances = analytics.snapshot?.searchAppearances;
   const socialSellingIndex = analytics.snapshot?.socialSellingIndex;
   const isTotalRange = selectedDateRange === null;
+  const connectionHistoryStatus = profile?.connectionHistoryBootstrap?.status;
+  const connectionHistoryLoading = connectionHistoryStatus === 'scheduled' || connectionHistoryStatus === 'running';
+  const connectionHistoryNeedsRepair = connectionHistoryStatus === 'needs_repair';
   const effectiveDateRange = useMemo(
     () =>
       selectedDateRange ||
@@ -84,12 +87,7 @@ export function useProfileAnalyticsViewModel(userId: string, selectedDateRange: 
   );
   const connectionRangeCount = profile?.connectionDateCountsComplete
     ? sumDateCountsInRange(profile.connectionDateCounts, effectiveDateRange)
-    : getCumulativeMetricChangeInRange({
-        snapshots: analytics.dailySnapshots,
-        range: effectiveDateRange,
-        dataKey: 'connectionsCount',
-        currentValue: profile?.connectionsCountExact === true ? profile.connectionsCount : undefined,
-      });
+    : undefined;
   const followerGrowthStart = profile?.followerGrowthStartDate || '';
   const followerGrowthEnd = profile?.followerGrowthEndDate || '';
   const rangeStartKey = getDateKey(effectiveDateRange.start);
@@ -186,5 +184,8 @@ export function useProfileAnalyticsViewModel(userId: string, selectedDateRange: 
     profileViewsPoints,
     searchAppearancesPoints,
     socialSellingIndexPoints,
+    connectionHistoryLoading,
+    connectionHistoryNeedsRepair,
+    connectionHistoryBootstrap: profile?.connectionHistoryBootstrap,
   };
 }

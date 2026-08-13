@@ -198,10 +198,26 @@ export interface ProfileAnalyticsProfileSnapshot {
   connectionDateCounts?: Record<string, number>;
   /** True only after every connection page was read successfully. */
   connectionDateCountsComplete?: boolean;
+  /** Connections for which LinkedIn exposed both a stable identity and a usable connection date. */
+  connectionHistoryDatedCount?: number;
+  /** Connections included in the exact total but without a usable date in LinkedIn's history response. */
+  connectionHistoryUndatedCount?: number;
   connectionDateCountsUpdatedAt?: number;
   connectionDateCountsError?: string;
   /** LinkedIn can only backfill connections that still exist when history is collected. */
   connectionHistoryKind?: 'backfilled_current_connections';
+  /**
+   * Server-persisted lifecycle of the one-time Connections history bootstrap.
+   * Current totals are usable while this is running; range analytics are not.
+   */
+  connectionHistoryBootstrap?: ProfileAnalyticsConnectionHistoryBootstrap;
+  /** Exact Connections total captured when the one-time history baseline completed. */
+  connectionHistoryBaselineCount?: number;
+  connectionHistoryBaselineAt?: number;
+  connectionHistoryAccountKey?: string;
+  /** A light sync can request a bounded incremental catch-up without invalidating the baseline. */
+  connectionIncrementalStatus?: 'idle' | 'current' | 'catch_up_pending';
+  connectionIncrementalLastGapAt?: number;
   /** Recent identifiers used to stop incremental pagination at known data. */
   recentConnectionIds?: string[];
   followersCount?: number;
@@ -214,6 +230,44 @@ export interface ProfileAnalyticsProfileSnapshot {
   followerGrowthUpdatedAt?: number;
   updatedAt: number;
   sourceUrl: string;
+}
+
+export type ProfileAnalyticsConnectionHistoryBootstrapState = 'scheduled' | 'running' | 'complete' | 'needs_repair';
+
+export interface ProfileAnalyticsConnectionHistoryBootstrap {
+  version: 2;
+  accountKey: string;
+  status: ProfileAnalyticsConnectionHistoryBootstrapState;
+  sessionId?: string;
+  expectedTotal?: number;
+  collectedCount?: number;
+  datedCount?: number;
+  undatedCount?: number;
+  nextStartIndex?: number;
+  startedAt?: number;
+  completedAt?: number;
+  lastAttemptAt?: number;
+  nextRetryAt?: number;
+  mode?: 'aggressive' | 'cautious';
+  batchesSinceCooldown?: number;
+  error?: string;
+}
+
+export interface ProfileAnalyticsConnectionHistoryJob extends ProfileAnalyticsConnectionHistoryBootstrap {
+  id: string;
+  restartCount: number;
+  batchIndex: number;
+  updatedAt: number;
+}
+
+export interface ProfileAnalyticsConnectionHistoryChunk {
+  id: string;
+  accountKey: string;
+  sessionId: string;
+  batchIndex: number;
+  startIndex: number;
+  records: Array<{ id: string; connectedDate: string }>;
+  createdAt: number;
 }
 
 export interface ProfileAnalyticsSearchAppearancesSnapshot {

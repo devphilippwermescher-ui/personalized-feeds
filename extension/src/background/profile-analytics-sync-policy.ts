@@ -11,8 +11,10 @@ export const PROFILE_ANALYTICS_DASHBOARD_DEDUPE_MS = 5 * 60 * 1000;
 export const PROFILE_ANALYTICS_DAILY_SYNC_INTERVAL_MS = 24 * 60 * 60 * 1000;
 export const PROFILE_ANALYTICS_RETRY_DELAY_MS = 15 * 60 * 1000;
 export const PROFILE_ANALYTICS_RESTRICTION_RETRY_MS = 12 * 60 * 60 * 1000;
-export const PROFILE_ANALYTICS_HISTORY_START_DELAY_MS = 2 * 60 * 1000;
-export const PROFILE_ANALYTICS_HISTORY_BATCH_DELAY_MS = 60 * 1000;
+export const PROFILE_ANALYTICS_HISTORY_START_DELAY_MS = 15 * 1000;
+export const PROFILE_ANALYTICS_HISTORY_BATCH_DELAY_MS = 30 * 1000;
+export const PROFILE_ANALYTICS_HISTORY_COOLDOWN_MS = 90 * 1000;
+export const PROFILE_ANALYTICS_HISTORY_COOLDOWN_BATCHES = 5;
 export const PROFILE_ANALYTICS_HISTORY_RETRY_DELAY_MS = 60 * 60 * 1000;
 export const PROFILE_ANALYTICS_ATTEMPT_LEASE_MS = 2 * 60 * 1000;
 export const PROFILE_ANALYTICS_NETWORK_BUDGET_CAPACITY = 30;
@@ -37,7 +39,9 @@ export type ProfileAnalyticsSyncTrigger =
   | 'dashboard_open'
   | 'invite_sent'
   | 'alarm'
-  | 'manual';
+  | 'manual'
+  | 'history_resume'
+  | 'history_repair';
 
 export type ProfileAnalyticsRetryKind = 'standard' | 'restriction';
 
@@ -66,6 +70,18 @@ export interface ProfileAnalyticsConnectionHistoryCheckpoint {
   lastAttemptAt: number;
   status: 'pending' | 'running' | 'failed';
   error?: string;
+}
+
+export interface ProfileAnalyticsConnectionCatchUpCheckpoint {
+  version: 1;
+  expectedTotal: number;
+  nextStartIndex: number;
+  /** Only post-bootstrap candidates; unlike the baseline this stays small. */
+  connectionDatesById: Record<string, string>;
+  /** Frozen boundary from the last completed sync; never replaced mid-catch-up. */
+  boundaryConnectionIds: string[];
+  recentConnectionIds: string[];
+  lastAttemptAt: number;
 }
 
 export interface ProfileAnalyticsSyncState {
@@ -103,6 +119,7 @@ export interface ProfileAnalyticsSyncState {
   historyLastError?: string;
   historyCheckpoint?: ProfileAnalyticsConnectionHistoryCheckpoint;
   historyAttemptInProgress?: boolean;
+  connectionCatchUpCheckpoint?: ProfileAnalyticsConnectionCatchUpCheckpoint;
   metadataLastAttemptAt?: number;
   metadataLastSuccessAt?: number;
   metadataNextRetryAt?: number;
@@ -324,6 +341,7 @@ export function updateMetricStatus(
 }
 
 function triggerPriority(trigger: ProfileAnalyticsSyncTrigger): number {
+  if (trigger === 'history_repair' || trigger === 'history_resume') return 6;
   if (trigger === 'profile_metadata_changed') return 5;
   if (trigger === 'manual') return 4;
   if (trigger === 'dashboard_open') return 3;

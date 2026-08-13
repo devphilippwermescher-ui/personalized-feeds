@@ -51,6 +51,14 @@ function mergeProfileSnapshot(
       ? next.connectionDateCountsError
       : current?.connectionDateCountsError,
     connectionHistoryKind: next.connectionHistoryKind ?? current?.connectionHistoryKind,
+    connectionHistoryBootstrap: next.connectionHistoryBootstrap ?? current?.connectionHistoryBootstrap,
+    connectionHistoryDatedCount: next.connectionHistoryDatedCount ?? current?.connectionHistoryDatedCount,
+    connectionHistoryUndatedCount: next.connectionHistoryUndatedCount ?? current?.connectionHistoryUndatedCount,
+    connectionHistoryBaselineAt: next.connectionHistoryBaselineAt ?? current?.connectionHistoryBaselineAt,
+    connectionHistoryBaselineCount: next.connectionHistoryBaselineCount ?? current?.connectionHistoryBaselineCount,
+    connectionHistoryAccountKey: next.connectionHistoryAccountKey ?? current?.connectionHistoryAccountKey,
+    connectionIncrementalStatus: next.connectionIncrementalStatus ?? current?.connectionIncrementalStatus,
+    connectionIncrementalLastGapAt: next.connectionIncrementalLastGapAt ?? current?.connectionIncrementalLastGapAt,
     recentConnectionIds:
       next.recentConnectionIds && next.recentConnectionIds.length > 0
         ? next.recentConnectionIds

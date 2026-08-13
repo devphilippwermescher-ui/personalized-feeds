@@ -4,6 +4,16 @@ import {
 } from './profile-analytics-sync-coordinator';
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === 'PROFILE_ANALYTICS_CONNECTION_HISTORY_REPAIR_NOW') {
+    const trigger = message.mode === 'restart' ? 'history_repair' : 'history_resume';
+    void queueProfileAnalyticsSync(trigger, sender.tab?.id)
+      .then((result) => sendResponse({ success: result.success, result }))
+      .catch((error) =>
+        sendResponse({ success: false, error: error instanceof Error ? error.message : String(error) })
+      );
+    return true;
+  }
+
   if (message.type === 'PROFILE_ANALYTICS_PROFILE_METADATA_CHANGED') {
     if (!sender.tab?.url?.startsWith('https://www.linkedin.com/') || typeof sender.tab.id !== 'number') {
       sendResponse({ success: false, error: 'Profile metadata events are accepted only from LinkedIn tabs.' });
