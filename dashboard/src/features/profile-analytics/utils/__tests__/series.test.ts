@@ -1,9 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ProfileAnalyticsDailySnapshot } from 'shared/types';
-import {
-  buildConnectionsFollowersPoints,
-  getCumulativeMetricChangeInRange,
-} from '../../../../dashboard/src/features/profile-analytics/utils/series';
+import { buildConnectionsFollowersPoints, getCumulativeMetricChangeInRange } from '../series';
 
 function day(year: number, month: number, date: number): Date {
   return new Date(year, month - 1, date);

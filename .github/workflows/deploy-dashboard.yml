@@ -12,6 +12,17 @@ on:
       - 'package-lock.json'
       - 'dashboard/package.json'
       - 'dashboard/package-lock.json'
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/deploy-dashboard.yml'
+      - 'dashboard/**'
+      - 'shared/**'
+      - 'firebase.json'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'dashboard/package.json'
+      - 'dashboard/package-lock.json'
   workflow_dispatch:
 
 jobs:
@@ -42,10 +53,14 @@ jobs:
       - name: Type check dashboard
         run: cd dashboard && npm run type-check
 
+      - name: Test dashboard
+        run: cd dashboard && npm test
+
       - name: Build dashboard
         run: npm run build:dashboard
 
       - name: Deploy to Firebase Hosting
+        if: github.event_name != 'pull_request'
         uses: FirebaseExtended/action-hosting-deploy@v0
         with:
           repoToken: ${{ secrets.GITHUB_TOKEN }}
