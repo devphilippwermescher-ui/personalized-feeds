@@ -10,6 +10,7 @@ import { MetricTrendChart } from '../components/MetricTrendChart';
 import { AnalyticsDateRangeControl } from '../features/profile-analytics/components/AnalyticsDateRangeControl';
 import { ConnectionsFollowersChart } from '../features/profile-analytics/components/ConnectionsFollowersChart';
 import { MetricCard } from '../features/profile-analytics/components/MetricCard';
+import { LinkedInConnectionPrompt } from '../features/profile-analytics/components/LinkedInConnectionPrompt';
 import { ProfileAnalyticsHistoryProgress } from '../features/profile-analytics/components/ProfileAnalyticsHistoryProgress';
 import { ProfileAnalyticsHero } from '../features/profile-analytics/components/ProfileAnalyticsHero';
 import {
@@ -35,7 +36,8 @@ export default function ProfileAnalyticsPage({ userId }: ProfileAnalyticsPagePro
   // A routine refresh hides stale cards until Firestore has been reread. The
   // one-time Connections bootstrap is different: current totals stay visible,
   // while all range controls and charts wait for the history import.
-  const showDataSkeleton = !analytics.snapshot || routineSyncRunning;
+  const showLinkedInConnectionPrompt = !analytics.snapshot && analytics.syncStatusLoaded && !routineSyncRunning;
+  const showDataSkeleton = !showLinkedInConnectionPrompt && (!analytics.snapshot || routineSyncRunning);
 
   return (
     <div className="profile-analytics-page">
@@ -82,7 +84,9 @@ export default function ProfileAnalyticsPage({ userId }: ProfileAnalyticsPagePro
         <div className="profile-analytics-alert profile-analytics-alert--error">{analytics.error}</div>
       ) : null}
 
-      {showDataSkeleton ? (
+      {showLinkedInConnectionPrompt ? (
+        <LinkedInConnectionPrompt />
+      ) : showDataSkeleton ? (
         <ProfileAnalyticsDataSkeleton />
       ) : (
         <>
@@ -123,6 +127,8 @@ export default function ProfileAnalyticsPage({ userId }: ProfileAnalyticsPagePro
               rangeLabel={dateRange.rangeLabel}
               tone="sky"
               loading={!analytics.supportingDataLoaded}
+              tooltip="First: visible profiles saved by myFeedPilot. Second: private-mode and recruiter views reported by LinkedIn in the last 90 days."
+              tooltipPlacement="right"
             />
             <MetricCard
               icon={<HiOutlineMagnifyingGlass />}
@@ -149,9 +155,6 @@ export default function ProfileAnalyticsPage({ userId }: ProfileAnalyticsPagePro
               <ConnectionsFollowersChart
                 points={analytics.connectionsFollowersPoints}
                 rangeLabel={dateRange.rangeLabel}
-                connectionsAddedEstimated={
-                  analytics.profile?.connectionHistoryKind === 'backfilled_current_connections'
-                }
               />
               <MetricTrendChart
                 title="Acceptance Rate"

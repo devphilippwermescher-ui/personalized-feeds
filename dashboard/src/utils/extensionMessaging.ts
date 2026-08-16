@@ -17,7 +17,8 @@ function unavailableResponse<TResponse>(error: string): TResponse {
 }
 
 export function sendMessageToExtension<TResponse>(
-  message: Record<string, unknown>
+  message: Record<string, unknown>,
+  options: { timeoutMs?: number } = {}
 ): Promise<TResponse> {
   return new Promise((resolve) => {
     const requestId = `profile-analytics-${Date.now()}-${requestSequence += 1}`;
@@ -49,7 +50,7 @@ export function sendMessageToExtension<TResponse>(
 
     const timeout = window.setTimeout(() => {
       finish(unavailableResponse<TResponse>('myFeedPilot extension is not available on this dashboard page.'));
-    }, REQUEST_TIMEOUT_MS);
+    }, options.timeoutMs ?? REQUEST_TIMEOUT_MS);
 
     window.addEventListener('message', handleResponse);
     window.postMessage({

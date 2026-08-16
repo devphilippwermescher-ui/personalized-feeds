@@ -30,9 +30,6 @@ export function getChartValues(points: ConnectionsFollowersPoint[], mode: Connec
     if ((mode === 'both' || mode === 'followers') && typeof point.followersCount === 'number') {
       values.push(point.followersCount);
     }
-    if (mode === 'connectionsAdded' && typeof point.connectionsAdded === 'number') {
-      values.push(point.connectionsAdded);
-    }
   });
   return values;
 }

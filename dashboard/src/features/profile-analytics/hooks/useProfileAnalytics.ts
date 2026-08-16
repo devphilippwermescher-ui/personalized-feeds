@@ -121,7 +121,7 @@ export function useProfileAnalytics(userId: string) {
         success: boolean;
         status?: ProfileAnalyticsSyncStatus | null;
         error?: string;
-      }>({ type: 'DASHBOARD_GET_PROFILE_ANALYTICS_SYNC_STATUS' });
+      }>({ type: 'DASHBOARD_GET_PROFILE_ANALYTICS_SYNC_STATUS' }, { timeoutMs: 3_000 });
       if (disposed) return;
       if (response.success) {
         const nextStatus = response.status || null;
@@ -136,20 +136,24 @@ export function useProfileAnalytics(userId: string) {
         }
         setSyncStatus(nextStatus);
         setSyncStatusError(null);
+        if (!nextStatus || nextStatus.status !== 'syncing') setLoading(false);
       } else {
         setSyncStatusError(response.error || 'myFeedPilot extension is not available.');
+        setLoading(false);
       }
       setSyncStatusLoaded(true);
     };
 
     const triggerLightSync = async () => {
       setSyncStatusLoaded(false);
-      const response = await sendMessageToExtension<{ success: boolean; error?: string }>({
-        type: 'DASHBOARD_PROFILE_ANALYTICS_OPENED',
-      });
+      const response = await sendMessageToExtension<{ success: boolean; error?: string }>(
+        { type: 'DASHBOARD_PROFILE_ANALYTICS_OPENED' },
+        { timeoutMs: 3_000 }
+      );
       if (!disposed && !response.success) {
         setSyncStatusError(response.error || 'myFeedPilot extension is not available.');
         setSyncStatusLoaded(true);
+        setLoading(false);
       }
       window.setTimeout(() => {
         if (!disposed && response.success) void readSyncStatus(true);

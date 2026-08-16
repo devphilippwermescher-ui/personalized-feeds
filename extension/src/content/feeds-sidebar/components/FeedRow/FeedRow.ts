@@ -97,7 +97,7 @@ export function renderFeedRow({ feed, expanded, previewHtml, expandedContentHtml
                         <path d="M12 8h.01"></path>
                       </svg>
                     </button>
-                    <span class="lfa-feed-info-tooltip" role="tooltip">Auto-saved from LinkedIn</span>
+                    <span class="lfa-feed-info-tooltip" role="tooltip">Auto-saved from LinkedIn over the last 90 days</span>
                   </span>
                 `
                 : ''

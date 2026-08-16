@@ -15,21 +15,15 @@ import {
 interface ConnectionsFollowersChartProps {
   points: ConnectionsFollowersPoint[];
   rangeLabel: string;
-  connectionsAddedEstimated?: boolean;
 }
 
 const MODES: Array<{ key: ConnectionsFollowersMode; label: string }> = [
   { key: 'both', label: 'Both' },
   { key: 'connections', label: 'Connections' },
   { key: 'followers', label: 'Followers' },
-  { key: 'connectionsAdded', label: 'Connections Added' },
 ];
 
-export function ConnectionsFollowersChart({
-  points,
-  rangeLabel,
-  connectionsAddedEstimated = false,
-}: ConnectionsFollowersChartProps) {
+export function ConnectionsFollowersChart({ points, rangeLabel }: ConnectionsFollowersChartProps) {
   const [mode, setMode] = useState<ConnectionsFollowersMode>('both');
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const values = getChartValues(points, mode);
@@ -41,17 +35,13 @@ export function ConnectionsFollowersChart({
   const maxIndex = Math.max(1, points.length - 1);
   const connectionsPath = getSeriesPath(points, 'connectionsCount', chartMax);
   const followersPath = getSeriesPath(points, 'followersCount', chartMax);
-  const connectionsAddedPath = getSeriesPath(points, 'connectionsAdded', chartMax);
   const connectionsAreaPath = getSeriesAreaPath(points, 'connectionsCount', chartMax);
   const followersAreaPath = getSeriesAreaPath(points, 'followersCount', chartMax);
-  const connectionsAddedAreaPath = getSeriesAreaPath(points, 'connectionsAdded', chartMax);
   const singleConnectionsPoint = getSingleSeriesPoint(points, 'connectionsCount');
   const singleFollowersPoint = getSingleSeriesPoint(points, 'followersCount');
-  const singleConnectionsAddedPoint = getSingleSeriesPoint(points, 'connectionsAdded');
   const hoveredPoint = hoveredIndex !== null ? points[hoveredIndex] : null;
   const showConnections = mode === 'both' || mode === 'connections';
   const showFollowers = mode === 'both' || mode === 'followers';
-  const showConnectionsAdded = mode === 'connectionsAdded';
   const { plotLeft, plotTop, plotBottom, plotWidth, plotHeight } = CONNECTIONS_CHART_LAYOUT;
 
   function getX(index: number): number {
@@ -90,7 +80,7 @@ export function ConnectionsFollowersChart({
               type="button"
               onClick={() => setMode(item.key)}
             >
-              {item.key === 'connectionsAdded' && connectionsAddedEstimated ? `${item.label} (estimated)` : item.label}
+              {item.label}
             </button>
           ))}
         </div>
@@ -159,20 +149,11 @@ export function ConnectionsFollowersChart({
             {showFollowers && followersAreaPath ? (
               <path d={followersAreaPath} fill="url(#followersAreaGradient)" />
             ) : null}
-            {showConnectionsAdded && connectionsAddedAreaPath ? (
-              <path d={connectionsAddedAreaPath} fill="url(#connectionsAreaGradient)" />
-            ) : null}
             {showConnections && connectionsPath ? (
               <path d={connectionsPath} className="profile-analytics-series profile-analytics-series--connections" />
             ) : null}
             {showFollowers && followersPath ? (
               <path d={followersPath} className="profile-analytics-series profile-analytics-series--followers" />
-            ) : null}
-            {showConnectionsAdded && connectionsAddedPath ? (
-              <path
-                d={connectionsAddedPath}
-                className="profile-analytics-series profile-analytics-series--connections"
-              />
             ) : null}
             {showConnections && singleConnectionsPoint ? (
               <circle
@@ -188,14 +169,6 @@ export function ConnectionsFollowersChart({
                 cy={getY(singleFollowersPoint.value)}
                 r="4"
                 className="profile-analytics-chart-dot profile-analytics-chart-dot--followers"
-              />
-            ) : null}
-            {showConnectionsAdded && singleConnectionsAddedPoint ? (
-              <circle
-                cx={getX(singleConnectionsAddedPoint.index)}
-                cy={getY(singleConnectionsAddedPoint.value)}
-                r="4"
-                className="profile-analytics-chart-dot profile-analytics-chart-dot--connections"
               />
             ) : null}
 
@@ -224,14 +197,6 @@ export function ConnectionsFollowersChart({
                     className="profile-analytics-chart-dot profile-analytics-chart-dot--followers"
                   />
                 ) : null}
-                {showConnectionsAdded && typeof hoveredPoint.connectionsAdded === 'number' ? (
-                  <circle
-                    cx={tooltipX}
-                    cy={getY(hoveredPoint.connectionsAdded)}
-                    r="4"
-                    className="profile-analytics-chart-dot profile-analytics-chart-dot--connections"
-                  />
-                ) : null}
 
                 <g transform={`translate(${tooltipLeft} 92)`}>
                   <rect
@@ -251,11 +216,6 @@ export function ConnectionsFollowersChart({
                   {showFollowers ? (
                     <text x="14" y={showConnections ? 72 : 48} className="profile-analytics-chart-tooltip-followers">
                       Followers : {formatNumber(hoveredPoint.followersCount)}
-                    </text>
-                  ) : null}
-                  {showConnectionsAdded ? (
-                    <text x="14" y="48" className="profile-analytics-chart-tooltip-connections">
-                      Connections Added : {formatNumber(hoveredPoint.connectionsAdded)}
                     </text>
                   ) : null}
                 </g>

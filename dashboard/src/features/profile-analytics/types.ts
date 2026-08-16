@@ -14,7 +14,7 @@ export type ChartKey = keyof Pick<
 export type TimeRangeKey = '30d' | '90d' | '6m' | '1y';
 export type ActiveRangeKey = 'total' | TimeRangeKey | 'custom';
 export type DateRangeBoundary = 'start' | 'end';
-export type ConnectionsFollowersMode = 'both' | 'connections' | 'followers' | 'connectionsAdded';
+export type ConnectionsFollowersMode = 'both' | 'connections' | 'followers';
 
 export interface ConnectionsFollowersPoint {
   date: Date;

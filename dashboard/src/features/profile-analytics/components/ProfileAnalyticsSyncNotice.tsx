@@ -3,6 +3,7 @@ import type {
   ProfileAnalyticsSyncMetricStatus,
   ProfileAnalyticsSyncStatus,
 } from 'shared/types';
+import { HiOutlineArrowTopRightOnSquare } from 'react-icons/hi2';
 
 const METRIC_LABELS: Record<ProfileAnalyticsSyncMetric, string> = {
   profileMetadata: 'Profile details',
@@ -39,8 +40,15 @@ export function ProfileAnalyticsSyncNotice({
   if (extensionError) {
     return (
       <div className="profile-analytics-sync-notice profile-analytics-sync-notice--warning" role="status">
-        Analytics could not be refreshed because the myFeedPilot extension is unavailable. Showing the last saved data.
-        {import.meta.env.DEV ? <small>{extensionError}</small> : null}
+        <span>
+          Open LinkedIn in this browser and make sure the myFeedPilot extension is enabled. Showing the last saved
+          data until the account is connected.
+          {import.meta.env.DEV ? <small>{extensionError}</small> : null}
+        </span>
+        <a href="https://www.linkedin.com/feed/" target="_blank" rel="noreferrer">
+          Open LinkedIn
+          <HiOutlineArrowTopRightOnSquare />
+        </a>
       </div>
     );
   }
@@ -59,6 +67,12 @@ export function ProfileAnalyticsSyncNotice({
   if (failedMetrics.length === 0) return null;
   const metricNames = failedMetrics.map(([metric]) => METRIC_LABELS[metric]).join(', ');
   const firstFailure = failedMetrics[0][1];
+  const failureText = `${firstFailure.errorCode || ''} ${firstFailure.message || ''} ${
+    firstFailure.technicalMessage || ''
+  }`.toLowerCase();
+  const shouldOfferLinkedInLink =
+    failureText.includes('linkedin') &&
+    (failureText.includes('reach') || failureText.includes('tab') || failureText.includes('available'));
   const lastSuccessAt = Math.max(0, ...failedMetrics.map(([, metric]) => metric.lastSuccessAt || 0));
   const nextRetryAt = Math.min(...failedMetrics.map(([, metric]) => metric.nextRetryAt || Number.POSITIVE_INFINITY));
   const lastSuccessLabel = formatTime(lastSuccessAt);
@@ -76,6 +90,12 @@ export function ProfileAnalyticsSyncNotice({
         {lastSuccessLabel ? ` Last successful update: ${lastSuccessLabel}.` : ''}
         {nextRetryLabel ? ` Next retry: ${nextRetryLabel}.` : ''}
       </span>
+      {shouldOfferLinkedInLink ? (
+        <a href="https://www.linkedin.com/feed/" target="_blank" rel="noreferrer">
+          Open LinkedIn
+          <HiOutlineArrowTopRightOnSquare />
+        </a>
+      ) : null}
       {import.meta.env.DEV ? (
         <details>
           <summary>Details</summary>

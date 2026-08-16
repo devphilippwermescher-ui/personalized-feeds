@@ -31,7 +31,7 @@ describe('renderFeedRow', () => {
     expect(html).toContain('You can hide this list in Settings');
     expect(html).toContain('lfa-feed-info');
     expect(html).toContain('lfa-feed-info-tooltip');
-    expect(html).toContain('Auto-saved from LinkedIn');
+    expect(html).toContain('Auto-saved from LinkedIn over the last 90 days');
     expect(html).toContain('>8 / 6</span>');
     expect(html).toContain('8 visible visitor entries saved');
     expect(html).toContain('4 private-mode visitors');
