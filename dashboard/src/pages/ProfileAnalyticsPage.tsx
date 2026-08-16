@@ -27,6 +27,10 @@ interface ProfileAnalyticsPageProps {
   userId: string;
 }
 
+function formatProfileCount(value: number | undefined): string {
+  return `${formatNumber(value)} ${value === 1 ? 'profile' : 'profiles'}`;
+}
+
 export default function ProfileAnalyticsPage({ userId }: ProfileAnalyticsPageProps) {
   const dateRange = useAnalyticsDateRange();
   const analytics = useProfileAnalyticsViewModel(userId, dateRange.selectedDateRange);
@@ -125,7 +129,11 @@ export default function ProfileAnalyticsPage({ userId }: ProfileAnalyticsPagePro
               rangeLabel={dateRange.rangeLabel}
               tone="sky"
               loading={!analytics.supportingDataLoaded}
-              tooltip="First: visible profiles saved by myFeedPilot. Second: private-mode and recruiter views reported by LinkedIn in the last 90 days."
+              tooltip={`${formatProfileCount(
+                analytics.profileViewsVisibleInRange
+              )}: visible visitor profiles saved by myFeedPilot. ${formatProfileCount(
+                analytics.profileViewsHiddenInRange
+              )}: private-mode and recruiter views reported by LinkedIn in the last 90 days.`}
               tooltipPlacement="right"
             />
             <MetricCard
@@ -153,6 +161,7 @@ export default function ProfileAnalyticsPage({ userId }: ProfileAnalyticsPagePro
               <ConnectionsFollowersChart
                 points={analytics.connectionsFollowersPoints}
                 rangeLabel={dateRange.rangeLabel}
+                showYear={analytics.isTotalRange}
               />
               <MetricTrendChart
                 title="Acceptance Rate"
@@ -169,6 +178,8 @@ export default function ProfileAnalyticsPage({ userId }: ProfileAnalyticsPagePro
                 minimumMax={100}
                 valueFormatter={formatPercent}
                 emptyLabel="No invitation trend yet"
+                showYear={analytics.isTotalRange}
+                showEmptyPlot
               />
               <MetricTrendChart
                 title="Profile Visitors"
@@ -181,6 +192,7 @@ export default function ProfileAnalyticsPage({ userId }: ProfileAnalyticsPagePro
                 color="#0A66C2"
                 gradientId="profileViewsAreaGradient"
                 emptyLabel="No profile visitors in this period"
+                showYear={analytics.isTotalRange}
               />
               <MetricTrendChart
                 title="Search Appearances"
@@ -193,6 +205,7 @@ export default function ProfileAnalyticsPage({ userId }: ProfileAnalyticsPagePro
                 color="#8B5CF6"
                 gradientId="searchAppearancesAreaGradient"
                 emptyLabel="No search appearance trend yet"
+                showYear={analytics.isTotalRange}
               />
               <MetricTrendChart
                 title="Social Selling Index (SSI)"
@@ -209,6 +222,7 @@ export default function ProfileAnalyticsPage({ userId }: ProfileAnalyticsPagePro
                 minimumMax={100}
                 valueFormatter={(value) => (typeof value === 'number' ? `${value}/100` : '-')}
                 emptyLabel="No SSI trend yet"
+                showYear={analytics.isTotalRange}
               />
             </div>
           )}

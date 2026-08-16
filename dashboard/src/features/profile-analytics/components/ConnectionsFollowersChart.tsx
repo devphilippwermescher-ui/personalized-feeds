@@ -15,6 +15,7 @@ import {
 interface ConnectionsFollowersChartProps {
   points: ConnectionsFollowersPoint[];
   rangeLabel: string;
+  showYear?: boolean;
 }
 
 const MODES: Array<{ key: ConnectionsFollowersMode; label: string }> = [
@@ -23,7 +24,7 @@ const MODES: Array<{ key: ConnectionsFollowersMode; label: string }> = [
   { key: 'followers', label: 'Followers' },
 ];
 
-export function ConnectionsFollowersChart({ points, rangeLabel }: ConnectionsFollowersChartProps) {
+export function ConnectionsFollowersChart({ points, rangeLabel, showYear = false }: ConnectionsFollowersChartProps) {
   const [mode, setMode] = useState<ConnectionsFollowersMode>('both');
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const values = getChartValues(points, mode);
@@ -130,7 +131,7 @@ export function ConnectionsFollowersChart({ points, rangeLabel }: ConnectionsFol
                 <g key={points[index].dateKey}>
                   <line x1={x} x2={x} y1={plotTop} y2={plotBottom} className="profile-analytics-chart-grid-line" />
                   <text x={x} y="236" textAnchor="middle" className="profile-analytics-chart-axis-text">
-                    {formatChartDate(points[index].date)}
+                    {formatChartDate(points[index].date, showYear)}
                   </text>
                 </g>
               );
@@ -206,7 +207,7 @@ export function ConnectionsFollowersChart({ points, rangeLabel }: ConnectionsFol
                     className="profile-analytics-chart-tooltip-bg"
                   />
                   <text x="14" y="23" className="profile-analytics-chart-tooltip-date">
-                    {formatChartDate(hoveredPoint.date)}
+                    {formatChartDate(hoveredPoint.date, showYear)}
                   </text>
                   {showConnections ? (
                     <text x="14" y="48" className="profile-analytics-chart-tooltip-connections">

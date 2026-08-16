@@ -17,6 +17,8 @@ interface MetricTrendChartProps {
   minimumMax?: number;
   valueFormatter?: (value: number | undefined) => string;
   emptyLabel: string;
+  showYear?: boolean;
+  showEmptyPlot?: boolean;
 }
 
 const PLOT_LEFT = 48;
@@ -97,6 +99,8 @@ export function MetricTrendChart({
   minimumMax = 0,
   valueFormatter = (value) => (typeof value === 'number' ? value.toLocaleString() : '-'),
   emptyLabel,
+  showYear = false,
+  showEmptyPlot = false,
 }: MetricTrendChartProps) {
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const values = points.map((point) => point.value).filter((value): value is number => typeof value === 'number');
@@ -151,11 +155,11 @@ export function MetricTrendChart({
         </div>
       </div>
       <div className="profile-analytics-metric-line-chart">
-        {hasData ? (
+        {hasData || showEmptyPlot ? (
           <svg
             viewBox="0 0 640 250"
             preserveAspectRatio="xMidYMid meet"
-            onMouseMove={handlePointerMove}
+            onMouseMove={hasData ? handlePointerMove : undefined}
             onMouseLeave={() => setHoveredIndex(null)}
           >
             <defs>
@@ -181,7 +185,7 @@ export function MetricTrendChart({
                 <g key={`${points[index].date.toISOString()}-${index}`}>
                   <line x1={x} x2={x} y1={PLOT_TOP} y2={PLOT_BOTTOM} className="profile-analytics-chart-grid-line" />
                   <text x={x} y="224" textAnchor="middle" className="profile-analytics-chart-axis-text">
-                    {formatChartDate(points[index].date)}
+                    {formatChartDate(points[index].date, showYear)}
                   </text>
                 </g>
               );
@@ -225,7 +229,7 @@ export function MetricTrendChart({
                 <g transform={`translate(${tooltipLeft} 76)`}>
                   <rect width={tooltipWidth} height="62" rx="6" className="profile-analytics-chart-tooltip-bg" />
                   <text x="13" y="23" className="profile-analytics-chart-tooltip-date">
-                    {formatChartDate(hoveredPoint.date)}
+                    {formatChartDate(hoveredPoint.date, showYear)}
                   </text>
                   <text x="13" y="48" fill={color} className="profile-analytics-chart-tooltip-value">
                     {tooltipValueLabel}
