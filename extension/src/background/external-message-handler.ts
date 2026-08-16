@@ -103,6 +103,24 @@ function handleDashboardMessage(message: DashboardMessage, sendResponse: (respon
     return true;
   }
 
+  if (message.type === 'DASHBOARD_RESUME_PROFILE_ANALYTICS_HISTORY') {
+    queueProfileAnalyticsSync('history_resume')
+      .then((result) =>
+        sendResponse({
+          success: result.success,
+          result,
+          ...(!result.success ? { error: result.reason || 'Connections history could not be resumed.' } : {}),
+        })
+      )
+      .catch((error) => {
+        sendResponse({
+          success: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+    return true;
+  }
+
   sendResponse({ success: false, error: 'Unsupported dashboard message' });
   return false;
 }

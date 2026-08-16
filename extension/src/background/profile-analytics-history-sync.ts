@@ -267,6 +267,117 @@ export async function restartConnectionHistoryBootstrap({
   return job;
 }
 
+/**
+ * Resumes an existing bootstrap without replacing its session or deleting any
+ * persisted chunks. When an old repair state lost its cursor, the last stored
+ * batch is fetched once more; final aggregation de-duplicates records by id.
+ */
+export async function resumeConnectionHistoryBootstrap({
+  userId,
+  profile,
+  now = Date.now(),
+}: {
+  userId: string;
+  profile: ProfileAnalyticsProfileSnapshot;
+  now?: number;
+}): Promise<ProfileAnalyticsConnectionHistoryJob> {
+  const accountKey = getProfileAnalyticsConnectionAccountKey(profile);
+  const existing = await getProfileAnalyticsConnectionHistoryJob(userId, accountKey);
+  if (!existing) {
+    throw new Error('No saved Connections history checkpoint exists for this account.');
+  }
+  if (existing.status === 'complete') {
+    return existing;
+  }
+  if (!existing.sessionId) {
+    throw new Error('This Connections history has no resumable session. A new import was not started.');
+  }
+
+  const chunks = await getProfileAnalyticsConnectionHistoryChunks(userId, existing.sessionId);
+  const lastChunk = chunks.at(-1);
+  const nextStartIndex =
+    typeof existing.nextStartIndex === 'number' ? existing.nextStartIndex : lastChunk?.startIndex;
+  if (typeof nextStartIndex !== 'number') {
+    throw new Error('This Connections history has no resumable cursor. A new import was not started.');
+  }
+
+  const job: ProfileAnalyticsConnectionHistoryJob = {
+    ...existing,
+    status: 'scheduled',
+    nextStartIndex,
+    // A user-requested resume must never fall through to the automatic
+    // restart-from-zero branch when LinkedIn's current total changed while
+    // this saved import was paused.
+    restartCount: Math.max(existing.restartCount, CONNECTION_HISTORY_AUTOMATIC_RESTART_LIMIT),
+    mode: existing.mode || 'cautious',
+    nextRetryAt: undefined,
+    error: undefined,
+    updatedAt: now,
+  };
+  await setProfileAnalyticsConnectionHistoryJob(userId, job);
+  await upsertProfileAnalyticsSnapshot(
+    userId,
+    {
+      profile: {
+        ...profile,
+        connectionDateCountsError: '',
+        connectionHistoryBootstrap: toBootstrap(job),
+      },
+    },
+    { updatedAt: now }
+  );
+  return job;
+}
+
+/** Restores the current snapshot marker from an already completed server job. */
+export async function reconcileCompletedConnectionHistory({
+  userId,
+  currentSnapshot,
+  job,
+  now = Date.now(),
+}: {
+  userId: string;
+  currentSnapshot: ProfileAnalyticsSnapshot;
+  job: ProfileAnalyticsConnectionHistoryJob;
+  now?: number;
+}): Promise<ProfileAnalyticsSnapshot> {
+  if (!currentSnapshot.profile || job.status !== 'complete') {
+    return currentSnapshot;
+  }
+  if (currentSnapshot.profile.connectionDateCountsComplete === true) {
+    return upsertProfileAnalyticsSnapshot(
+      userId,
+      {
+        profile: {
+          ...currentSnapshot.profile,
+          connectionDateCountsError: '',
+          connectionHistoryBootstrap: toBootstrap(job),
+          connectionHistoryBaselineAt:
+            currentSnapshot.profile.connectionHistoryBaselineAt || job.completedAt || now,
+          connectionHistoryBaselineCount:
+            currentSnapshot.profile.connectionHistoryBaselineCount ||
+            job.expectedTotal ||
+            currentSnapshot.profile.connectionsCount,
+          connectionHistoryAccountKey: job.accountKey,
+        },
+      },
+      { updatedAt: now }
+    ) as Promise<ProfileAnalyticsSnapshot>;
+  }
+  if (!job.sessionId || typeof job.expectedTotal !== 'number') {
+    throw new Error('Completed Connections history is missing its persisted session metadata.');
+  }
+  return (
+    await completeConnectionHistoryFromChunks({
+      userId,
+      currentSnapshot,
+      job,
+      expectedTotal: job.expectedTotal,
+      collectedAt: now,
+    })
+  ).snapshot;
+}
+
 export async function syncConnectionHistoryBatch({
   userId,
   linkedInTabId,

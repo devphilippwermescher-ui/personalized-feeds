@@ -393,6 +393,56 @@
   height: 17px;
 }
 
+.profile-analytics-history-resume-notice {
+  align-items: center;
+}
+
+.profile-analytics-history-resume-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  gap: 7px;
+  min-height: 38px;
+  padding: 8px 13px;
+  border: 1px solid #d29a37;
+  border-radius: 8px;
+  background: #fff;
+  color: #7a4b00;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  transition:
+    background-color 0.16s ease,
+    border-color 0.16s ease,
+    opacity 0.16s ease;
+}
+
+.profile-analytics-history-resume-button:hover:not(:disabled) {
+  border-color: #bd7d15;
+  background: #fff3d7;
+}
+
+.profile-analytics-history-resume-button:focus-visible {
+  outline: 2px solid rgba(189, 125, 21, 0.3);
+  outline-offset: 2px;
+}
+
+.profile-analytics-history-resume-button:disabled {
+  cursor: default;
+  opacity: 0.66;
+}
+
+.profile-analytics-history-resume-button svg {
+  width: 17px;
+  height: 17px;
+}
+
+.profile-analytics-history-resume-error {
+  color: #9f2d2d !important;
+  opacity: 1 !important;
+}
+
 .profile-analytics-linkedin-prompt {
   min-height: 310px;
   display: flex;

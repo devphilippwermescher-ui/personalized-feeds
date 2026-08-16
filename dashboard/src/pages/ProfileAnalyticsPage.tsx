@@ -9,6 +9,7 @@ import {
 import { MetricTrendChart } from '../components/MetricTrendChart';
 import { AnalyticsDateRangeControl } from '../features/profile-analytics/components/AnalyticsDateRangeControl';
 import { ConnectionsFollowersChart } from '../features/profile-analytics/components/ConnectionsFollowersChart';
+import { ConnectionHistoryResumeNotice } from '../features/profile-analytics/components/ConnectionHistoryResumeNotice';
 import { MetricCard } from '../features/profile-analytics/components/MetricCard';
 import { LinkedInConnectionPrompt } from '../features/profile-analytics/components/LinkedInConnectionPrompt';
 import { ProfileAnalyticsHistoryProgress } from '../features/profile-analytics/components/ProfileAnalyticsHistoryProgress';
@@ -74,10 +75,7 @@ export default function ProfileAnalyticsPage({ userId }: ProfileAnalyticsPagePro
       ) : null}
 
       {analytics.connectionHistoryNeedsRepair ? (
-        <div className="profile-analytics-sync-notice profile-analytics-sync-notice--warning" role="status">
-          Current Connections total is available, but the one-time history import needs to be resumed before date ranges
-          can be shown.
-        </div>
+        <ConnectionHistoryResumeNotice />
       ) : null}
 
       {analytics.error ? (

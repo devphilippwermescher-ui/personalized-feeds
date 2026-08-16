@@ -6,7 +6,9 @@ import {
   CONNECTION_HISTORY_CAUTIOUS_BATCH_PAGE_LIMIT,
   CONNECTION_HISTORY_CAUTIOUS_PAGE_DELAY_MS,
   ensureConnectionHistoryBootstrapJob,
+  reconcileCompletedConnectionHistory,
   restartConnectionHistoryBootstrap,
+  resumeConnectionHistoryBootstrap,
   syncConnectionHistoryBatch,
 } from './profile-analytics-history-sync';
 import {
@@ -70,19 +72,33 @@ export async function runConnectionHistoryTask({
     allowCreate,
   });
 
-  if (trigger === 'history_repair' || (trigger === 'history_resume' && job.status === 'needs_repair')) {
+  if (trigger === 'history_repair') {
     job = await restartConnectionHistoryBootstrap({ userId: state.userId, profile: initialSnapshot.profile });
+    state.historyNextRetryAt = Date.now();
+  } else if (trigger === 'history_resume' && job.status === 'needs_repair') {
+    job = await resumeConnectionHistoryBootstrap({ userId: state.userId, profile: initialSnapshot.profile });
     state.historyNextRetryAt = Date.now();
   }
 
   if (job.status === 'complete') {
+    if (
+      snapshot.profile?.connectionHistoryBootstrap?.status !== 'complete' ||
+      snapshot.profile.connectionDateCountsComplete !== true
+    ) {
+      snapshot = await reconcileCompletedConnectionHistory({
+        userId: state.userId,
+        currentSnapshot: snapshot,
+        job,
+      });
+      historySynced = true;
+    }
     await releaseConnectionHistorySyncLock(state.userId, job.accountKey);
     state.historyCompletedAt = job.completedAt || Date.now();
     state.historyNextRetryAt = undefined;
     state.historyLastError = undefined;
     state.historyCheckpoint = undefined;
     await setStoredProfileAnalyticsSyncState(state);
-    return { state, snapshot, historySynced: false };
+    return { state, snapshot, historySynced };
   }
   if (job.status === 'needs_repair') {
     await releaseConnectionHistorySyncLock(state.userId, job.accountKey);

@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   getLinkedInCsrfToken: vi.fn(),
   upsertProfileAnalyticsSnapshot: vi.fn(),
   setJob: vi.fn(),
+  getJob: vi.fn(),
   chunks: [] as Array<Record<string, unknown>>,
 }));
 
@@ -18,7 +19,7 @@ vi.mock('shared/firestore-service', () => ({
   PROFILE_ANALYTICS_CONNECTION_HISTORY_VERSION: 2,
   getProfileAnalyticsConnectionAccountKey: () => 'profile:example',
   getProfileAnalyticsConnectionHistoryJobId: () => 'connectionsBootstrap_example',
-  getProfileAnalyticsConnectionHistoryJob: vi.fn(),
+  getProfileAnalyticsConnectionHistoryJob: mocks.getJob,
   setProfileAnalyticsConnectionHistoryJob: mocks.setJob,
   writeProfileAnalyticsConnectionHistoryChunk: vi.fn(async (_userId, chunk) => {
     mocks.chunks.push(chunk);
@@ -29,7 +30,11 @@ vi.mock('shared/firestore-service', () => ({
   upsertProfileAnalyticsSnapshot: mocks.upsertProfileAnalyticsSnapshot,
 }));
 
-import { syncConnectionHistoryBatch } from '../profile-analytics-history-sync';
+import {
+  reconcileCompletedConnectionHistory,
+  resumeConnectionHistoryBootstrap,
+  syncConnectionHistoryBatch,
+} from '../profile-analytics-history-sync';
 import type { ProfileAnalyticsConnectionHistoryJob } from 'shared/types';
 
 describe('one-time Connections history bootstrap', () => {
@@ -64,11 +69,110 @@ describe('one-time Connections history bootstrap', () => {
     vi.clearAllMocks();
     mocks.chunks.length = 0;
     mocks.getLinkedInCsrfToken.mockResolvedValue('csrf');
+    mocks.getJob.mockReset();
     mocks.upsertProfileAnalyticsSnapshot.mockImplementation(async (_userId, patch) => ({
       ...currentSnapshot,
       ...patch,
       updatedAt: collectedAt,
     }));
+  });
+
+  it('resumes a repair job from its persisted session without resetting saved progress', async () => {
+    const repairJob: ProfileAnalyticsConnectionHistoryJob = {
+      ...job,
+      status: 'needs_repair',
+      sessionId: 'saved-session',
+      nextStartIndex: undefined,
+      batchIndex: 3,
+      collectedCount: 420,
+      expectedTotal: 1_108,
+      restartCount: 0,
+      error: 'Previous batch needs attention.',
+    };
+    mocks.getJob.mockResolvedValue(repairJob);
+    mocks.chunks.push({
+      id: 'saved-session_000002',
+      accountKey: 'profile:example',
+      sessionId: 'saved-session',
+      batchIndex: 2,
+      startIndex: 400,
+      records: [{ id: 'saved', connectedDate: '2026-08-10' }],
+      createdAt: collectedAt - 1,
+    });
+
+    const resumed = await resumeConnectionHistoryBootstrap({
+      userId: 'user',
+      profile: currentSnapshot.profile,
+      now: collectedAt,
+    });
+
+    expect(resumed).toMatchObject({
+      status: 'scheduled',
+      sessionId: 'saved-session',
+      nextStartIndex: 400,
+      batchIndex: 3,
+      collectedCount: 420,
+      expectedTotal: 1_108,
+      restartCount: 1,
+    });
+    expect(resumed.error).toBeUndefined();
+    expect(mocks.setJob).toHaveBeenCalledWith('user', expect.objectContaining({ sessionId: 'saved-session' }));
+  });
+
+  it('does not silently start a new import when no resumable session exists', async () => {
+    mocks.getJob.mockResolvedValue({
+      ...job,
+      status: 'needs_repair',
+      sessionId: undefined,
+      nextStartIndex: undefined,
+    });
+
+    await expect(
+      resumeConnectionHistoryBootstrap({ userId: 'user', profile: currentSnapshot.profile, now: collectedAt })
+    ).rejects.toThrow('no resumable session');
+    expect(mocks.setJob).not.toHaveBeenCalled();
+  });
+
+  it('restores a stale current snapshot from an already completed server job', async () => {
+    const completeJob: ProfileAnalyticsConnectionHistoryJob = {
+      ...job,
+      status: 'complete',
+      expectedTotal: 3,
+      collectedCount: 3,
+      completedAt: collectedAt - 10,
+    };
+    const staleSnapshot = {
+      ...currentSnapshot,
+      profile: {
+        ...currentSnapshot.profile,
+        connectionDateCountsComplete: true,
+        connectionHistoryBootstrap: {
+          version: 2 as const,
+          accountKey: completeJob.accountKey,
+          status: 'needs_repair' as const,
+        },
+      },
+    };
+
+    await reconcileCompletedConnectionHistory({
+      userId: 'user',
+      currentSnapshot: staleSnapshot,
+      job: completeJob,
+      now: collectedAt,
+    });
+
+    expect(mocks.upsertProfileAnalyticsSnapshot).toHaveBeenCalledWith(
+      'user',
+      {
+        profile: expect.objectContaining({
+          connectionDateCountsComplete: true,
+          connectionHistoryBootstrap: expect.objectContaining({ status: 'complete' }),
+          connectionHistoryBaselineCount: 3,
+        }),
+      },
+      { updatedAt: collectedAt }
+    );
+    expect(mocks.fetchLinkedInConnectionsSnapshot).not.toHaveBeenCalled();
   });
 
   it('stores chunks and resumes from the persisted job cursor', async () => {
