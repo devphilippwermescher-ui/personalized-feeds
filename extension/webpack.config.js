@@ -1,8 +1,9 @@
 const path = require('path');
+const webpack = require('webpack');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
 const CopyWebpackPlugin = require('copy-webpack-plugin');
 
-module.exports = {
+module.exports = (_environment, argv) => ({
   entry: {
     popup: './src/popup/index.tsx',
     offscreen: './src/offscreen/index.ts',
@@ -52,6 +53,9 @@ module.exports = {
     modules: [path.resolve(__dirname, 'node_modules'), 'node_modules'],
   },
   plugins: [
+    new webpack.DefinePlugin({
+      __MFP_DEV_BUILD__: JSON.stringify(argv.mode === 'development'),
+    }),
     new HtmlWebpackPlugin({
       template: './src/popup/index.html',
       filename: 'popup.html',
@@ -70,4 +74,4 @@ module.exports = {
     }),
   ],
   devtool: 'source-map',
-};
+});

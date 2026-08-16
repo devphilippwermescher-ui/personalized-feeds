@@ -46,14 +46,11 @@ export async function runConnectionHistoryTask({
   snapshot: initialSnapshot,
   trigger,
   linkedInTabId,
-  allowCreate,
 }: {
   state: ProfileAnalyticsSyncState;
   snapshot: ProfileAnalyticsSnapshot | null;
   trigger: ProfileAnalyticsSyncTrigger;
   linkedInTabId?: number;
-  /** True only for the first successful profile bootstrap for this account. */
-  allowCreate: boolean;
 }): Promise<{
   state: ProfileAnalyticsSyncState;
   snapshot: ProfileAnalyticsSnapshot | null;
@@ -69,7 +66,6 @@ export async function runConnectionHistoryTask({
   let job = await ensureConnectionHistoryBootstrapJob({
     userId: state.userId,
     profile: initialSnapshot.profile,
-    allowCreate,
   });
 
   if (trigger === 'history_repair') {

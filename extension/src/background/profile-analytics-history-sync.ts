@@ -170,20 +170,53 @@ async function completeConnectionHistoryFromChunks({
 export async function ensureConnectionHistoryBootstrapJob({
   userId,
   profile,
-  allowCreate,
   now = Date.now(),
 }: {
   userId: string;
   profile: ProfileAnalyticsProfileSnapshot;
-  allowCreate: boolean;
   now?: number;
 }): Promise<ProfileAnalyticsConnectionHistoryJob> {
   const accountKey = getProfileAnalyticsConnectionAccountKey(profile);
   const existing = await getProfileAnalyticsConnectionHistoryJob(userId, accountKey);
-  if (existing) return existing;
+  if (existing) {
+    // Older builds represented "history has never started" as needs_repair
+    // without a session. That state cannot be resumed and is not a damaged
+    // import, so upgrade it in place to a real first-run bootstrap.
+    if (existing.status === 'needs_repair' && !existing.sessionId) {
+      const scheduled: ProfileAnalyticsConnectionHistoryJob = {
+        ...existing,
+        status: 'scheduled',
+        sessionId: createSessionId(accountKey, now),
+        expectedTotal: profile.connectionsCountExact === true ? profile.connectionsCount : undefined,
+        collectedCount: 0,
+        nextStartIndex: 0,
+        batchIndex: 0,
+        mode: 'aggressive',
+        batchesSinceCooldown: 0,
+        nextRetryAt: undefined,
+        error: undefined,
+        updatedAt: now,
+      };
+      await setProfileAnalyticsConnectionHistoryJob(userId, scheduled);
+      await upsertProfileAnalyticsSnapshot(
+        userId,
+        {
+          profile: {
+            ...profile,
+            connectionDateCountsComplete: false,
+            connectionDateCountsError: '',
+            connectionHistoryBootstrap: toBootstrap(scheduled),
+          },
+        },
+        { updatedAt: now }
+      );
+      return scheduled;
+    }
+    return existing;
+  }
 
   const completeLegacyHistory = profile.connectionDateCountsComplete === true;
-  const status = completeLegacyHistory ? 'complete' : allowCreate ? 'scheduled' : 'needs_repair';
+  const status = completeLegacyHistory ? 'complete' : 'scheduled';
   const job: ProfileAnalyticsConnectionHistoryJob = {
     id: getProfileAnalyticsConnectionHistoryJobId(accountKey),
     version: PROFILE_ANALYTICS_CONNECTION_HISTORY_VERSION,
@@ -200,11 +233,12 @@ export async function ensureConnectionHistoryBootstrapJob({
           collectedCount: profile.connectionsCount,
           completedAt: profile.connectionDateCountsUpdatedAt || now,
         }
-      : allowCreate
-        ? { nextStartIndex: 0 }
-        : {
-            error: 'Existing incomplete history requires an explicit resume or restart.',
-          }),
+      : {
+          sessionId: createSessionId(accountKey, now),
+          expectedTotal: profile.connectionsCountExact === true ? profile.connectionsCount : undefined,
+          collectedCount: 0,
+          nextStartIndex: 0,
+        }),
   };
   await setProfileAnalyticsConnectionHistoryJob(userId, job);
   await upsertProfileAnalyticsSnapshot(
@@ -219,7 +253,10 @@ export async function ensureConnectionHistoryBootstrapJob({
               connectionHistoryBaselineCount: profile.connectionsCount,
               connectionHistoryAccountKey: accountKey,
             }
-          : {}),
+          : {
+              connectionDateCountsComplete: false,
+              connectionDateCountsError: '',
+            }),
       },
     },
     { updatedAt: now }

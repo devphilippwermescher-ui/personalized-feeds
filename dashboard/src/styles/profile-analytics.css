@@ -324,6 +324,57 @@
   border: 1px solid #bbf7d0;
 }
 
+.profile-analytics-dev-tools {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 18px;
+  padding: 12px 14px;
+  border: 1px dashed #a78bfa;
+  border-radius: 10px;
+  color: #4c1d95;
+  background: #f7f3ff;
+}
+
+.profile-analytics-dev-tools small {
+  display: block;
+  margin-top: 4px;
+  color: #6d5b8f;
+}
+
+.profile-analytics-dev-tools .profile-analytics-dev-tools-error {
+  color: #b42318;
+}
+
+.profile-analytics-dev-reset-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  gap: 7px;
+  min-height: 38px;
+  padding: 8px 13px;
+  border: 1px solid #7c3aed;
+  border-radius: 8px;
+  color: #6d28d9;
+  background: #fff;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.profile-analytics-dev-reset-button.is-confirming {
+  border-color: #dc2626;
+  color: #b91c1c;
+  background: #fff7f7;
+}
+
+.profile-analytics-dev-reset-button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
 .profile-analytics-sync-notice {
   display: flex;
   align-items: flex-start;
@@ -501,7 +552,9 @@
   font-size: 14px;
   font-weight: 700;
   text-decoration: none;
-  transition: background 0.15s ease, transform 0.15s ease;
+  transition:
+    background 0.15s ease,
+    transform 0.15s ease;
 }
 
 .profile-analytics-linkedin-prompt-action:hover {
@@ -759,18 +812,14 @@
   visibility: visible;
 }
 
-.profile-analytics-info-tooltip-wrap--right
-  .profile-analytics-info-trigger:hover
-  + .profile-analytics-info-tooltip,
+.profile-analytics-info-tooltip-wrap--right .profile-analytics-info-trigger:hover + .profile-analytics-info-tooltip,
 .profile-analytics-info-tooltip-wrap--right
   .profile-analytics-info-trigger:focus-visible
   + .profile-analytics-info-tooltip {
   transform: translate(0, -50%);
 }
 
-.profile-analytics-info-tooltip-wrap--left
-  .profile-analytics-info-trigger:hover
-  + .profile-analytics-info-tooltip,
+.profile-analytics-info-tooltip-wrap--left .profile-analytics-info-trigger:hover + .profile-analytics-info-tooltip,
 .profile-analytics-info-tooltip-wrap--left
   .profile-analytics-info-trigger:focus-visible
   + .profile-analytics-info-tooltip {
@@ -1217,6 +1266,15 @@
 }
 
 @media (max-width: 1100px) {
+  .profile-analytics-dev-tools {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .profile-analytics-dev-reset-button {
+    align-self: flex-start;
+  }
+
   .profile-analytics-sync-notice {
     align-items: stretch;
     flex-direction: column;

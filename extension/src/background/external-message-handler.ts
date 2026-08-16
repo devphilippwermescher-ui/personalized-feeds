@@ -8,6 +8,7 @@ import {
   persistFeatureSettingsToStorage,
   startOffscreenAuth,
 } from './feeds-auth';
+import { resetCurrentUserAnalyticsForDevelopment } from './profile-analytics-dev-reset';
 
 const DASHBOARD_ORIGIN = 'https://linkedin-feed-sorter.web.app';
 
@@ -112,6 +113,27 @@ function handleDashboardMessage(message: DashboardMessage, sendResponse: (respon
           ...(!result.success ? { error: result.reason || 'Connections history could not be resumed.' } : {}),
         })
       )
+      .catch((error) => {
+        sendResponse({
+          success: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+    return true;
+  }
+
+  if (message.type === 'DASHBOARD_DEV_RESET_ANALYTICS') {
+    if (!__MFP_DEV_BUILD__) {
+      sendResponse({ success: false, error: 'Development tools are disabled in this extension build.' });
+      return false;
+    }
+
+    resetCurrentUserAnalyticsForDevelopment()
+      .then((result) => {
+        sendResponse({ success: true, result, collectionQueued: true });
+        // Profile Viewers data and scheduling are deliberately preserved.
+        void queueProfileAnalyticsSync('install');
+      })
       .catch((error) => {
         sendResponse({
           success: false,

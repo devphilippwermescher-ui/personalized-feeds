@@ -201,9 +201,13 @@ async function runProfileAnalyticsSync(
 
   // History runs in resumable batches. Bootstrap schedules the first batch;
   // alarms continue it without blocking routine dashboard-open refreshes.
+  const historyBootstrap = snapshot?.profile?.connectionHistoryBootstrap;
+  const historyHasNeverStarted =
+    !historyBootstrap || (historyBootstrap.status === 'needs_repair' && !historyBootstrap.sessionId);
   const shouldEvaluateHistory =
     Boolean(snapshot?.profile) &&
-    (bootstrap.currentSynced ||
+    (historyHasNeverStarted ||
+      bootstrap.currentSynced ||
       trigger === 'alarm' ||
       trigger === 'manual' ||
       trigger === 'history_resume' ||
@@ -215,7 +219,6 @@ async function runProfileAnalyticsSync(
       snapshot,
       trigger,
       linkedInTabId: linkedInTab?.id,
-      allowCreate: bootstrap.currentSynced,
     });
     state = historyTask.state;
     snapshot = historyTask.snapshot;

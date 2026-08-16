@@ -13,6 +13,7 @@ import { ConnectionHistoryResumeNotice } from '../features/profile-analytics/com
 import { MetricCard } from '../features/profile-analytics/components/MetricCard';
 import { LinkedInConnectionPrompt } from '../features/profile-analytics/components/LinkedInConnectionPrompt';
 import { ProfileAnalyticsHistoryProgress } from '../features/profile-analytics/components/ProfileAnalyticsHistoryProgress';
+import { ProfileAnalyticsDevTools } from '../features/profile-analytics/components/ProfileAnalyticsDevTools';
 import { ProfileAnalyticsHero } from '../features/profile-analytics/components/ProfileAnalyticsHero';
 import {
   ProfileAnalyticsDataSkeleton,
@@ -70,17 +71,21 @@ export default function ProfileAnalyticsPage({ userId }: ProfileAnalyticsPagePro
         />
       </div>
 
+      {import.meta.env.DEV ? <ProfileAnalyticsDevTools /> : null}
+
       {analytics.connectionHistoryLoading && analytics.syncStatus?.status === 'syncing' ? null : (
-        <ProfileAnalyticsSyncNotice status={analytics.syncStatus} extensionError={analytics.syncStatusError} />
+        <ProfileAnalyticsSyncNotice
+          status={analytics.syncStatus}
+          extensionError={analytics.syncStatusError}
+          hasSearchAppearancesValue={typeof analytics.searchAppearances?.totalCount === 'number'}
+        />
       )}
 
       {analytics.connectionHistoryLoading ? (
         <ProfileAnalyticsHistoryProgress bootstrap={analytics.connectionHistoryBootstrap} />
       ) : null}
 
-      {analytics.connectionHistoryNeedsRepair ? (
-        <ConnectionHistoryResumeNotice />
-      ) : null}
+      {analytics.connectionHistoryNeedsRepair ? <ConnectionHistoryResumeNotice /> : null}
 
       {analytics.error ? (
         <div className="profile-analytics-alert profile-analytics-alert--error">{analytics.error}</div>

@@ -31,6 +31,7 @@ vi.mock('shared/firestore-service', () => ({
 }));
 
 import {
+  ensureConnectionHistoryBootstrapJob,
   reconcileCompletedConnectionHistory,
   resumeConnectionHistoryBootstrap,
   syncConnectionHistoryBatch,
@@ -75,6 +76,83 @@ describe('one-time Connections history bootstrap', () => {
       ...patch,
       updatedAt: collectedAt,
     }));
+  });
+
+  it('starts a new history session when totals exist but history has never run', async () => {
+    mocks.getJob.mockResolvedValue(null);
+
+    const created = await ensureConnectionHistoryBootstrapJob({
+      userId: 'user',
+      profile: currentSnapshot.profile,
+      now: collectedAt,
+    });
+
+    expect(created).toMatchObject({
+      status: 'scheduled',
+      expectedTotal: 3,
+      collectedCount: 0,
+      nextStartIndex: 0,
+      batchIndex: 0,
+    });
+    expect(created.sessionId).toEqual(expect.any(String));
+    expect(created.error).toBeUndefined();
+    expect(mocks.upsertProfileAnalyticsSnapshot).toHaveBeenCalledWith(
+      'user',
+      {
+        profile: expect.objectContaining({
+          connectionDateCountsComplete: false,
+          connectionHistoryBootstrap: expect.objectContaining({
+            status: 'scheduled',
+            sessionId: created.sessionId,
+          }),
+        }),
+      },
+      { updatedAt: collectedAt }
+    );
+  });
+
+  it('upgrades an unresumable placeholder repair state to a first-run session', async () => {
+    mocks.getJob.mockResolvedValue({
+      ...job,
+      status: 'needs_repair',
+      sessionId: undefined,
+      nextStartIndex: undefined,
+      error: 'Existing incomplete history requires an explicit resume or restart.',
+    });
+
+    const upgraded = await ensureConnectionHistoryBootstrapJob({
+      userId: 'user',
+      profile: currentSnapshot.profile,
+      now: collectedAt,
+    });
+
+    expect(upgraded).toMatchObject({
+      status: 'scheduled',
+      expectedTotal: 3,
+      collectedCount: 0,
+      nextStartIndex: 0,
+    });
+    expect(upgraded.sessionId).toEqual(expect.any(String));
+    expect(upgraded.error).toBeUndefined();
+  });
+
+  it('preserves a real repair state that has a resumable session', async () => {
+    const repair = {
+      ...job,
+      status: 'needs_repair' as const,
+      sessionId: 'saved-session',
+      error: 'Previous batch needs attention.',
+    };
+    mocks.getJob.mockResolvedValue(repair);
+
+    const result = await ensureConnectionHistoryBootstrapJob({
+      userId: 'user',
+      profile: currentSnapshot.profile,
+      now: collectedAt,
+    });
+
+    expect(result).toBe(repair);
+    expect(mocks.setJob).not.toHaveBeenCalled();
   });
 
   it('resumes a repair job from its persisted session without resetting saved progress', async () => {

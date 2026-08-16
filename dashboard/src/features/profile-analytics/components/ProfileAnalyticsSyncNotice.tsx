@@ -33,9 +33,11 @@ function getFailedMetrics(status: ProfileAnalyticsSyncStatus) {
 export function ProfileAnalyticsSyncNotice({
   status,
   extensionError,
+  hasSearchAppearancesValue,
 }: {
   status: ProfileAnalyticsSyncStatus | null;
   extensionError: string | null;
+  hasSearchAppearancesValue: boolean;
 }) {
   if (extensionError) {
     return (
@@ -63,7 +65,16 @@ export function ProfileAnalyticsSyncNotice({
     );
   }
 
-  const failedMetrics = getFailedMetrics(status);
+  const failedMetrics = getFailedMetrics(status).filter(([metric, metricStatus]) => {
+    // A new LinkedIn account can omit the Search Appearances module entirely.
+    // With no previously stored value this is an unavailable initial metric,
+    // not stale data that the user needs to act on.
+    return !(
+      metric === 'searchAppearances' &&
+      !hasSearchAppearancesValue &&
+      metricStatus.errorCode === 'linkedin_response_missing_data'
+    );
+  });
   if (failedMetrics.length === 0) return null;
   const metricNames = failedMetrics.map(([metric]) => METRIC_LABELS[metric]).join(', ');
   const firstFailure = failedMetrics[0][1];
