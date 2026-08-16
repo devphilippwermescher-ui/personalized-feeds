@@ -3,6 +3,36 @@ import type { MetricTrendPoint } from '../../../components/MetricTrendChart';
 import { addDays, endOfDay, getDateKey, parseDate, startOfDay, type DateRange } from '../../../utils/date';
 import type { ChartKey, ConnectionsFollowersPoint } from '../types';
 
+export interface ProfileVisitorTrendPoint extends MetricTrendPoint {
+  visibleCount: number;
+  hiddenCount: number;
+}
+
+const MINUTE_MS = 60_000;
+const HOUR_MS = 60 * MINUTE_MS;
+const DAY_MS = 24 * HOUR_MS;
+
+function getProfileViewerViewedAt(viewer: ProfileViewer): number {
+  const fallback = viewer.firstSeenAt;
+  const anchor = viewer.lastSeenAt || fallback;
+  const text = viewer.viewedAgoText?.trim().toLowerCase() || '';
+  const relativeMatch = text.match(
+    /(?:viewed\s+)?(\d+)\s*(m|min|mins|minute|minutes|h|hr|hrs|hour|hours|d|day|days|w|wk|wks|week|weeks|mo|mos|month|months|y|yr|yrs|year|years)\s+ago/
+  );
+  if (!relativeMatch) return fallback;
+
+  const amount = Number(relativeMatch[1]);
+  const unit = relativeMatch[2];
+  if (!Number.isFinite(amount)) return fallback;
+  if (/^(m|min|mins|minute|minutes)$/.test(unit)) return anchor - amount * MINUTE_MS;
+  if (/^(h|hr|hrs|hour|hours)$/.test(unit)) return anchor - amount * HOUR_MS;
+  if (/^(d|day|days)$/.test(unit)) return anchor - amount * DAY_MS;
+  if (/^(w|wk|wks|week|weeks)$/.test(unit)) return anchor - amount * 7 * DAY_MS;
+  if (/^(mo|mos|month|months)$/.test(unit)) return anchor - amount * 30 * DAY_MS;
+  if (/^(y|yr|yrs|year|years)$/.test(unit)) return anchor - amount * 365 * DAY_MS;
+  return fallback;
+}
+
 function getTimestamp(value: string | number | undefined): number | undefined {
   if (typeof value === 'number') return Number.isFinite(value) ? value : undefined;
   if (!value) return undefined;
@@ -25,7 +55,7 @@ export function getAllAnalyticsDateRange({
 }): DateRange {
   const timestamps = [
     ...snapshots.map((snapshot) => getTimestamp(snapshot.date)),
-    ...viewers.map((viewer) => getTimestamp(viewer.firstSeenAt)),
+    ...viewers.map((viewer) => getProfileViewerViewedAt(viewer)),
     ...invites.map((invite) => getTimestamp(invite.sentAt)),
     ...Object.keys(connectionDateCounts || {}).map(getTimestamp),
     ...Object.keys(followerGrowthByDate || {}).map(getTimestamp),
@@ -340,58 +370,105 @@ export function buildProfileVisitorPoints({
   viewers,
   snapshots,
   range,
+  mode,
   currentPrivateCount,
+  currentRecruiterCount,
 }: {
   viewers: ProfileViewer[];
   snapshots: ProfileAnalyticsDailySnapshot[];
   range: DateRange;
+  mode: 'total' | 'range';
   currentPrivateCount?: number;
-}): MetricTrendPoint[] {
+  currentRecruiterCount?: number;
+}): ProfileVisitorTrendPoint[] {
   const start = startOfDay(range.start);
   const end = startOfDay(range.end);
   const rangeEnd = endOfDay(range.end).getTime();
   const firstSeenCountsByDate = new Map<string, number>();
   const privateCountsByDate = new Map<string, number>();
+  const recruiterCountsByDate = new Map<string, number>();
 
   viewers.forEach((viewer) => {
-    if (
-      typeof viewer.firstSeenAt !== 'number' ||
-      viewer.firstSeenAt < start.getTime() ||
-      viewer.firstSeenAt > rangeEnd
-    ) {
+    const viewedAt = getProfileViewerViewedAt(viewer);
+    if (viewedAt < start.getTime() || viewedAt > rangeEnd) {
       return;
     }
-    const dateKey = getDateKey(new Date(viewer.firstSeenAt));
+    const dateKey = getDateKey(new Date(viewedAt));
     firstSeenCountsByDate.set(dateKey, (firstSeenCountsByDate.get(dateKey) || 0) + 1);
   });
 
   snapshots.forEach((snapshot) => {
-    if (typeof snapshot.profileViewsPrivateCount !== 'number') return;
     const date = parseDate(snapshot.date);
     if (!date) return;
-    privateCountsByDate.set(getDateKey(date), snapshot.profileViewsPrivateCount);
+    const dateKey = getDateKey(date);
+    if (typeof snapshot.profileViewsPrivateCount === 'number') {
+      privateCountsByDate.set(dateKey, snapshot.profileViewsPrivateCount);
+    }
+    const recruiterCount =
+      typeof snapshot.profileViewsRecruiterCount === 'number'
+        ? snapshot.profileViewsRecruiterCount
+        : typeof snapshot.profileViewsCount === 'number' &&
+            typeof snapshot.profileViewsVisibleCount === 'number' &&
+            typeof snapshot.profileViewsPrivateCount === 'number'
+          ? Math.max(
+              0,
+              snapshot.profileViewsCount - snapshot.profileViewsVisibleCount - snapshot.profileViewsPrivateCount
+            )
+          : undefined;
+    if (typeof recruiterCount === 'number') {
+      recruiterCountsByDate.set(dateKey, recruiterCount);
+    }
   });
   const today = startOfDay(new Date());
   if (range.end.getTime() >= today.getTime() && typeof currentPrivateCount === 'number') {
     privateCountsByDate.set(getDateKey(today), currentPrivateCount);
   }
+  if (range.end.getTime() >= today.getTime() && typeof currentRecruiterCount === 'number') {
+    recruiterCountsByDate.set(getDateKey(today), currentRecruiterCount);
+  }
+  const startKey = getDateKey(start);
   const orderedPrivateCounts = Array.from(privateCountsByDate.entries()).sort(([left], [right]) =>
     left.localeCompare(right)
   );
-  const startKey = getDateKey(start);
-  const privateBaseline = [...orderedPrivateCounts].reverse().find(([dateKey]) => dateKey < startKey)?.[1] || 0;
+  const privateBaseline = [...orderedPrivateCounts].reverse().find(([dateKey]) => dateKey < startKey)?.[1];
+  const orderedRecruiterCounts = Array.from(recruiterCountsByDate.entries()).sort(([left], [right]) =>
+    left.localeCompare(right)
+  );
+  const recruiterBaseline = [...orderedRecruiterCounts].reverse().find(([dateKey]) => dateKey < startKey)?.[1];
 
-  const points: MetricTrendPoint[] = [];
+  const points: ProfileVisitorTrendPoint[] = [];
   let visibleCount = 0;
-  let latestPrivateCount = privateBaseline;
+  let latestPrivateCount = privateBaseline ?? 0;
+  let latestRecruiterCount = recruiterBaseline ?? 0;
+  let privateCountInRange = 0;
+  let recruiterCountInRange = 0;
   for (let cursor = start; cursor.getTime() <= end.getTime(); cursor = addDays(cursor, 1)) {
     const dateKey = getDateKey(cursor);
     visibleCount += firstSeenCountsByDate.get(dateKey) || 0;
-    if (typeof privateCountsByDate.get(dateKey) === 'number') {
-      latestPrivateCount = privateCountsByDate.get(dateKey) as number;
+    const privateCount = privateCountsByDate.get(dateKey);
+    if (typeof privateCount === 'number') {
+      if (mode === 'range' && typeof latestPrivateCount === 'number') {
+        privateCountInRange += Math.max(0, privateCount - latestPrivateCount);
+      }
+      latestPrivateCount = privateCount;
     }
-    const privateCountInRange = Math.max(0, latestPrivateCount - privateBaseline);
-    points.push({ date: new Date(cursor), value: visibleCount + privateCountInRange });
+    const recruiterCount = recruiterCountsByDate.get(dateKey);
+    if (typeof recruiterCount === 'number') {
+      if (mode === 'range' && typeof latestRecruiterCount === 'number') {
+        recruiterCountInRange += Math.max(0, recruiterCount - latestRecruiterCount);
+      }
+      latestRecruiterCount = recruiterCount;
+    }
+    const hiddenCount =
+      mode === 'total'
+        ? (latestPrivateCount || 0) + (latestRecruiterCount || 0)
+        : privateCountInRange + recruiterCountInRange;
+    points.push({
+      date: new Date(cursor),
+      value: visibleCount + hiddenCount,
+      visibleCount,
+      hiddenCount,
+    });
   }
 
   return points;

@@ -79,6 +79,9 @@ function buildDailySnapshotPatch(
     ...(typeof snapshot.profileViews?.privateCount === 'number'
       ? { profileViewsPrivateCount: snapshot.profileViews.privateCount }
       : {}),
+    ...(typeof snapshot.profileViews?.recruiterCount === 'number'
+      ? { profileViewsRecruiterCount: snapshot.profileViews.recruiterCount }
+      : {}),
   };
 }
 

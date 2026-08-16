@@ -31,19 +31,6 @@ export function ProfileAnalyticsDataSkeleton() {
   );
 }
 
-export function ProfileAnalyticsChartSkeleton({ title }: { title: string }) {
-  return (
-    <section
-      className="profile-analytics-card profile-analytics-card--wide profile-analytics-skeleton-chart"
-      aria-label={`${title} is being collected from LinkedIn`}
-      aria-busy="true"
-    >
-      <div className="profile-analytics-skeleton-block profile-analytics-skeleton-line profile-analytics-skeleton-line--chart-title" />
-      <div className="profile-analytics-skeleton-block profile-analytics-skeleton-chart-body" />
-    </section>
-  );
-}
-
 export function ProfileAnalyticsSkeleton() {
   return (
     <div className="profile-analytics-skeleton" aria-label="Loading profile analytics" aria-busy="true">
@@ -65,7 +52,7 @@ export function ProfileAnalyticsSkeleton() {
           <div className="profile-analytics-skeleton-block profile-analytics-skeleton-line profile-analytics-skeleton-line--subtitle" />
         </div>
         <div className="profile-analytics-skeleton-range">
-          {Array.from({ length: 7 }, (_, index) => (
+          {Array.from({ length: 6 }, (_, index) => (
             <div key={index} className="profile-analytics-skeleton-block profile-analytics-skeleton-pill" />
           ))}
         </div>

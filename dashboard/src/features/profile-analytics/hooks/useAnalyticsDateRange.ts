@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { getPresetRange, startOfDay, type DateRange } from '../../../utils/date';
 import { formatShortDate } from '../../../utils/format';
 import { TIME_RANGES } from '../constants';
@@ -30,10 +30,9 @@ export function useAnalyticsDateRange() {
     setIsCustomPickerOpen(false);
   }
 
-  function selectTotal() {
-    setRange('total');
+  const closeCustomPicker = useCallback(() => {
     setIsCustomPickerOpen(false);
-  }
+  }, []);
 
   function toggleCustomPicker() {
     setRange('custom');
@@ -63,8 +62,8 @@ export function useAnalyticsDateRange() {
     activeCustomBoundary,
     visibleMonth,
     selectPreset,
-    selectTotal,
     toggleCustomPicker,
+    closeCustomPicker,
     updateCustomRange,
     reset,
     setActiveCustomBoundary,

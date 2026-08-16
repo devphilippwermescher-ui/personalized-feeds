@@ -348,6 +348,7 @@ export interface ProfileAnalyticsDailySnapshot {
   profileViewsCount?: number;
   profileViewsVisibleCount?: number;
   profileViewsPrivateCount?: number;
+  profileViewsRecruiterCount?: number;
   updatedAt: number;
 }
 

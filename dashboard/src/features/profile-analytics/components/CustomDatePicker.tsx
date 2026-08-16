@@ -14,6 +14,7 @@ const MONTH_FORMATTER = new Intl.DateTimeFormat('en-US', { month: 'long', year: 
 const WEEKDAYS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
 
 interface CustomDatePickerProps {
+  id: string;
   customRange: DateRange;
   visibleMonth: Date;
   activeBoundary: DateRangeBoundary;
@@ -29,6 +30,7 @@ function buildCalendarDays(month: Date): Date[] {
 }
 
 export function CustomDatePicker({
+  id,
   customRange,
   visibleMonth,
   activeBoundary,
@@ -37,9 +39,14 @@ export function CustomDatePicker({
   onRangeChange,
 }: CustomDatePickerProps) {
   const days = buildCalendarDays(visibleMonth);
+  const today = startOfDay(new Date());
+  const currentMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+  const visibleMonthStart = new Date(visibleMonth.getFullYear(), visibleMonth.getMonth(), 1);
+  const nextMonthDisabled = visibleMonthStart.getTime() >= currentMonth.getTime();
 
   function selectDay(day: Date) {
     const selected = startOfDay(day);
+    if (selected.getTime() > today.getTime()) return;
     if (activeBoundary === 'start') {
       onRangeChange({
         start: selected,
@@ -57,7 +64,7 @@ export function CustomDatePicker({
   }
 
   return (
-    <div className="profile-analytics-date-popover">
+    <div id={id} className="profile-analytics-date-popover">
       <div className="profile-analytics-date-fields">
         <button
           className={activeBoundary === 'start' ? 'is-active' : ''}
@@ -80,7 +87,12 @@ export function CustomDatePicker({
           &lt;
         </button>
         <strong>{MONTH_FORMATTER.format(visibleMonth)}</strong>
-        <button type="button" onClick={() => onVisibleMonthChange(addMonths(visibleMonth, 1))}>
+        <button
+          type="button"
+          disabled={nextMonthDisabled}
+          aria-label="Next month"
+          onClick={() => onVisibleMonthChange(addMonths(visibleMonth, 1))}
+        >
           &gt;
         </button>
       </div>
@@ -92,6 +104,7 @@ export function CustomDatePicker({
       </div>
       <div className="profile-analytics-calendar-grid">
         {days.map((day) => {
+          const isFuture = startOfDay(day).getTime() > today.getTime();
           const isSelected = isSameDay(day, customRange.start) || isSameDay(day, customRange.end);
           const classes = [
             day.getMonth() !== visibleMonth.getMonth() ? 'is-muted' : '',
@@ -102,7 +115,15 @@ export function CustomDatePicker({
             .join(' ');
 
           return (
-            <button key={day.toISOString()} className={classes} type="button" onClick={() => selectDay(day)}>
+            <button
+              key={day.toISOString()}
+              className={classes}
+              type="button"
+              disabled={isFuture}
+              aria-label={`${formatShortDate(day)}${isFuture ? ', future date unavailable' : ''}`}
+              aria-current={isSameDay(day, today) ? 'date' : undefined}
+              onClick={() => selectDay(day)}
+            >
               {day.getDate()}
             </button>
           );

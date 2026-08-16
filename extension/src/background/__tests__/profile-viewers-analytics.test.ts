@@ -61,4 +61,36 @@ describe('profile viewers analytics recording', () => {
 
     expect(mocks.upsertProfileAnalyticsSnapshot).not.toHaveBeenCalled();
   });
+
+  it('includes recruiter views in the persisted total', async () => {
+    mocks.getProfileAnalyticsSnapshot.mockResolvedValue({
+      profileViews: {
+        visibleCount: 62,
+        privateCount: 26,
+        recruiterCount: 38,
+        totalCount: 126,
+      },
+    });
+
+    await recordProfileViewsAnalytics({
+      userId: 'user-1',
+      visibleCount: 62,
+      privateCount: 26,
+      recruiterCount: 39,
+      updatedAt: 100,
+    });
+
+    expect(mocks.upsertProfileAnalyticsSnapshot).toHaveBeenCalledWith(
+      'user-1',
+      {
+        profileViews: expect.objectContaining({
+          visibleCount: 62,
+          privateCount: 26,
+          recruiterCount: 39,
+          totalCount: 127,
+        }),
+      },
+      { updatedAt: 100 }
+    );
+  });
 });

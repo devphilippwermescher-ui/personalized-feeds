@@ -117,8 +117,8 @@
   color: #fff;
 }
 
-.profile-analytics-range-control > button:hover:not(.is-active),
-.profile-analytics-custom-date > button:hover:not(.is-active) {
+.profile-analytics-range-control > button:hover:not(.is-active):not(:disabled),
+.profile-analytics-custom-date > button:hover:not(.is-active):not(:disabled) {
   background: #07864f;
   border-color: #07864f;
   color: #fff;
@@ -139,6 +139,61 @@
 .profile-analytics-range-control svg {
   width: 16px;
   height: 16px;
+}
+
+.profile-analytics-range-control button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.profile-analytics-range-reset-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.profile-analytics-range-reset-tooltip {
+  position: absolute;
+  top: calc(100% + 9px);
+  right: 0;
+  z-index: 35;
+  width: 280px;
+  max-width: min(280px, calc(100vw - 40px));
+  padding: 10px 12px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 7px;
+  background: #172033;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.2);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.45;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-4px);
+  transition:
+    opacity 0.14s ease,
+    transform 0.14s ease;
+  visibility: hidden;
+}
+
+.profile-analytics-range-reset-tooltip::before {
+  content: '';
+  position: absolute;
+  right: 12px;
+  bottom: 100%;
+  width: 8px;
+  height: 8px;
+  border-top: 1px solid rgba(148, 163, 184, 0.22);
+  border-left: 1px solid rgba(148, 163, 184, 0.22);
+  background: #172033;
+  transform: translateY(50%) rotate(45deg);
+}
+
+.profile-analytics-range-reset:hover + .profile-analytics-range-reset-tooltip,
+.profile-analytics-range-reset:focus-visible + .profile-analytics-range-reset-tooltip {
+  opacity: 1;
+  transform: translateY(0);
+  visibility: visible;
 }
 
 .profile-analytics-custom-date {
@@ -244,6 +299,13 @@
   box-shadow: 0 0 0 3px #0a66c2;
 }
 
+.profile-analytics-calendar-grid button:disabled {
+  background: transparent;
+  color: #c4cbd4;
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
 .profile-analytics-alert {
   border-radius: 10px;
   padding: 12px 14px;
@@ -309,6 +371,77 @@
   cursor: pointer;
   font-weight: 600;
   white-space: nowrap;
+}
+
+.profile-analytics-history-progress {
+  padding: 16px 18px;
+  border: 1px solid #cfe5fa;
+  border-radius: 10px;
+  background: #eff7ff;
+  color: #164e85;
+}
+
+.profile-analytics-history-progress-copy {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.profile-analytics-history-progress-copy strong {
+  display: block;
+  margin-bottom: 3px;
+  font-size: 14px;
+}
+
+.profile-analytics-history-progress-copy p,
+.profile-analytics-history-progress small {
+  margin: 0;
+  color: #55738f;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.profile-analytics-history-progress-value {
+  flex: 0 0 auto;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.profile-analytics-history-progress-track {
+  height: 9px;
+  margin-top: 12px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #d8e9f7;
+}
+
+.profile-analytics-history-progress-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #0a66c2;
+  transition: width 0.3s ease;
+}
+
+.profile-analytics-history-progress-track.is-indeterminate .profile-analytics-history-progress-fill {
+  width: 34%;
+  animation: profile-analytics-history-progress 1.4s ease-in-out infinite;
+}
+
+.profile-analytics-history-progress small {
+  display: block;
+  margin-top: 7px;
+}
+
+@keyframes profile-analytics-history-progress {
+  from {
+    transform: translateX(-110%);
+  }
+  to {
+    transform: translateX(300%);
+  }
 }
 
 .profile-analytics-metrics-grid {
@@ -917,6 +1050,11 @@
   .profile-analytics-skeleton-block {
     animation-duration: 2.5s;
   }
+
+  .profile-analytics-history-progress-fill {
+    animation: none !important;
+    transition: none;
+  }
 }
 
 @media (max-width: 1100px) {
@@ -957,6 +1095,25 @@
 }
 
 @media (max-width: 640px) {
+  .profile-analytics-history-progress-copy {
+    align-items: flex-start;
+  }
+
+  .profile-analytics-date-popover {
+    right: auto;
+    left: 0;
+    width: min(386px, calc(100vw - 32px));
+    padding: 14px;
+  }
+
+  .profile-analytics-calendar-grid {
+    gap: 4px;
+  }
+
+  .profile-analytics-calendar-grid button {
+    width: 100%;
+  }
+
   .profile-analytics-metric-trend-card {
     padding: 20px 16px 14px;
   }

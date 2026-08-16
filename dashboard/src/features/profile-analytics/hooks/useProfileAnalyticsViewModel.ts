@@ -122,20 +122,39 @@ export function useProfileAnalyticsViewModel(userId: string, selectedDateRange: 
   const currentVisibleViewerCount = analytics.supportingDataLoaded
     ? analytics.profileViewers.length
     : (analytics.snapshot?.profileViews?.visibleCount ?? 0);
+  const currentRecruiterViewerCount = analytics.supportingDataLoaded
+    ? (analytics.profileViewerSummary?.recruiterViewerCount ?? analytics.snapshot?.profileViews?.recruiterCount ?? 0)
+    : (analytics.snapshot?.profileViews?.recruiterCount ?? 0);
   const profileViewsPoints = useMemo(
     () =>
       buildProfileVisitorPoints({
         viewers: analytics.profileViewers,
         snapshots: analytics.dailySnapshots,
         range: effectiveDateRange,
+        mode: isTotalRange ? 'total' : 'range',
         currentPrivateCount: currentPrivateViewerCount,
+        currentRecruiterCount: currentRecruiterViewerCount,
       }),
-    [analytics.dailySnapshots, analytics.profileViewers, currentPrivateViewerCount, effectiveDateRange]
+    [
+      analytics.dailySnapshots,
+      analytics.profileViewers,
+      currentPrivateViewerCount,
+      currentRecruiterViewerCount,
+      effectiveDateRange,
+      isTotalRange,
+    ]
   );
-  const profileViewsTotal = currentVisibleViewerCount + currentPrivateViewerCount;
-  const profileViewsInRange = isTotalRange
-    ? profileViewsTotal
-    : [...profileViewsPoints].reverse().find((point) => typeof point.value === 'number')?.value;
+  const calculatedProfileViewsTotal =
+    currentVisibleViewerCount + currentPrivateViewerCount + currentRecruiterViewerCount;
+  const profileViewsTotal = analytics.supportingDataLoaded
+    ? calculatedProfileViewsTotal
+    : (analytics.snapshot?.profileViews?.totalCount ?? calculatedProfileViewsTotal);
+  const latestProfileViewsPoint = [...profileViewsPoints].reverse().find((point) => typeof point.value === 'number');
+  const profileViewsVisibleInRange = isTotalRange ? currentVisibleViewerCount : latestProfileViewsPoint?.visibleCount;
+  const profileViewsHiddenInRange = isTotalRange
+    ? currentPrivateViewerCount + currentRecruiterViewerCount
+    : latestProfileViewsPoint?.hiddenCount;
+  const profileViewsInRange = isTotalRange ? profileViewsTotal : latestProfileViewsPoint?.value;
   const searchAppearancesPoints = useMemo(
     () =>
       buildDailyMetricPoints({
@@ -175,6 +194,8 @@ export function useProfileAnalyticsViewModel(userId: string, selectedDateRange: 
     effectiveDateRange,
     profileViewsInRange,
     profileViewsTotal,
+    profileViewsVisibleInRange,
+    profileViewsHiddenInRange,
     connectionsFollowersPoints,
     connectionsInRange,
     followersInRange,

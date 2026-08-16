@@ -13,32 +13,26 @@ interface RenderFeedRowOptions {
   expandedContentHtml?: string;
 }
 
-export function renderFeedRow({
-  feed,
-  expanded,
-  previewHtml,
-  expandedContentHtml = '',
-}: RenderFeedRowOptions): string {
+export function renderFeedRow({ feed, expanded, previewHtml, expandedContentHtml = '' }: RenderFeedRowOptions): string {
   const isShared = Boolean(feed.isShared);
   const isSystem = Boolean(feed.isSystem);
   const isProfileViewers = feed.systemType === 'profileViewers';
   const hasPrivateViewerCount =
-    isProfileViewers &&
-    Number.isSafeInteger(feed.privateViewerCount) &&
-    (feed.privateViewerCount || 0) >= 0;
+    isProfileViewers && Number.isSafeInteger(feed.privateViewerCount) && (feed.privateViewerCount || 0) >= 0;
   const privateViewerCount = feed.privateViewerCount || 0;
   const recruiterViewerCount =
-    isProfileViewers &&
-    Number.isSafeInteger(feed.recruiterViewerCount) &&
-    (feed.recruiterViewerCount || 0) > 0
+    isProfileViewers && Number.isSafeInteger(feed.recruiterViewerCount) && (feed.recruiterViewerCount || 0) > 0
       ? feed.recruiterViewerCount || 0
       : 0;
   const hiddenViewerCount = privateViewerCount + recruiterViewerCount;
   const hasHiddenViewerCount = isProfileViewers && (hasPrivateViewerCount || recruiterViewerCount > 0);
+  // The expanded list contains one synthetic recruiter aggregate row. Keep it
+  // in memberCount for cache/list consistency, but do not present it as a real
+  // visible profile visitor.
+  const visibleEntryCount = Math.max(0, (feed.memberCount || 0) - (recruiterViewerCount > 0 ? 1 : 0));
   const viewerCountLabel = hasHiddenViewerCount
-    ? `${feed.memberCount || 0} / ${hiddenViewerCount}`
-    : `${feed.memberCount || 0}`;
-  const visibleEntryCount = feed.memberCount || 0;
+    ? `${visibleEntryCount} / ${hiddenViewerCount}`
+    : `${visibleEntryCount}`;
   const hiddenViewerDetails = [
     privateViewerCount > 0
       ? `${privateViewerCount} private-mode ${privateViewerCount === 1 ? 'visitor' : 'visitors'}`
@@ -46,7 +40,9 @@ export function renderFeedRow({
     recruiterViewerCount > 0
       ? `${recruiterViewerCount} recruiter ${recruiterViewerCount === 1 ? 'view' : 'views'}`
       : '',
-  ].filter(Boolean).join(' and ');
+  ]
+    .filter(Boolean)
+    .join(' and ');
   const viewerCountTooltip = hasHiddenViewerCount
     ? `${visibleEntryCount} visible visitor ${visibleEntryCount === 1 ? 'entry' : 'entries'} saved. LinkedIn reports ${hiddenViewerDetails || `${hiddenViewerCount} additional visitors`}.`
     : '';
@@ -55,11 +51,10 @@ export function renderFeedRow({
     isShared ? 'lfa-feed-item--shared' : '',
     isSystem ? 'lfa-feed-item--system' : '',
     expanded ? 'lfa-feed-item--expanded' : '',
-  ].filter(Boolean).join(' ');
-  const groupClasses = [
-    'lfa-feed-group',
-    isProfileViewers ? 'lfa-feed-group--system' : '',
-  ].filter(Boolean).join(' ');
+  ]
+    .filter(Boolean)
+    .join(' ');
+  const groupClasses = ['lfa-feed-group', isProfileViewers ? 'lfa-feed-group--system' : ''].filter(Boolean).join(' ');
   const leadingIcon = isProfileViewers
     ? `
         <span class="lfa-feed-pin-wrap">
