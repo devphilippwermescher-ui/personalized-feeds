@@ -294,7 +294,7 @@ export async function resumeConnectionHistoryBootstrap({
   }
 
   const chunks = await getProfileAnalyticsConnectionHistoryChunks(userId, existing.sessionId);
-  const lastChunk = chunks.at(-1);
+  const lastChunk = chunks.length > 0 ? chunks[chunks.length - 1] : undefined;
   const nextStartIndex =
     typeof existing.nextStartIndex === 'number' ? existing.nextStartIndex : lastChunk?.startIndex;
   if (typeof nextStartIndex !== 'number') {
