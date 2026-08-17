@@ -32,6 +32,53 @@ function formatProfileCount(value: number | undefined): string {
   return `${formatNumber(value)} ${value === 1 ? 'profile' : 'profiles'}`;
 }
 
+const ACCEPTANCE_RATE_TOOLTIP =
+  'Acceptance Rate is accepted invitations divided by invitations sent while myFeedPilot is tracking. Keep the extension active while sending invitations; only tracked invitations are included.';
+const SEARCH_APPEARANCES_TOOLTIP =
+  'Search Appearances is how often your profile appeared in LinkedIn search. myFeedPilot saves LinkedIn\'s latest reported value about once every 24 hours while a signed-in LinkedIn tab is available. A selected range shows the latest saved value in that range.';
+const SOCIAL_SELLING_INDEX_TOOLTIP =
+  'SSI is LinkedIn\'s 0–100 Social Selling Index. myFeedPilot saves LinkedIn\'s current score about once every 24 hours while a signed-in LinkedIn tab is available. A selected range shows the latest saved score in that range.';
+
+function getPositiveProfileCount(value: number | undefined): number {
+  return typeof value === 'number' && value > 0 ? value : 0;
+}
+
+function formatProfileVisitorsValue(visible: number | undefined, hidden: number | undefined): string {
+  const visibleCount = getPositiveProfileCount(visible);
+  const hiddenCount = getPositiveProfileCount(hidden);
+  if (visibleCount && hiddenCount) return `${formatNumber(visibleCount)} / ${formatNumber(hiddenCount)}`;
+  if (visibleCount) return formatNumber(visibleCount);
+  if (hiddenCount) return formatNumber(hiddenCount);
+  return '-';
+}
+
+function getProfileVisitorsTooltip(visible: number | undefined, hidden: number | undefined): string {
+  const visibleCount = getPositiveProfileCount(visible);
+  const hiddenCount = getPositiveProfileCount(hidden);
+  const explanations: string[] = [];
+  if (visibleCount) {
+    explanations.push(`${formatProfileCount(visibleCount)}: visible visitor profiles saved by myFeedPilot.`);
+  }
+  if (hiddenCount) {
+    explanations.push(
+      `${formatProfileCount(hiddenCount)}: private-mode and recruiter views reported by LinkedIn in the last 90 days.`
+    );
+  }
+  return (
+    explanations.join(' ') ||
+    'Profile Visitors appear after myFeedPilot collects visible visitors and LinkedIn reports private-mode or recruiter views.'
+  );
+}
+
+function getProfileVisitorsSummary(visible: number | undefined, hidden: number | undefined): string {
+  const visibleCount = getPositiveProfileCount(visible);
+  const hiddenCount = getPositiveProfileCount(hidden);
+  const parts: string[] = [];
+  if (visibleCount) parts.push(`${formatNumber(visibleCount)} visible`);
+  if (hiddenCount) parts.push(`${formatNumber(hiddenCount)} hidden`);
+  return parts.join(' · ') || 'No saved visitor data';
+}
+
 export default function ProfileAnalyticsPage({ userId }: ProfileAnalyticsPageProps) {
   const dateRange = useAnalyticsDateRange();
   const analytics = useProfileAnalyticsViewModel(userId, dateRange.selectedDateRange);
@@ -122,23 +169,23 @@ export default function ProfileAnalyticsPage({ userId }: ProfileAnalyticsPagePro
               tooltip={
                 analytics.acceptanceRate.sentCount
                   ? `${analytics.acceptanceRate.acceptedCount} of ${analytics.acceptanceRate.sentCount} tracked invites accepted. Only invites sent while the extension is active count.`
-                  : 'Accepted invites divided by invites sent while the extension is active.'
+                  : ACCEPTANCE_RATE_TOOLTIP
               }
             />
             <MetricCard
               icon={<HiOutlineEye />}
-              value={`${formatNumber(analytics.profileViewsVisibleInRange)} / ${formatNumber(
+              value={formatProfileVisitorsValue(
+                analytics.profileViewsVisibleInRange,
                 analytics.profileViewsHiddenInRange
-              )}`}
+              )}
               label="Profile Visitors"
               rangeLabel={dateRange.rangeLabel}
               tone="sky"
               loading={!analytics.supportingDataLoaded}
-              tooltip={`${formatProfileCount(
-                analytics.profileViewsVisibleInRange
-              )}: visible visitor profiles saved by myFeedPilot. ${formatProfileCount(
+              tooltip={getProfileVisitorsTooltip(
+                analytics.profileViewsVisibleInRange,
                 analytics.profileViewsHiddenInRange
-              )}: private-mode and recruiter views reported by LinkedIn in the last 90 days.`}
+              )}
               tooltipPlacement="right"
             />
             <MetricCard
@@ -147,6 +194,7 @@ export default function ProfileAnalyticsPage({ userId }: ProfileAnalyticsPagePro
               label="Search Appearances"
               rangeLabel={dateRange.rangeLabel}
               tone="violet"
+              tooltip={SEARCH_APPEARANCES_TOOLTIP}
             />
             <MetricCard
               icon={<HiOutlineTrophy />}
@@ -158,6 +206,7 @@ export default function ProfileAnalyticsPage({ userId }: ProfileAnalyticsPagePro
               label="Social Selling Index (SSI)"
               rangeLabel={dateRange.rangeLabel}
               tone="amber"
+              tooltip={SOCIAL_SELLING_INDEX_TOOLTIP}
             />
           </div>
 
@@ -185,12 +234,16 @@ export default function ProfileAnalyticsPage({ userId }: ProfileAnalyticsPagePro
                 emptyLabel="No invitation trend yet"
                 showYear={analytics.isTotalRange}
                 showEmptyPlot
+                tooltip={ACCEPTANCE_RATE_TOOLTIP}
+                tooltipPlacement="right"
+                zoomToNonZeroData
               />
               <MetricTrendChart
                 title="Profile Visitors"
-                summary={`${formatNumber(analytics.profileViewsVisibleInRange)} visible · ${formatNumber(
+                summary={getProfileVisitorsSummary(
+                  analytics.profileViewsVisibleInRange,
                   analytics.profileViewsHiddenInRange
-                )} hidden`}
+                )}
                 rangeLabel={dateRange.rangeLabel}
                 icon={<HiOutlineEye />}
                 points={analytics.profileViewsPoints}
@@ -198,6 +251,12 @@ export default function ProfileAnalyticsPage({ userId }: ProfileAnalyticsPagePro
                 gradientId="profileViewsAreaGradient"
                 emptyLabel="No profile visitors in this period"
                 showYear={analytics.isTotalRange}
+                showEmptyPlot
+                tooltip={getProfileVisitorsTooltip(
+                  analytics.profileViewsVisibleInRange,
+                  analytics.profileViewsHiddenInRange
+                )}
+                zoomToNonZeroData
               />
               <MetricTrendChart
                 title="Search Appearances"
@@ -211,6 +270,10 @@ export default function ProfileAnalyticsPage({ userId }: ProfileAnalyticsPagePro
                 gradientId="searchAppearancesAreaGradient"
                 emptyLabel="No search appearance trend yet"
                 showYear={analytics.isTotalRange}
+                showEmptyPlot
+                tooltip={SEARCH_APPEARANCES_TOOLTIP}
+                tooltipPlacement="right"
+                zoomToNonZeroData
               />
               <MetricTrendChart
                 title="Social Selling Index (SSI)"
@@ -228,6 +291,9 @@ export default function ProfileAnalyticsPage({ userId }: ProfileAnalyticsPagePro
                 valueFormatter={(value) => (typeof value === 'number' ? `${value}/100` : '-')}
                 emptyLabel="No SSI trend yet"
                 showYear={analytics.isTotalRange}
+                showEmptyPlot
+                tooltip={SOCIAL_SELLING_INDEX_TOOLTIP}
+                zoomToNonZeroData
               />
             </div>
           )}

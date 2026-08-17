@@ -26,6 +26,7 @@ import {
   getLinkedInCsrfToken,
 } from './profile-viewers-api-client';
 import { ProfileViewersSyncError } from './profile-viewers-error';
+import { waitForProfileViewersPaginationPace } from './profile-viewers-request-pacing';
 import { enrichVisibleProfileViewers, updateExistingProfileViewerSnapshot } from './profile-viewers-enrichment-service';
 import type { ProfileViewersSyncResult } from './profile-viewers-sync-result';
 import { repairStoredProfileViewerIdentityMismatches } from './profile-viewers-stored-identity-repair';
@@ -250,6 +251,7 @@ export async function syncProfileViewersViaApi(
 
     cursor = nextCursor;
     positionOffset = cursor.start;
+    await waitForProfileViewersPaginationPace();
     page = await fetchProfileViewersPaginationPage(cursor, csrfToken);
   }
 

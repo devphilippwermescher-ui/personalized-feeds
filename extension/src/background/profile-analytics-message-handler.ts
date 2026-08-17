@@ -2,6 +2,7 @@ import {
   queueProfileAnalyticsForLinkedInActivity,
   queueProfileAnalyticsSync,
 } from './profile-analytics-sync-coordinator';
+import { queueProfileViewersFirstSurfaceSync } from './profile-viewers-coordinator';
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'PROFILE_ANALYTICS_CONNECTION_HISTORY_REPAIR_NOW') {
@@ -35,8 +36,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message.type !== 'PROFILE_ANALYTICS_LINKEDIN_ACTIVITY') return false;
 
-  void queueProfileAnalyticsForLinkedInActivity(sender.tab?.id).catch((error) => {
-    console.warn('[profile-analytics] LinkedIn activity sync failed', error);
+  // Compatibility for a content script from a previous extension bundle that
+  // still emits the old analytics-specific activity message.
+  void queueProfileViewersFirstSurfaceSync('linkedin_activity').finally(() => {
+    void queueProfileAnalyticsForLinkedInActivity(sender.tab?.id).catch((error) => {
+      console.warn('[profile-analytics] LinkedIn activity sync failed', error);
+    });
   });
   sendResponse({ success: true, queued: true });
   return false;

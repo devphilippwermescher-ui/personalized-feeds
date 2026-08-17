@@ -182,6 +182,12 @@ export function createProfileViewersSyncState(userId: string, now: number): Prof
   };
 }
 
+export function isProfileViewersFirstSurfaceReady(
+  state: Pick<ProfileViewersSyncState, 'backfillStatus' | 'privateSummaryStatus'>
+): boolean {
+  return state.backfillStatus === 'complete' && state.privateSummaryStatus === 'ready';
+}
+
 export function scheduleProfileViewersPrivateSummaryCollection(
   state: ProfileViewersSyncState,
   continuationCursor: { start: number; count: number } | null,

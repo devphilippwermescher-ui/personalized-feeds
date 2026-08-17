@@ -937,6 +937,21 @@
   color: #8a97aa;
 }
 
+.profile-analytics-metric-trend-title .profile-analytics-info-tooltip-wrap {
+  flex-shrink: 0;
+  margin-left: 0;
+  color: inherit;
+  font-size: inherit;
+  white-space: normal;
+}
+
+.profile-analytics-metric-trend-title .profile-analytics-info-tooltip {
+  color: #fff;
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: normal;
+}
+
 .profile-analytics-metric-trend-range::before {
   content: '·';
   margin-right: 8px;

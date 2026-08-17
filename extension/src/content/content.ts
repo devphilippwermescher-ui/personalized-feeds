@@ -64,9 +64,6 @@ function notifyLinkedInActivity(): void {
     chrome.runtime.sendMessage({ type: 'PROFILE_VIEWERS_LINKEDIN_ACTIVITY' }).catch(() => {
       /* background may be unavailable while the extension is reloading */
     });
-    chrome.runtime.sendMessage({ type: 'PROFILE_ANALYTICS_LINKEDIN_ACTIVITY' }).catch(() => {
-      /* background may be unavailable while the extension is reloading */
-    });
   }, 500);
 }
 

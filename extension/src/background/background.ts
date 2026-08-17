@@ -1,6 +1,6 @@
 import type { ProfileViewersSyncTrigger } from './profile-viewers-sync-state';
 import { appendProfileViewersWakeEvent, PROFILE_VIEWERS_ALARM_NAME } from './profile-viewers-coordinator-storage';
-import { queueProfileViewersSync } from './profile-viewers-coordinator';
+import { queueProfileViewersFirstSurfaceSync } from './profile-viewers-coordinator';
 import {
   PROFILE_VIEWERS_STATUS_ALARM_NAME,
   queueProfileViewersStatusSync,
@@ -24,9 +24,12 @@ chrome.runtime.onInstalled.addListener((details) => {
     trigger,
     reason: details.reason,
   });
-  void queueProfileAnalyticsSync(trigger).finally(() => {
-    void queueProfileViewersSync(trigger);
+  // The sidebar is the first product surface a newly installed user sees.
+  // Let Profile Viewers finish (or safely defer under its own budget) before
+  // Profile Analytics is allowed to acquire the Connections-history lock.
+  void queueProfileViewersFirstSurfaceSync(trigger).finally(() => {
     void queueProfileViewersStatusSync({ trigger, urgent: true });
+    void queueProfileAnalyticsSync(trigger);
   });
 });
 
@@ -35,9 +38,9 @@ chrome.runtime.onStartup.addListener(() => {
     event: 'chrome_startup',
     trigger: 'chrome_startup',
   });
-  void queueProfileAnalyticsSync('chrome_startup').finally(() => {
-    void queueProfileViewersSync('chrome_startup');
+  void queueProfileViewersFirstSurfaceSync('chrome_startup').finally(() => {
     void queueProfileViewersStatusSync({ trigger: 'chrome_startup' });
+    void queueProfileAnalyticsSync('chrome_startup');
   });
 });
 
@@ -69,7 +72,11 @@ chrome.alarms?.onAlarm.addListener((alarm) => {
     trigger: 'alarm',
     scheduledAt: alarm.scheduledTime,
   });
-  void queueProfileViewersSync('alarm');
+  void queueProfileViewersFirstSurfaceSync('alarm').finally(() => {
+    // A postponed first-time analytics bootstrap may now continue after the
+    // sidebar collector has completed its next safe batch.
+    void queueProfileAnalyticsSync('alarm');
+  });
 });
 
 chrome.tabs.onRemoved.addListener((tabId) => {
@@ -92,10 +99,10 @@ void chrome.alarms?.get(PROFILE_ANALYTICS_ALARM_NAME).then((alarm) => {
   });
 });
 void migrateToIndependentLinkedInSync()
-  .then(() => queueProfileAnalyticsSync('service_worker'))
+  .then(() => queueProfileViewersFirstSurfaceSync('service_worker'))
   .finally(() => {
-    void queueProfileViewersSync('service_worker');
     void queueProfileViewersStatusSync({ trigger: 'service_worker' });
+    void queueProfileAnalyticsSync('service_worker');
   });
 
 import './external-message-handler';

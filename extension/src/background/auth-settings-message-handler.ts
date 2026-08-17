@@ -17,7 +17,7 @@ import {
   startOffscreenAuth,
 } from './feeds-auth';
 import { appendProfileViewersWakeEvent, clearProfileViewersAlarm } from './profile-viewers-coordinator-storage';
-import { queueProfileViewersSync } from './profile-viewers-coordinator';
+import { queueProfileViewersFirstSurfaceSync } from './profile-viewers-coordinator';
 import { queueProfileViewersStatusSync } from './profile-viewers-status-sync';
 import { queueProfileAnalyticsSync } from './profile-analytics-sync-coordinator';
 import { normalizeFeedsError } from './feeds-errors';
@@ -84,12 +84,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           event: 'sign_in',
           trigger: 'sign_in',
         });
-        // Profile Analytics establishes the one-time Connections history lock
-        // after collecting fast current totals. Viewer collectors evaluate only
-        // afterwards, so first sign-in cannot start competing LinkedIn bursts.
-        void queueProfileAnalyticsSync('sign_in').finally(() => {
-          void queueProfileViewersSync('sign_in');
+        // Prepare the first surface the user sees before Profile Analytics can
+        // acquire the one-time Connections-history lock. The forced viewer run
+        // still respects its cooldown and request-token budget.
+        void queueProfileViewersFirstSurfaceSync('sign_in').finally(() => {
           void queueProfileViewersStatusSync({ trigger: 'sign_in', urgent: true });
+          void queueProfileAnalyticsSync('sign_in');
         });
       })
       .catch((error) => {

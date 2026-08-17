@@ -13,6 +13,8 @@ import { runProfileAnalyticsNetworkTask } from './profile-analytics-network-task
 import { runProfileAnalyticsMetadataTask } from './profile-analytics-metadata-task';
 import { getProfileAnalyticsHistoryRequestResult } from './profile-analytics-history-request-result';
 import { getActiveLinkedInHeavySyncLock } from './linkedin-heavy-sync-lock';
+import { getProfileViewersSyncState } from './profile-viewers-coordinator-storage';
+import { isProfileViewersFirstSurfaceReady } from './profile-viewers-sync-state';
 import { selectLinkedInExecutionTabs } from './linkedin-tab-selection';
 import {
   createProfileAnalyticsSyncState,
@@ -70,6 +72,38 @@ async function runProfileAnalyticsSync(
   state = recoverInterruptedProfileAnalyticsState(state);
   await migrateLegacyProfileAnalyticsStorage(user.uid);
   let snapshot = await getProfileAnalyticsSnapshot(user.uid);
+
+  // On a brand-new account the sidebar is the first product surface. Keep the
+  // heavier dashboard bootstrap behind the independent Profile Viewers
+  // collector until both its visible backfill and hidden summary are ready.
+  // Existing dashboard accounts are never blocked by this migration gate.
+  if (!snapshot?.profile) {
+    const profileViewersState = await getProfileViewersSyncState(user.uid);
+    const sidebarReady = isProfileViewersFirstSurfaceReady(profileViewersState);
+
+    if (!sidebarReady) {
+      const nextCheckAt =
+        profileViewersState.retryAt ||
+        profileViewersState.cooldownUntil ||
+        profileViewersState.nextDueAt ||
+        startedAt + 30 * 60 * 1000;
+      await scheduleProfileAnalyticsAlarm(nextCheckAt, 'profile_viewers_bootstrap');
+      console.info('[profile-analytics] first-time bootstrap deferred until Profile Viewers is ready', {
+        trigger,
+        backfillStatus: profileViewersState.backfillStatus,
+        privateSummaryStatus: profileViewersState.privateSummaryStatus,
+        nextCheckAt,
+        nextCheckAtIso: toIso(nextCheckAt),
+      });
+      return {
+        ran: false,
+        success: true,
+        currentSynced: false,
+        historySynced: false,
+        reason: 'fresh',
+      };
+    }
+  }
   const metricsRan: ProfileAnalyticsSyncMetric[] = [];
   let currentSynced = false;
   let historySynced = false;

@@ -22,6 +22,7 @@ import {
   getProfileViewersRequestBudget,
   getProfileViewersScheduledIntervalMs,
   getProfileViewersSummaryMigrationDueAt,
+  isProfileViewersFirstSurfaceReady,
   recordProfileViewersRequest,
   scheduleProfileViewersPrivateSummaryCollection,
   startProfileViewersSyncAttempt,
@@ -39,6 +40,26 @@ describe('profile viewers sync state', () => {
     expect(state.recentProfileViewerUsernames).toEqual([]);
     expect(state.nextCollectionTask).toBe('visible');
     expect(state.privateSummaryStatus).toBe('not_started');
+    expect(isProfileViewersFirstSurfaceReady(state)).toBe(false);
+  });
+
+  it('marks the sidebar ready only after visible viewers and the hidden summary are complete', () => {
+    const state = createProfileViewersSyncState('user-1', 1_000);
+
+    expect(
+      isProfileViewersFirstSurfaceReady({
+        ...state,
+        backfillStatus: 'complete',
+        privateSummaryStatus: 'scanning',
+      })
+    ).toBe(false);
+    expect(
+      isProfileViewersFirstSurfaceReady({
+        ...state,
+        backfillStatus: 'complete',
+        privateSummaryStatus: 'ready',
+      })
+    ).toBe(true);
   });
 
   it('makes an idle legacy state due once for private viewer summary collection', () => {

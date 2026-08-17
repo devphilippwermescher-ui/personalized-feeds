@@ -1,5 +1,5 @@
-import { useId, type ReactNode } from 'react';
-import { HiOutlineInformationCircle } from 'react-icons/hi2';
+import type { ReactNode } from 'react';
+import { InfoTooltip } from '../../../components/InfoTooltip';
 
 interface MetricCardProps {
   icon: ReactNode;
@@ -22,8 +22,6 @@ export function MetricCard({
   tooltipPlacement = 'left',
   loading = false,
 }: MetricCardProps) {
-  const tooltipId = useId();
-
   return (
     <div className="profile-analytics-metric">
       <div className={`profile-analytics-metric-icon profile-analytics-metric-icon--${tone}`}>{icon}</div>
@@ -39,21 +37,7 @@ export function MetricCard({
         <div className="profile-analytics-metric-label">
           {label} <span>({rangeLabel})</span>
           {tooltip ? (
-            <span
-              className={`profile-analytics-info-tooltip-wrap profile-analytics-info-tooltip-wrap--${tooltipPlacement}`}
-            >
-              <button
-                className="profile-analytics-info-trigger"
-                type="button"
-                aria-label={`About ${label} data`}
-                aria-describedby={tooltipId}
-              >
-                <HiOutlineInformationCircle />
-              </button>
-              <span id={tooltipId} className="profile-analytics-info-tooltip" role="tooltip">
-                {tooltip}
-              </span>
-            </span>
+            <InfoTooltip label={`About ${label} data`} content={tooltip} placement={tooltipPlacement} />
           ) : null}
         </div>
       </div>

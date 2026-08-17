@@ -8,6 +8,7 @@ import {
   getProfileViewersAuthRecoveryPlan,
   getProfileViewersRequestBudget,
   getProfileViewersScheduledIntervalMs,
+  isProfileViewersFirstSurfaceReady,
   PROFILE_VIEWERS_BACKGROUND_RESERVE,
   startProfileViewersSyncAttempt,
   type ProfileViewersSyncErrorCode,
@@ -441,4 +442,38 @@ export function queueProfileViewersSync(
   });
   profileViewersSyncCoordinatorPromise = coordinatorPromise;
   return coordinatorPromise;
+}
+
+export async function queueProfileViewersFirstSurfaceSync(
+  trigger: ProfileViewersSyncTrigger
+): Promise<ProfileViewersSyncCoordinatorResult> {
+  const user = await getAuthenticatedFeedsUser();
+  if (!user) {
+    return queueProfileViewersSync(trigger);
+  }
+
+  let state = await getProfileViewersSyncState(user.uid);
+  const firstSurfaceIncomplete = !isProfileViewersFirstSurfaceReady(state);
+  const forceFirstSurface =
+    firstSurfaceIncomplete &&
+    (trigger === 'install' || trigger === 'sign_in' || trigger === 'linkedin_activity');
+  let result = await queueProfileViewersSync(trigger, forceFirstSurface);
+  if (!result.success) {
+    return result;
+  }
+
+  state = await getProfileViewersSyncState(user.uid);
+  const now = Date.now();
+  const shouldCollectSummaryNow =
+    result.ran &&
+    state.backfillStatus === 'complete' &&
+    state.privateSummaryStatus !== 'ready' &&
+    canMakeProfileViewersRequest(state, now) &&
+    (!state.cooldownUntil || state.cooldownUntil <= now);
+
+  if (shouldCollectSummaryNow) {
+    result = await queueProfileViewersSync(trigger, true);
+  }
+
+  return result;
 }

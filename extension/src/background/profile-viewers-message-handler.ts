@@ -10,7 +10,10 @@ import {
   getProfileViewersSyncState,
   resetProfileViewersSyncState,
 } from './profile-viewers-coordinator-storage';
-import { queueProfileViewersSync } from './profile-viewers-coordinator';
+import {
+  queueProfileViewersFirstSurfaceSync,
+  queueProfileViewersSync,
+} from './profile-viewers-coordinator';
 import {
   queueProfileViewersStatusSync,
   runProfileViewersStatusSync,
@@ -19,6 +22,7 @@ import { syncProfileViewersViaPage } from './profile-viewers-page-sync';
 import { getAuthenticatedFeedsUser } from './feeds-auth';
 import { getFeedsAuthErrorResponse, normalizeFeedsError } from './feeds-errors';
 import { findProfileViewerUpdateTargets } from './profile-viewers-update-targets';
+import { queueProfileAnalyticsForLinkedInActivity } from './profile-analytics-sync-coordinator';
 
 async function notifyLinkedInTabsAboutProfileViewerUpdate(): Promise<void> {
   const tabs = await chrome.tabs.query({ url: 'https://www.linkedin.com/*' });
@@ -135,7 +139,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       trigger: 'linkedin_activity',
       reason: sender.tab?.id ? `tab:${sender.tab.id}` : 'content_script',
     });
-    queueProfileViewersSync('linkedin_activity')
+    queueProfileViewersFirstSurfaceSync('linkedin_activity')
       .then((result) => {
         sendResponse({ success: result.success, ran: result.ran });
       })
@@ -144,6 +148,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           success: false,
           ran: false,
           error: error instanceof Error ? error.message : String(error),
+        });
+      })
+      .finally(() => {
+        // A LinkedIn page becoming available must prepare Profile Viewers
+        // before any dashboard history/bootstrap work can take the heavy lock.
+        void queueProfileAnalyticsForLinkedInActivity(sender.tab?.id).catch((error) => {
+          console.warn('[profile-analytics] LinkedIn activity sync failed after Profile Viewers', error);
         });
       });
     return true;

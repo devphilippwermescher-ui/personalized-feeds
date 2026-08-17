@@ -3,6 +3,7 @@ import { updateProfileViewerSummary } from 'shared/firestore-service';
 import { ProfileViewersSyncError } from './profile-viewers-error';
 import { fetchProfileViewersPaginationPage, getLinkedInCsrfToken } from './profile-viewers-api-client';
 import { PROFILE_VIEWERS_PAGINATION_PAGE_SIZE } from './profile-viewers-pagination';
+import { waitForProfileViewersPaginationPace } from './profile-viewers-request-pacing';
 import type { ProfileViewersSyncResult } from './profile-viewers-sync-result';
 import {
   canMakeProfileViewersRequest,
@@ -167,6 +168,7 @@ export async function syncPrivateProfileViewerSummaryViaApi(
       state = recordProfileViewersRequest(state, Date.now());
       await persistSyncProgress(state);
       cursor = nextCursor;
+      await waitForProfileViewersPaginationPace();
       continue;
     }
 
@@ -199,6 +201,7 @@ export async function syncPrivateProfileViewerSummaryViaApi(
       }
       state = recordProfileViewersRequest(state, Date.now());
       await persistSyncProgress(state);
+      await waitForProfileViewersPaginationPace();
       continue;
     }
 

@@ -1,5 +1,7 @@
 import { useState, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
 import { formatChartDate } from '../utils/format';
+import { zoomToRelevantMetricPoints } from '../utils/chart-series';
+import { InfoTooltip } from './InfoTooltip';
 
 export interface MetricTrendPoint {
   date: Date;
@@ -19,6 +21,9 @@ interface MetricTrendChartProps {
   emptyLabel: string;
   showYear?: boolean;
   showEmptyPlot?: boolean;
+  tooltip?: string;
+  tooltipPlacement?: 'left' | 'right';
+  zoomToNonZeroData?: boolean;
 }
 
 const PLOT_LEFT = 48;
@@ -44,7 +49,11 @@ function getNiceChartMax(value: number, minimumMax: number): number {
 }
 
 function getXAxisTickIndexes(points: MetricTrendPoint[]): number[] {
-  if (points.length <= 1) {
+  if (points.length === 0) {
+    return [];
+  }
+
+  if (points.length === 1) {
     return [0];
   }
 
@@ -101,23 +110,31 @@ export function MetricTrendChart({
   emptyLabel,
   showYear = false,
   showEmptyPlot = false,
+  tooltip,
+  tooltipPlacement = 'left',
+  zoomToNonZeroData = false,
 }: MetricTrendChartProps) {
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
-  const values = points.map((point) => point.value).filter((value): value is number => typeof value === 'number');
+  const displayPoints = zoomToNonZeroData ? zoomToRelevantMetricPoints(points) : points;
+  const values = displayPoints
+    .map((point) => point.value)
+    .filter((value): value is number => typeof value === 'number');
   const hasData = values.length > 0;
   const chartMax = getNiceChartMax(Math.max(...values, 0), minimumMax);
   const yTicks = [chartMax, Math.round(chartMax * 0.5), Math.round(chartMax * 0.25), 0].filter(
     (value, index, list) => list.indexOf(value) === index
   );
-  const xTicks = getXAxisTickIndexes(points);
-  const maxIndex = Math.max(1, points.length - 1);
-  const path = getValuePath(points, chartMax);
-  const areaPath = getAreaPath(points, chartMax);
+  const xTicks = getXAxisTickIndexes(displayPoints);
+  const maxIndex = Math.max(1, displayPoints.length - 1);
+  const path = getValuePath(displayPoints, chartMax);
+  const areaPath = getAreaPath(displayPoints, chartMax);
   const singlePoint =
     values.length === 1
-      ? points.map((point, index) => ({ point, index })).find(({ point }) => typeof point.value === 'number') || null
+      ? displayPoints
+          .map((point, index) => ({ point, index }))
+          .find(({ point }) => typeof point.value === 'number') || null
       : null;
-  const hoveredPoint = hoveredIndex === null ? null : points[hoveredIndex];
+  const hoveredPoint = hoveredIndex === null ? null : displayPoints[hoveredIndex];
 
   function getX(index: number): number {
     return PLOT_LEFT + (index / maxIndex) * PLOT_WIDTH;
@@ -128,7 +145,7 @@ export function MetricTrendChart({
   }
 
   function handlePointerMove(event: ReactMouseEvent<SVGSVGElement>) {
-    if (!points.length) {
+    if (!displayPoints.length) {
       return;
     }
 
@@ -136,7 +153,7 @@ export function MetricTrendChart({
     const x = ((event.clientX - rect.left) / rect.width) * 640;
     const clampedX = Math.max(PLOT_LEFT, Math.min(PLOT_RIGHT, x));
     const index = Math.round(((clampedX - PLOT_LEFT) / PLOT_WIDTH) * maxIndex);
-    setHoveredIndex(Math.max(0, Math.min(points.length - 1, index)));
+    setHoveredIndex(Math.max(0, Math.min(displayPoints.length - 1, index)));
   }
 
   const tooltipX = hoveredIndex === null ? 0 : getX(hoveredIndex);
@@ -152,6 +169,9 @@ export function MetricTrendChart({
           <h2>{title}</h2>
           <span>{summary}</span>
           <span className="profile-analytics-metric-trend-range">{rangeLabel}</span>
+          {tooltip ? (
+            <InfoTooltip label={`About ${title} data`} content={tooltip} placement={tooltipPlacement} />
+          ) : null}
         </div>
       </div>
       <div className="profile-analytics-metric-line-chart">
@@ -182,10 +202,10 @@ export function MetricTrendChart({
             {xTicks.map((index) => {
               const x = getX(index);
               return (
-                <g key={`${points[index].date.toISOString()}-${index}`}>
+                <g key={`${displayPoints[index].date.toISOString()}-${index}`}>
                   <line x1={x} x2={x} y1={PLOT_TOP} y2={PLOT_BOTTOM} className="profile-analytics-chart-grid-line" />
                   <text x={x} y="224" textAnchor="middle" className="profile-analytics-chart-axis-text">
-                    {formatChartDate(points[index].date, showYear)}
+                    {formatChartDate(displayPoints[index].date, showYear)}
                   </text>
                 </g>
               );
