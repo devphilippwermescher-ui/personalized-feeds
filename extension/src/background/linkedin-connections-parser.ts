@@ -1,8 +1,63 @@
 import type { LinkedInConnectionRecord, LinkedInConnectionsRscPage } from './linkedin-connections-types';
+import { readConnectionDateOccurrences, type ConnectionDateOccurrence } from './linkedin-connection-date-parser';
 
-function toDateKey(value: string): string | undefined {
-  const timestamp = Date.parse(`${value} UTC`);
-  return Number.isFinite(timestamp) ? new Date(timestamp).toISOString().slice(0, 10) : undefined;
+function normalizeConnectionId(rawId: string): string {
+  try {
+    return decodeURIComponent(rawId).toLowerCase();
+  } catch {
+    return rawId.toLowerCase();
+  }
+}
+
+function extractConnectionRecords(
+  payload: string,
+  dateOccurrences: ConnectionDateOccurrence[]
+): LinkedInConnectionRecord[] {
+  const recordsById = new Map<string, LinkedInConnectionRecord>();
+  const dateByFlightReference = new Map<string, string>();
+  payload.split(/\r?\n/).forEach((line) => {
+    const reference = line.match(/^([0-9a-f]+):/i)?.[1]?.toLowerCase();
+    const date = readConnectionDateOccurrences(line)[0]?.date;
+    if (reference && date) dateByFlightReference.set(reference, date);
+  });
+
+  // Current SDUI responses keep card structure and localized date text in
+  // separate React Flight rows. Associate them through the `$Lxx` references
+  // instead of relying on the physical distance between an /in/ URL and date.
+  const cardPattern = /"componentKey":"ConnectionCard_0-([A-Za-z0-9_%.-]+)"/g;
+  const cardMatches = Array.from(payload.matchAll(cardPattern));
+  cardMatches.forEach((cardMatch, index) => {
+    const start = cardMatch.index || 0;
+    const lineEndIndex = payload.indexOf('\n', start);
+    const lineEnd = lineEndIndex >= 0 ? lineEndIndex : payload.length;
+    const nextCardStart = cardMatches[index + 1]?.index;
+    const end = typeof nextCardStart === 'number' && nextCardStart < lineEnd ? nextCardStart : lineEnd;
+    const cardContext = payload.slice(start, end);
+    const dateReference = Array.from(cardContext.matchAll(/\$L([0-9a-f]+)/gi))
+      .map((match) => match[1].toLowerCase())
+      .find((reference) => dateByFlightReference.has(reference));
+    const connectedDate = dateReference ? dateByFlightReference.get(dateReference) : undefined;
+    if (!connectedDate) return;
+    const id = normalizeConnectionId(cardMatch[1]);
+    if (!recordsById.has(id)) recordsById.set(id, { id, connectedDate });
+  });
+
+  // Legacy and simplified responses place an /in/ URL close to the date.
+  // Keep this fallback for older LinkedIn response shapes and unit fixtures.
+  dateOccurrences.forEach((occurrence) => {
+    const context = payload.slice(Math.max(0, occurrence.index - 12_000), occurrence.index + 500);
+    const profileUrlMatches = Array.from(
+      context.matchAll(/(?:https?:\\?\/\\?\/www\.linkedin\.com)?\\?\/in\\?\/([A-Za-z0-9_%.-]+)/g)
+    );
+    const profileImageMatches = Array.from(context.matchAll(/ConnectionCardProfileImage_\d+-([A-Za-z0-9_%.-]+)/g));
+    const rawId =
+      profileUrlMatches[profileUrlMatches.length - 1]?.[1] || profileImageMatches[profileImageMatches.length - 1]?.[1];
+    if (!rawId) return;
+    const id = normalizeConnectionId(rawId);
+    if (!recordsById.has(id)) recordsById.set(id, { id, connectedDate: occurrence.date });
+  });
+
+  return Array.from(recordsById.values());
 }
 
 export function parseLinkedInConnectionsRscPage(payload: string): LinkedInConnectionsRscPage {
@@ -11,37 +66,17 @@ export function parseLinkedInConnectionsRscPage(payload: string): LinkedInConnec
       /"id"\s*:\s*"totalConnectionsCount"[\s\S]{0,500}?"(?:intValue|longValue|stringValue)"\s*:\s*"?([\d,]+)"?/
     ) || payload.match(/\b([\d,]+)\s+connections\b/i);
   const connectionDateCounts: Record<string, number> = {};
-  const connectedOnPattern = /Connected on ([A-Z][a-z]+ \d{1,2}, \d{4})/g;
-
-  for (const match of payload.matchAll(connectedOnPattern)) {
-    const dateKey = toDateKey(match[1]);
-    if (dateKey) connectionDateCounts[dateKey] = (connectionDateCounts[dateKey] || 0) + 1;
-  }
+  const dateOccurrences = readConnectionDateOccurrences(payload);
+  dateOccurrences.forEach(({ date }) => {
+    connectionDateCounts[date] = (connectionDateCounts[date] || 0) + 1;
+  });
 
   const nextPageRequestIndex = payload.indexOf('"nextPageRequest"');
   const nextPageContext =
     nextPageRequestIndex >= 0 ? payload.slice(nextPageRequestIndex, nextPageRequestIndex + 2_000) : '';
   const connectionsCount = Number(connectionsCountMatch?.[1]?.replace(/,/g, ''));
   const nextStartIndex = Number(nextPageContext.match(/"startIndex":(\d+)/)?.[1]);
-  const recordsById = new Map<string, LinkedInConnectionRecord>();
-  for (const dateMatch of payload.matchAll(connectedOnPattern)) {
-    const dateIndex = dateMatch.index || 0;
-    const context = payload.slice(Math.max(0, dateIndex - 2_000), dateIndex + dateMatch[0].length + 200);
-    const matches = Array.from(
-      context.matchAll(/(?:https?:\\?\/\\?\/www\.linkedin\.com)?\\?\/in\\?\/([A-Za-z0-9_%.-]+)/g)
-    );
-    const rawId = matches[matches.length - 1]?.[1];
-    const connectedDate = toDateKey(dateMatch[1]);
-    if (!rawId || !connectedDate) continue;
-    let id: string;
-    try {
-      id = decodeURIComponent(rawId).toLowerCase();
-    } catch {
-      id = rawId.toLowerCase();
-    }
-    if (!recordsById.has(id)) recordsById.set(id, { id, connectedDate });
-  }
-  const connectionRecords = Array.from(recordsById.values());
+  const connectionRecords = extractConnectionRecords(payload, dateOccurrences);
   const connectionIds = connectionRecords.map((record) => record.id);
 
   return {

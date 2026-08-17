@@ -71,29 +71,256 @@ export async function collectConnectionsInLinkedInPage(
     }),
   };
 
+  const dateLocales = [
+    document.documentElement.lang,
+    ...navigator.languages,
+    'en',
+    'ru',
+    'uk',
+    'de',
+    'fr',
+    'es',
+    'it',
+    'pt',
+    'nl',
+    'pl',
+    'cs',
+    'da',
+    'fi',
+    'hu',
+    'nb',
+    'ro',
+    'sv',
+    'tr',
+    'id',
+    'ms',
+    'vi',
+    'hi',
+    'ar',
+    'th',
+  ].filter(Boolean);
+  const normalizeMonthToken = (value: string): string =>
+    value
+      .normalize('NFKC')
+      .toLocaleLowerCase()
+      .replace(/[^\p{L}\p{M}]/gu, '');
+  const monthLookup = new Map<string, number>();
+  for (const locale of Array.from(new Set(dateLocales))) {
+    for (let month = 0; month < 12; month += 1) {
+      const date = new Date(Date.UTC(2020, month, 15));
+      for (const width of ['long', 'short'] as const) {
+        try {
+          const standalone = new Intl.DateTimeFormat(locale, {
+            month: width,
+            timeZone: 'UTC',
+          }).format(date);
+          const contextual = new Intl.DateTimeFormat(locale, {
+            day: 'numeric',
+            month: width,
+            year: 'numeric',
+            timeZone: 'UTC',
+          })
+            .formatToParts(date)
+            .find((part) => part.type === 'month')?.value;
+          [standalone, contextual].forEach((candidate) => {
+            const token = normalizeMonthToken(candidate || '');
+            if (token.length >= 2) monthLookup.set(token, month);
+          });
+        } catch {
+          // Ignore a locale unsupported by the current browser runtime.
+        }
+      }
+    }
+  }
+  const toDateKey = (year: number, month: number, day: number): string | undefined => {
+    if (!Number.isSafeInteger(year) || !Number.isSafeInteger(month) || !Number.isSafeInteger(day)) return undefined;
+    const date = new Date(Date.UTC(year, month, day));
+    if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month || date.getUTCDate() !== day) {
+      return undefined;
+    }
+    return date.toISOString().slice(0, 10);
+  };
+  const readDateOccurrences = (value: string): Array<{ index: number; date: string }> => {
+    const occurrences = new Map<string, { index: number; date: string }>();
+    const addOccurrence = (index: number, year: number, month: number, day: number) => {
+      const date = toDateKey(year, month, day);
+      if (date) occurrences.set(`${index}:${date}`, { index, date });
+    };
+
+    for (const match of value.matchAll(/(?<!\d)(\d{4})[./-](\d{1,2})[./-](\d{1,2})(?!\d)/g)) {
+      addOccurrence(match.index || 0, Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+    }
+    for (const match of value.matchAll(/(?<!\d)(\d{1,2})[./-](\d{1,2})[./-](\d{4})(?!\d)/g)) {
+      const first = Number(match[1]);
+      const second = Number(match[2]);
+      if (first > 12) addOccurrence(match.index || 0, Number(match[3]), second - 1, first);
+      else if (second > 12) addOccurrence(match.index || 0, Number(match[3]), first - 1, second);
+    }
+    for (const match of value.matchAll(
+      /(?<!\d)(\d{4})\s*(?:年|년)\s*(\d{1,2})\s*(?:月|월)\s*(\d{1,2})\s*(?:日|일)?/gu
+    )) {
+      addOccurrence(match.index || 0, Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+    }
+
+    for (const yearMatch of value.matchAll(/(?<!\d)(\d{4})(?!\d)/g)) {
+      const yearIndex = yearMatch.index || 0;
+      const windowStart = Math.max(0, yearIndex - 48);
+      const windowEnd = Math.min(value.length, yearIndex + yearMatch[0].length + 40);
+      const windowText = value.slice(windowStart, windowEnd);
+      const monthCandidates = Array.from(windowText.matchAll(/[\p{L}\p{M}][\p{L}\p{M}.'’-]*/gu))
+        .map((match) => ({
+          start: windowStart + (match.index || 0),
+          end: windowStart + (match.index || 0) + match[0].length,
+          month: monthLookup.get(normalizeMonthToken(match[0])),
+        }))
+        .filter(
+          (candidate): candidate is { start: number; end: number; month: number } => typeof candidate.month === 'number'
+        )
+        .sort(
+          (left, right) =>
+            Math.min(Math.abs(left.start - yearIndex), Math.abs(left.end - yearIndex)) -
+            Math.min(Math.abs(right.start - yearIndex), Math.abs(right.end - yearIndex))
+        );
+      const monthCandidate = monthCandidates[0];
+      if (!monthCandidate) continue;
+      const dayCandidates = Array.from(windowText.matchAll(/(?<!\d)(\d{1,2})(?!\d)/g))
+        .map((match) => ({
+          start: windowStart + (match.index || 0),
+          end: windowStart + (match.index || 0) + match[0].length,
+          day: Number(match[1]),
+        }))
+        .filter(
+          (candidate) =>
+            candidate.day >= 1 &&
+            candidate.day <= 31 &&
+            !(candidate.start >= yearIndex && candidate.end <= yearIndex + yearMatch[0].length)
+        )
+        .map((candidate) => ({
+          ...candidate,
+          distance:
+            candidate.end <= monthCandidate.start
+              ? monthCandidate.start - candidate.end
+              : candidate.start >= monthCandidate.end
+                ? candidate.start - monthCandidate.end
+                : Number.POSITIVE_INFINITY,
+        }))
+        .filter((candidate) => candidate.distance <= 16)
+        .sort((left, right) => left.distance - right.distance);
+      const dayCandidate = dayCandidates[0];
+      if (!dayCandidate) continue;
+      addOccurrence(
+        Math.min(monthCandidate.start, dayCandidate.start),
+        Number(yearMatch[1]),
+        monthCandidate.month,
+        dayCandidate.day
+      );
+    }
+
+    return Array.from(occurrences.values()).sort((left, right) => left.index - right.index);
+  };
+  const normalizeConnectionId = (rawId: string): string => {
+    try {
+      return decodeURIComponent(rawId).toLowerCase();
+    } catch {
+      return rawId.toLowerCase();
+    }
+  };
   const readPageRecords = (payload: string): Array<{ id: string; connectedDate: string }> => {
-    const datePattern = /Connected on ([A-Z][a-z]+ \d{1,2}, \d{4})/g;
     const records = new Map<string, { id: string; connectedDate: string }>();
-    for (const match of payload.matchAll(datePattern)) {
-      const timestamp = Date.parse(`${match[1]} UTC`);
-      if (!Number.isFinite(timestamp)) continue;
-      const connectedDate = new Date(timestamp).toISOString().slice(0, 10);
-      const dateIndex = match.index || 0;
-      const itemContext = payload.slice(Math.max(0, dateIndex - 2_000), dateIndex + match[0].length + 200);
-      const matches = Array.from(
+    const dateOccurrences = readDateOccurrences(payload);
+    const dateByFlightReference = new Map<string, string>();
+    payload.split(/\r?\n/).forEach((line) => {
+      const reference = line.match(/^([0-9a-f]+):/i)?.[1]?.toLowerCase();
+      const date = readDateOccurrences(line)[0]?.date;
+      if (reference && date) dateByFlightReference.set(reference, date);
+    });
+
+    const cardPattern = /"componentKey":"ConnectionCard_0-([A-Za-z0-9_%.-]+)"/g;
+    const cardMatches = Array.from(payload.matchAll(cardPattern));
+    cardMatches.forEach((cardMatch, index) => {
+      const start = cardMatch.index || 0;
+      const lineEndIndex = payload.indexOf('\n', start);
+      const lineEnd = lineEndIndex >= 0 ? lineEndIndex : payload.length;
+      const nextCardStart = cardMatches[index + 1]?.index;
+      const end = typeof nextCardStart === 'number' && nextCardStart < lineEnd ? nextCardStart : lineEnd;
+      const cardContext = payload.slice(start, end);
+      const dateReference = Array.from(cardContext.matchAll(/\$L([0-9a-f]+)/gi))
+        .map((match) => match[1].toLowerCase())
+        .find((reference) => dateByFlightReference.has(reference));
+      const connectedDate = dateReference ? dateByFlightReference.get(dateReference) : undefined;
+      if (!connectedDate) return;
+      const id = normalizeConnectionId(cardMatch[1]);
+      if (!records.has(id)) records.set(id, { id, connectedDate });
+    });
+
+    dateOccurrences.forEach((occurrence) => {
+      const itemContext = payload.slice(Math.max(0, occurrence.index - 12_000), occurrence.index + 500);
+      const profileUrlMatches = Array.from(
         itemContext.matchAll(/(?:https?:\\?\/\\?\/www\.linkedin\.com)?\\?\/in\\?\/([A-Za-z0-9_%.-]+)/g)
       );
-      const rawId = matches[matches.length - 1]?.[1];
-      if (!rawId) continue;
-      let id: string;
-      try {
-        id = decodeURIComponent(rawId).toLowerCase();
-      } catch {
-        id = rawId.toLowerCase();
-      }
-      if (!records.has(id)) records.set(id, { id, connectedDate });
-    }
+      const profileImageMatches = Array.from(
+        itemContext.matchAll(/ConnectionCardProfileImage_\d+-([A-Za-z0-9_%.-]+)/g)
+      );
+      const rawId =
+        profileUrlMatches[profileUrlMatches.length - 1]?.[1] ||
+        profileImageMatches[profileImageMatches.length - 1]?.[1];
+      if (!rawId) return;
+      const id = normalizeConnectionId(rawId);
+      if (!records.has(id)) records.set(id, { id, connectedDate: occurrence.date });
+    });
+
     return Array.from(records.values());
+  };
+
+  const readDomSnapshot = (): {
+    total?: number;
+    rowCount: number;
+    records: Array<{ id: string; connectedDate: string }>;
+  } => {
+    if (!window.location.pathname.startsWith('/mynetwork/invite-connect/connections')) {
+      return { rowCount: 0, records: [] };
+    }
+
+    const records = new Map<string, { id: string; connectedDate: string }>();
+    const rowIds = new Set<string>();
+    const cardElements = Array.from(document.querySelectorAll<HTMLElement>('[componentkey^="ConnectionCard_0-"]'));
+    cardElements.forEach((card) => {
+      const rawId = card.getAttribute('componentkey')?.replace(/^ConnectionCard_\d+-/, '');
+      if (!rawId) return;
+      const id = normalizeConnectionId(rawId);
+      rowIds.add(id);
+      const connectedDate = readDateOccurrences(card.innerText || card.textContent || '')[0]?.date;
+      if (connectedDate && !records.has(id)) records.set(id, { id, connectedDate });
+    });
+
+    // Keep a conservative fallback for DOM revisions that remove the
+    // componentkey attribute but retain profile links and the visible date.
+    document.querySelectorAll<HTMLAnchorElement>('a[href*="/in/"]').forEach((anchor) => {
+      const rawId = anchor.href.match(/\/in\/([A-Za-z0-9_%.-]+)/)?.[1];
+      if (!rawId) return;
+      let container: HTMLElement | null = anchor;
+      let connectedDate: string | undefined;
+      for (let depth = 0; container && depth < 8; depth += 1, container = container.parentElement) {
+        if (container.querySelectorAll('a[href*="/in/"]').length > 1) break;
+        connectedDate = readDateOccurrences(container.innerText || container.textContent || '')[0]?.date;
+        if (connectedDate) break;
+      }
+      if (!connectedDate) return;
+      const id = normalizeConnectionId(rawId);
+      rowIds.add(id);
+      if (!records.has(id)) records.set(id, { id, connectedDate });
+    });
+
+    const pageText = document.body.innerText || document.body.textContent || '';
+    const totalText =
+      pageText.match(/\b([\d\s,.]+)\s+connections\b/i)?.[1] ||
+      pageText.match(/\b([\d\s,.]+)\s+контакт(?:а|ов)?(?![\p{L}\p{N}_])/iu)?.[1];
+    const parsedTotal = Number(totalText?.replace(/\D/g, ''));
+    return {
+      total: Number.isSafeInteger(parsedTotal) ? parsedTotal : undefined,
+      rowCount: rowIds.size,
+      records: Array.from(records.values()),
+    };
   };
 
   const createBody = (startIndex: number): string => {
@@ -224,7 +451,10 @@ export async function collectConnectionsInLinkedInPage(
       }
 
       pagesFetched += 1;
-      const pageRecords = readPageRecords(payload);
+      const responseRecords = readPageRecords(payload);
+      const domSnapshot = responseRecords.length === 0 && currentStartIndex === 0 ? readDomSnapshot() : undefined;
+      if (typeof total !== 'number' && typeof domSnapshot?.total === 'number') total = domSnapshot.total;
+      const pageRecords = responseRecords.length > 0 ? responseRecords : domSnapshot?.records || [];
       for (const record of pageRecords) {
         if (knownIds.has(record.id)) {
           boundaryFound = true;
@@ -281,19 +511,31 @@ export async function collectConnectionsInLinkedInPage(
       currentStartIndex = nextStart;
     }
   } catch (error) {
+    const domSnapshot = connectionRecordsById.size === 0 ? readDomSnapshot() : undefined;
+    if (typeof total !== 'number' && typeof domSnapshot?.total === 'number') total = domSnapshot.total;
+    domSnapshot?.records.forEach((record) => {
+      if (connectionRecordsById.has(record.id)) return;
+      connectionRecordsById.set(record.id, record);
+      dateCounts[record.connectedDate] = (dateCounts[record.connectedDate] || 0) + 1;
+      newConnectionDateCounts[record.connectedDate] = (newConnectionDateCounts[record.connectedDate] || 0) + 1;
+      if (recentConnectionIds.length < 100) recentConnectionIds.push(record.id);
+    });
+    const domCoversAllRows =
+      typeof total === 'number' && typeof domSnapshot?.rowCount === 'number' && domSnapshot.rowCount >= total;
     return {
       connectionsCount: total,
       connectionsCountExact: typeof total === 'number',
       connectionDateCounts: dateCounts,
-      connectionDateCountsComplete: false,
+      connectionDateCountsComplete:
+        domCoversAllRows && Object.values(dateCounts).reduce((sum, count) => sum + count, 0) === total,
       newConnectionDateCounts,
       boundaryFound,
-      nextStartIndex,
-      paginationComplete: false,
+      nextStartIndex: domCoversAllRows ? undefined : nextStartIndex,
+      paginationComplete: domCoversAllRows,
       pagesFetched,
       connectionRecords: Array.from(connectionRecordsById.values()),
       ...(recentConnectionIds.length > 0 ? { recentConnectionIds } : {}),
-      error: error instanceof Error ? error.message : String(error),
+      ...(domCoversAllRows ? {} : { error: error instanceof Error ? error.message : String(error) }),
     };
   }
 

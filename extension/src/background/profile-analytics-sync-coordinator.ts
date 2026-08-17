@@ -11,6 +11,7 @@ import { runSearchAppearancesTask, runSocialSellingIndexTask } from './profile-a
 import { runConnectionHistoryTask } from './profile-analytics-history-task';
 import { runProfileAnalyticsNetworkTask } from './profile-analytics-network-task';
 import { runProfileAnalyticsMetadataTask } from './profile-analytics-metadata-task';
+import { getProfileAnalyticsHistoryRequestResult } from './profile-analytics-history-request-result';
 import { getActiveLinkedInHeavySyncLock } from './linkedin-heavy-sync-lock';
 import { selectLinkedInExecutionTabs } from './linkedin-tab-selection';
 import {
@@ -253,6 +254,20 @@ async function runProfileAnalyticsSync(
     nextScheduledAt,
     nextScheduledAtIso: toIso(nextScheduledAt),
   });
+
+  const historyRequestResult = getProfileAnalyticsHistoryRequestResult({
+    trigger,
+    hasLinkedInTab: typeof linkedInTab?.id === 'number',
+    historyStatus: snapshot?.profile?.connectionHistoryBootstrap?.status,
+    historyLastError: state.historyLastError,
+  });
+  if (historyRequestResult) {
+    return {
+      ...historyRequestResult,
+      currentSynced,
+      historySynced,
+    };
+  }
 
   const failures = Object.values(state.status.metrics).filter(
     (metric) => metric?.status === 'failed' || metric?.status === 'blocked'
