@@ -82,12 +82,10 @@ function handleDashboardMessage(message: DashboardMessage, sendResponse: (respon
   }
 
   if (message.type === 'DASHBOARD_PROFILE_ANALYTICS_OPENED') {
-    void queueProfileAnalyticsSync('dashboard_open').catch((error) => {
-      console.warn('[profile-analytics] dashboard-triggered sync failed', {
-        error: error instanceof Error ? error.message : String(error),
-      });
-    });
-    sendResponse({ success: true, queued: true });
+    // Backward-compatible response for older deployed dashboards. Opening the
+    // dashboard no longer starts LinkedIn requests; alarms and LinkedIn-owned
+    // activity are the only routine sync triggers.
+    sendResponse({ success: true, queued: false });
     return false;
   }
 

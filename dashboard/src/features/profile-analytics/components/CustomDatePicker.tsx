@@ -10,8 +10,13 @@ import {
 import { formatShortDate } from '../../../utils/format';
 import type { DateRangeBoundary } from '../types';
 
-const MONTH_FORMATTER = new Intl.DateTimeFormat('en-US', { month: 'long', year: 'numeric' });
+const MONTH_FORMATTER = new Intl.DateTimeFormat('en-US', { month: 'long' });
 const WEEKDAYS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
+const EARLIEST_LINKEDIN_YEAR = 2003;
+const MONTHS = Array.from({ length: 12 }, (_, month) => ({
+  month,
+  label: MONTH_FORMATTER.format(new Date(2000, month, 1)),
+}));
 
 interface CustomDatePickerProps {
   id: string;
@@ -43,6 +48,16 @@ export function CustomDatePicker({
   const currentMonth = new Date(today.getFullYear(), today.getMonth(), 1);
   const visibleMonthStart = new Date(visibleMonth.getFullYear(), visibleMonth.getMonth(), 1);
   const nextMonthDisabled = visibleMonthStart.getTime() >= currentMonth.getTime();
+  const availableYears = Array.from(
+    { length: today.getFullYear() - EARLIEST_LINKEDIN_YEAR + 1 },
+    (_, index) => today.getFullYear() - index
+  );
+
+  function changeVisiblePeriod(year: number, month: number) {
+    const nextMonth =
+      year === today.getFullYear() ? Math.min(month, today.getMonth()) : month;
+    onVisibleMonthChange(new Date(year, nextMonth, 1));
+  }
 
   function selectDay(day: Date) {
     const selected = startOfDay(day);
@@ -83,10 +98,54 @@ export function CustomDatePicker({
       </div>
 
       <div className="profile-analytics-calendar-header">
-        <button type="button" onClick={() => onVisibleMonthChange(addMonths(visibleMonth, -1))}>
+        <button
+          type="button"
+          aria-label="Previous month"
+          onClick={() => onVisibleMonthChange(addMonths(visibleMonth, -1))}
+        >
           &lt;
         </button>
-        <strong>{MONTH_FORMATTER.format(visibleMonth)}</strong>
+        <div className="profile-analytics-calendar-period-selects">
+          <label>
+            <span className="profile-analytics-visually-hidden">Month</span>
+            <select
+              aria-label="Calendar month"
+              value={visibleMonth.getMonth()}
+              onChange={(event) =>
+                changeVisiblePeriod(visibleMonth.getFullYear(), Number(event.target.value))
+              }
+            >
+              {MONTHS.map((item) => (
+                <option
+                  key={item.month}
+                  value={item.month}
+                  disabled={
+                    visibleMonth.getFullYear() === today.getFullYear() &&
+                    item.month > today.getMonth()
+                  }
+                >
+                  {item.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span className="profile-analytics-visually-hidden">Year</span>
+            <select
+              aria-label="Calendar year"
+              value={visibleMonth.getFullYear()}
+              onChange={(event) =>
+                changeVisiblePeriod(Number(event.target.value), visibleMonth.getMonth())
+              }
+            >
+              {availableYears.map((year) => (
+                <option key={year} value={year}>
+                  {year}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
         <button
           type="button"
           disabled={nextMonthDisabled}

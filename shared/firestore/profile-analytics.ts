@@ -1,4 +1,13 @@
-import { getDoc, getDocs, limit, onSnapshot, orderBy, query, where, writeBatch } from 'firebase/firestore';
+import {
+  getDoc,
+  getDocs,
+  limit,
+  onSnapshot,
+  orderBy,
+  query,
+  where,
+  writeBatch,
+} from 'firebase/firestore';
 import { getFirebaseDb } from '../firebase-config';
 import type { ProfileAnalyticsDailySnapshot, ProfileAnalyticsSnapshot } from '../types';
 import {
@@ -159,22 +168,25 @@ export async function getProfileAnalyticsSnapshot(userId: string): Promise<Profi
 
 export function subscribeToProfileAnalyticsSnapshot(
   userId: string,
-  onValue: (snapshot: ProfileAnalyticsSnapshot | null) => void,
+  onValue: (snapshot: ProfileAnalyticsSnapshot | null, metadata?: { fromCache: boolean }) => void,
   onError?: (error: Error) => void
 ): () => void {
   let current: ProfileAnalyticsSnapshot | null = null;
   let legacy: ProfileAnalyticsSnapshot | null = null;
   let currentLoaded = false;
   let legacyLoaded = false;
+  let currentFromCache = true;
+  let legacyFromCache = true;
   const emit = () => {
     if (!currentLoaded || !legacyLoaded) return;
-    onValue(current || legacy);
+    onValue(current || legacy, { fromCache: currentFromCache && legacyFromCache });
   };
   const unsubscribeCurrent = onSnapshot(
     profileAnalyticsDoc(userId),
     (snapshot) => {
       current = snapshot.exists() ? (snapshot.data() as ProfileAnalyticsSnapshot) : null;
       currentLoaded = true;
+      currentFromCache = snapshot.metadata.fromCache;
       emit();
     },
     (error) => onError?.(error)
@@ -184,6 +196,7 @@ export function subscribeToProfileAnalyticsSnapshot(
     (snapshot) => {
       legacy = snapshot.exists() ? (snapshot.data() as ProfileAnalyticsSnapshot) : null;
       legacyLoaded = true;
+      legacyFromCache = snapshot.metadata.fromCache;
       emit();
     },
     (error) => onError?.(error)
@@ -248,7 +261,7 @@ export async function getProfileAnalyticsDailySnapshots(
 export function subscribeToProfileAnalyticsDailySnapshots(
   userId: string,
   maxCount: number,
-  onValue: (snapshots: ProfileAnalyticsDailySnapshot[]) => void,
+  onValue: (snapshots: ProfileAnalyticsDailySnapshot[], metadata?: { fromCache: boolean }) => void,
   onError?: (error: Error) => void
 ): () => void {
   const q = query(profileAnalyticsDailyCollection(userId), orderBy('date', 'desc'), limit(maxCount));
@@ -261,9 +274,11 @@ export function subscribeToProfileAnalyticsDailySnapshots(
   let legacy: ProfileAnalyticsDailySnapshot[] = [];
   let currentLoaded = false;
   let legacyLoaded = false;
+  let currentFromCache = true;
+  let legacyFromCache = true;
   const emit = () => {
     if (!currentLoaded || !legacyLoaded) return;
-    onValue(current.length > 0 ? current : legacy);
+    onValue(current.length > 0 ? current : legacy, { fromCache: currentFromCache && legacyFromCache });
   };
   const unsubscribeCurrent = onSnapshot(
     q,
@@ -272,6 +287,7 @@ export function subscribeToProfileAnalyticsDailySnapshots(
         .map(docToProfileAnalyticsDailySnapshot)
         .sort((left, right) => left.date.localeCompare(right.date));
       currentLoaded = true;
+      currentFromCache = snapshot.metadata.fromCache;
       emit();
     },
     (error) => onError?.(error)
@@ -284,6 +300,7 @@ export function subscribeToProfileAnalyticsDailySnapshots(
         .map(docToProfileAnalyticsDailySnapshot)
         .sort((left, right) => left.date.localeCompare(right.date));
       legacyLoaded = true;
+      legacyFromCache = snapshot.metadata.fromCache;
       emit();
     },
     (error) => onError?.(error)

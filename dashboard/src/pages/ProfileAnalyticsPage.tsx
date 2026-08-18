@@ -79,18 +79,26 @@ function getProfileVisitorsSummary(visible: number | undefined, hidden: number |
   return parts.join(' · ') || 'No saved visitor data';
 }
 
+function getSearchAppearancesSummary(value: number | undefined, isTotalRange: boolean): string {
+  if (typeof value !== 'number') return 'No Search Appearances yet';
+  return `${formatNumber(value)} ${isTotalRange ? 'total' : 'latest in range'}`;
+}
+
+function getSocialSellingIndexSummary(value: number | undefined, isTotalRange: boolean): string {
+  if (typeof value !== 'number') return 'No SSI yet';
+  return `(${value}/100 ${isTotalRange ? 'total' : 'latest in range'})`;
+}
+
 export default function ProfileAnalyticsPage({ userId }: ProfileAnalyticsPageProps) {
   const dateRange = useAnalyticsDateRange();
   const analytics = useProfileAnalyticsViewModel(userId, dateRange.selectedDateRange);
 
   if (analytics.loading) return <ProfileAnalyticsSkeleton />;
-  const routineSyncRunning = analytics.syncStatus?.status === 'syncing' && !analytics.connectionHistoryLoading;
   const historyUnavailable = analytics.connectionHistoryLoading || analytics.connectionHistoryNeedsRepair;
-  // A routine refresh hides stale cards until Firestore has been reread. The
-  // one-time Connections bootstrap is different: current totals stay visible,
-  // while all range controls and charts wait for the history import.
-  const showLinkedInConnectionPrompt = !analytics.snapshot && analytics.syncStatusLoaded && !routineSyncRunning;
-  const showDataSkeleton = !showLinkedInConnectionPrompt && (!analytics.snapshot || routineSyncRunning);
+  // Routine background syncs never hide cached values. Skeletons are reserved
+  // for a true first load where neither IndexedDB nor Firestore has data yet.
+  const showLinkedInConnectionPrompt = !analytics.snapshot && analytics.syncStatusLoaded;
+  const showDataSkeleton = !showLinkedInConnectionPrompt && !analytics.snapshot;
 
   return (
     <div className="profile-analytics-page">
@@ -118,7 +126,7 @@ export default function ProfileAnalyticsPage({ userId }: ProfileAnalyticsPagePro
         />
       </div>
 
-      {import.meta.env.DEV ? <ProfileAnalyticsDevTools /> : null}
+      {import.meta.env.DEV ? <ProfileAnalyticsDevTools userId={userId} /> : null}
 
       {analytics.connectionHistoryLoading && analytics.syncStatus?.status === 'syncing' ? null : (
         <ProfileAnalyticsSyncNotice
@@ -260,9 +268,10 @@ export default function ProfileAnalyticsPage({ userId }: ProfileAnalyticsPagePro
               />
               <MetricTrendChart
                 title="Search Appearances"
-                summary={`${formatNumber(analytics.searchAppearancesInRange)} ${
-                  analytics.isTotalRange ? 'total' : 'latest in range'
-                }`}
+                summary={getSearchAppearancesSummary(
+                  analytics.searchAppearancesInRange,
+                  analytics.isTotalRange
+                )}
                 rangeLabel={dateRange.rangeLabel}
                 icon={<HiOutlineMagnifyingGlass />}
                 points={analytics.searchAppearancesPoints}
@@ -277,11 +286,10 @@ export default function ProfileAnalyticsPage({ userId }: ProfileAnalyticsPagePro
               />
               <MetricTrendChart
                 title="Social Selling Index (SSI)"
-                summary={`(${
-                  typeof analytics.socialSellingIndexInRange === 'number'
-                    ? `${analytics.socialSellingIndexInRange}/100`
-                    : '-'
-                } ${analytics.isTotalRange ? 'total' : 'latest in range'})`}
+                summary={getSocialSellingIndexSummary(
+                  analytics.socialSellingIndexInRange,
+                  analytics.isTotalRange
+                )}
                 rangeLabel={dateRange.rangeLabel}
                 icon={<HiOutlineTrophy />}
                 points={analytics.socialSellingIndexPoints}

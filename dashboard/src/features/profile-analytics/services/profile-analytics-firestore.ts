@@ -8,6 +8,7 @@ import {
   subscribeToConnectionInvites,
   subscribeToProfileAnalyticsDailySnapshots,
   subscribeToProfileAnalyticsSnapshot,
+  subscribeToProfileViewerSummary,
 } from 'shared/firestore-service';
 import type {
   ProfileAnalyticsConnectionInvite,
@@ -26,6 +27,9 @@ export interface ProfileAnalyticsFirestoreData {
 }
 
 export type ProfileAnalyticsSupportingData = Omit<ProfileAnalyticsFirestoreData, 'snapshot'>;
+export interface ProfileAnalyticsWatchMetadata {
+  fromCache: boolean;
+}
 
 export function loadCurrentProfileAnalyticsSnapshot(userId: string): Promise<ProfileAnalyticsSnapshot | null> {
   return getProfileAnalyticsSnapshot(userId);
@@ -52,7 +56,7 @@ export async function loadProfileAnalyticsFirestoreData(userId: string): Promise
 
 export function watchProfileAnalyticsSnapshot(
   userId: string,
-  onValue: (snapshot: ProfileAnalyticsSnapshot | null) => void,
+  onValue: (snapshot: ProfileAnalyticsSnapshot | null, metadata?: ProfileAnalyticsWatchMetadata) => void,
   onError: (error: Error) => void
 ): () => void {
   return subscribeToProfileAnalyticsSnapshot(userId, onValue, onError);
@@ -60,7 +64,7 @@ export function watchProfileAnalyticsSnapshot(
 
 export function watchProfileAnalyticsDailySnapshots(
   userId: string,
-  onValue: (snapshots: ProfileAnalyticsDailySnapshot[]) => void,
+  onValue: (snapshots: ProfileAnalyticsDailySnapshot[], metadata?: ProfileAnalyticsWatchMetadata) => void,
   onError: (error: Error) => void
 ): () => void {
   return subscribeToProfileAnalyticsDailySnapshots(userId, 365, onValue, onError);
@@ -68,7 +72,7 @@ export function watchProfileAnalyticsDailySnapshots(
 
 export function watchConnectionInvites(
   userId: string,
-  onValue: (invites: ProfileAnalyticsConnectionInvite[]) => void,
+  onValue: (invites: ProfileAnalyticsConnectionInvite[], metadata?: ProfileAnalyticsWatchMetadata) => void,
   onError: (error: Error) => void
 ): () => void {
   return subscribeToConnectionInvites(userId, onValue, onError);
@@ -76,8 +80,16 @@ export function watchConnectionInvites(
 
 export function watchProfileViewers(
   userId: string,
-  onValue: (viewers: ProfileViewer[]) => void,
+  onValue: (viewers: ProfileViewer[], metadata?: ProfileAnalyticsWatchMetadata) => void,
   onError: (error: Error) => void
 ): () => void {
   return subscribeToChronologicalProfileViewers(userId, onValue, onError);
+}
+
+export function watchProfileViewerSummary(
+  userId: string,
+  onValue: (summary: ProfileViewerSummary | null, metadata?: ProfileAnalyticsWatchMetadata) => void,
+  onError: (error: Error) => void
+): () => void {
+  return subscribeToProfileViewerSummary(userId, onValue, onError);
 }

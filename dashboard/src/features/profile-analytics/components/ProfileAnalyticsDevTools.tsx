@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { HiOutlineArrowPath, HiOutlineTrash } from 'react-icons/hi2';
 import { sendMessageToExtension } from '../../../utils/extensionMessaging';
+import { deleteProfileAnalyticsCache } from '../services/profile-analytics-cache';
 
 type ResetState = 'idle' | 'confirming' | 'resetting' | 'started' | 'failed';
 
@@ -13,7 +14,7 @@ interface ResetResponse {
   error?: string;
 }
 
-export function ProfileAnalyticsDevTools() {
+export function ProfileAnalyticsDevTools({ userId }: { userId: string }) {
   const [state, setState] = useState<ResetState>('idle');
   const [message, setMessage] = useState('');
 
@@ -36,6 +37,7 @@ export function ProfileAnalyticsDevTools() {
       return;
     }
 
+    await deleteProfileAnalyticsCache(userId);
     setState('started');
     setMessage(`${response.result?.deletedDocuments || 0} analytics documents deleted. First-run collection started.`);
   };

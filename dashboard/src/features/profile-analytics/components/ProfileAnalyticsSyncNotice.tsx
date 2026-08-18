@@ -55,15 +55,7 @@ export function ProfileAnalyticsSyncNotice({
     );
   }
 
-  if (!status || status.status === 'idle' || status.status === 'success') return null;
-
-  if (status.status === 'syncing') {
-    return (
-      <div className="profile-analytics-sync-notice profile-analytics-sync-notice--info" role="status">
-        Updating Profile Analytics from LinkedIn…
-      </div>
-    );
-  }
+  if (!status || status.status === 'idle' || status.status === 'success' || status.status === 'syncing') return null;
 
   const failedMetrics = getFailedMetrics(status).filter(([metric, metricStatus]) => {
     // A new LinkedIn account can omit the Search Appearances module entirely.

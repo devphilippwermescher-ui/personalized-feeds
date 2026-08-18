@@ -1,4 +1,13 @@
-import { collection, getDoc, getDocs, onSnapshot, query, serverTimestamp, setDoc, where } from 'firebase/firestore';
+import {
+  collection,
+  getDoc,
+  getDocs,
+  onSnapshot,
+  query,
+  serverTimestamp,
+  setDoc,
+  where,
+} from 'firebase/firestore';
 import { getFirebaseDb } from '../firebase-config';
 import type { ProfileAnalyticsAcceptanceSnapshot, ProfileAnalyticsConnectionInvite } from '../types';
 import { extractProfileToken, normalizeLinkedInUsername, normalizeMemberNumericId } from '../linkedin-identity';
@@ -168,7 +177,7 @@ export async function getConnectionInvites(userId: string): Promise<ProfileAnaly
 
 export function subscribeToConnectionInvites(
   userId: string,
-  onValue: (invites: ProfileAnalyticsConnectionInvite[]) => void,
+  onValue: (invites: ProfileAnalyticsConnectionInvite[], metadata?: { fromCache: boolean }) => void,
   onError?: (error: Error) => void
 ): () => void {
   const invitesQuery = collection(getFirebaseDb(), 'users', userId, 'connectionInvites');
@@ -177,15 +186,18 @@ export function subscribeToConnectionInvites(
   let legacy: ProfileAnalyticsConnectionInvite[] = [];
   let currentLoaded = false;
   let legacyLoaded = false;
+  let currentFromCache = true;
+  let legacyFromCache = true;
   const emit = () => {
     if (!currentLoaded || !legacyLoaded) return;
-    onValue(current.length > 0 ? current : legacy);
+    onValue(current.length > 0 ? current : legacy, { fromCache: currentFromCache && legacyFromCache });
   };
   const unsubscribeCurrent = onSnapshot(
     invitesQuery,
     (snapshot) => {
       current = snapshot.docs.map(docToProfileAnalyticsConnectionInvite);
       currentLoaded = true;
+      currentFromCache = snapshot.metadata.fromCache;
       emit();
     },
     (error) => onError?.(error)
@@ -195,6 +207,7 @@ export function subscribeToConnectionInvites(
     (snapshot) => {
       legacy = snapshot.docs.map(docToProfileAnalyticsConnectionInvite);
       legacyLoaded = true;
+      legacyFromCache = snapshot.metadata.fromCache;
       emit();
     },
     (error) => onError?.(error)

@@ -256,12 +256,12 @@ export async function getChronologicalProfileViewers(userId: string): Promise<Pr
 
 export function subscribeToChronologicalProfileViewers(
   userId: string,
-  onValue: (viewers: ProfileViewer[]) => void,
+  onValue: (viewers: ProfileViewer[], metadata?: { fromCache: boolean }) => void,
   onError?: (error: Error) => void
 ): () => void {
   return onSnapshot(
     getChronologicalProfileViewersQuery(userId),
-    (snapshot) => onValue(getValidProfileViewersFromSnapshot(snapshot)),
+    (snapshot) => onValue(getValidProfileViewersFromSnapshot(snapshot), snapshot.metadata),
     (error) => onError?.(error)
   );
 }
@@ -396,6 +396,43 @@ export async function getProfileViewerSummary(userId: string): Promise<ProfileVi
         : undefined,
     updatedAt: typeof data.updatedAt === 'number' ? data.updatedAt : 0,
   };
+}
+
+export function subscribeToProfileViewerSummary(
+  userId: string,
+  onValue: (summary: ProfileViewerSummary | null, metadata?: { fromCache: boolean }) => void,
+  onError?: (error: Error) => void
+): () => void {
+  return onSnapshot(
+    profileViewerSummaryDoc(userId),
+    (snapshot) => {
+      if (!snapshot.exists()) {
+        onValue(null, snapshot.metadata);
+        return;
+      }
+
+      const data = snapshot.data() as Partial<ProfileViewerSummary>;
+      const hasPrivateViewerCount =
+        Number.isSafeInteger(data.privateViewerCount) && (data.privateViewerCount || 0) >= 0;
+      const hasRecruiterViewerCount =
+        Number.isSafeInteger(data.recruiterViewerCount) && (data.recruiterViewerCount || 0) >= 0;
+      onValue(
+        hasPrivateViewerCount || hasRecruiterViewerCount
+          ? {
+              privateViewerCount: hasPrivateViewerCount ? data.privateViewerCount || 0 : 0,
+              recruiterViewerCount: hasRecruiterViewerCount ? data.recruiterViewerCount : undefined,
+              recruiterViewerUrl:
+                typeof data.recruiterViewerUrl === 'string' && data.recruiterViewerUrl.trim()
+                  ? data.recruiterViewerUrl.trim()
+                  : undefined,
+              updatedAt: typeof data.updatedAt === 'number' ? data.updatedAt : 0,
+            }
+          : null,
+        snapshot.metadata
+      );
+    },
+    (error) => onError?.(error)
+  );
 }
 
 export async function updateProfileViewer(
