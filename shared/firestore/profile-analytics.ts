@@ -9,6 +9,7 @@ import {
   writeBatch,
 } from 'firebase/firestore';
 import { getFirebaseDb } from '../firebase-config';
+import { stripUndefinedDeep } from './serialize';
 import type { ProfileAnalyticsDailySnapshot, ProfileAnalyticsSnapshot } from '../types';
 import {
   docToProfileAnalyticsDailySnapshot,
@@ -24,22 +25,6 @@ import {
 
 function getUtcDateKey(timestamp: number): string {
   return new Date(timestamp).toISOString().slice(0, 10);
-}
-
-function stripUndefinedDeep<T>(value: T): T {
-  if (Array.isArray(value)) {
-    return value.map((item) => stripUndefinedDeep(item)).filter((item) => item !== undefined) as T;
-  }
-
-  if (!value || typeof value !== 'object') {
-    return value;
-  }
-
-  return Object.fromEntries(
-    Object.entries(value)
-      .filter(([, item]) => item !== undefined)
-      .map(([key, item]) => [key, stripUndefinedDeep(item)])
-  ) as T;
 }
 
 function buildDailySnapshotPatch(

@@ -11,12 +11,23 @@ export interface MetricTrendPoint {
 interface MetricTrendChartProps {
   title: string;
   summary: string;
-  rangeLabel: string;
+  /** Omitted when the surface already states the range elsewhere. */
+  rangeLabel?: string;
   icon: ReactNode;
+  /** Controls rendered at the end of the header, e.g. metric tabs. */
+  headerActions?: ReactNode;
+  className?: string;
   points: MetricTrendPoint[];
   color: string;
   gradientId: string;
   minimumMax?: number;
+  /**
+   * Smallest "nice" axis maximum. Count metrics that peak at a handful of
+   * events need a tighter axis than the default so the line is readable.
+   */
+  smallestChartMax?: number;
+  /** Draws a smoothed curve instead of straight segments. */
+  smooth?: boolean;
   valueFormatter?: (value: number | undefined) => string;
   emptyLabel: string;
   showYear?: boolean;
@@ -33,14 +44,14 @@ const PLOT_BOTTOM = 204;
 const PLOT_WIDTH = PLOT_RIGHT - PLOT_LEFT;
 const PLOT_HEIGHT = PLOT_BOTTOM - PLOT_TOP;
 
-function getNiceChartMax(value: number, minimumMax: number): number {
+function getNiceChartMax(value: number, minimumMax: number, smallestChartMax: number): number {
   if (minimumMax > 0 && value <= minimumMax) {
     return minimumMax;
   }
 
   const base = Math.max(value, minimumMax);
-  if (base <= 10) {
-    return 10;
+  if (base <= smallestChartMax) {
+    return smallestChartMax;
   }
 
   const paddedValue = base * 1.12;
@@ -63,7 +74,28 @@ function getXAxisTickIndexes(points: MetricTrendPoint[]): number[] {
   ).filter((value, index, values) => values.indexOf(value) === index);
 }
 
-function getValuePath(points: MetricTrendPoint[], chartMax: number): string {
+/** Catmull-Rom control points, converted to the cubic beziers SVG draws. */
+function toSmoothPath(coordinates: Array<{ x: number; y: number }>): string {
+  return coordinates.reduce((path, point, index) => {
+    if (index === 0) return `M ${point.x.toFixed(2)} ${point.y.toFixed(2)}`;
+
+    const previous = coordinates[index - 1];
+    const beforePrevious = coordinates[index - 2] || previous;
+    const next = coordinates[index + 1] || point;
+    const firstControl = {
+      x: previous.x + (point.x - beforePrevious.x) / 6,
+      y: previous.y + (point.y - beforePrevious.y) / 6,
+    };
+    const secondControl = { x: point.x - (next.x - previous.x) / 6, y: point.y - (next.y - previous.y) / 6 };
+    return (
+      `${path} C ${firstControl.x.toFixed(2)} ${firstControl.y.toFixed(2)},` +
+      ` ${secondControl.x.toFixed(2)} ${secondControl.y.toFixed(2)},` +
+      ` ${point.x.toFixed(2)} ${point.y.toFixed(2)}`
+    );
+  }, '');
+}
+
+function getValuePath(points: MetricTrendPoint[], chartMax: number, smooth: boolean): string {
   const maxIndex = Math.max(1, points.length - 1);
   const values = points
     .map((point, index) => ({ index, value: point.value }))
@@ -73,17 +105,19 @@ function getValuePath(points: MetricTrendPoint[], chartMax: number): string {
     return '';
   }
 
-  return values
-    .map((point, pathIndex) => {
-      const x = PLOT_LEFT + (point.index / maxIndex) * PLOT_WIDTH;
-      const y = PLOT_TOP + (1 - point.value / chartMax) * PLOT_HEIGHT;
-      return `${pathIndex === 0 ? 'M' : 'L'} ${x.toFixed(2)} ${y.toFixed(2)}`;
-    })
+  const coordinates = values.map((point) => ({
+    x: PLOT_LEFT + (point.index / maxIndex) * PLOT_WIDTH,
+    y: PLOT_TOP + (1 - point.value / chartMax) * PLOT_HEIGHT,
+  }));
+  if (smooth) return toSmoothPath(coordinates);
+
+  return coordinates
+    .map((point, pathIndex) => `${pathIndex === 0 ? 'M' : 'L'} ${point.x.toFixed(2)} ${point.y.toFixed(2)}`)
     .join(' ');
 }
 
-function getAreaPath(points: MetricTrendPoint[], chartMax: number): string {
-  const linePath = getValuePath(points, chartMax);
+function getAreaPath(points: MetricTrendPoint[], chartMax: number, smooth: boolean): string {
+  const linePath = getValuePath(points, chartMax, smooth);
   if (!linePath) {
     return '';
   }
@@ -106,6 +140,8 @@ export function MetricTrendChart({
   color,
   gradientId,
   minimumMax = 0,
+  smallestChartMax = 10,
+  smooth = false,
   valueFormatter = (value) => (typeof value === 'number' ? value.toLocaleString() : '-'),
   emptyLabel,
   showYear = false,
@@ -113,6 +149,8 @@ export function MetricTrendChart({
   tooltip,
   tooltipPlacement = 'left',
   zoomToNonZeroData = false,
+  headerActions,
+  className,
 }: MetricTrendChartProps) {
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const displayPoints = zoomToNonZeroData ? zoomToRelevantMetricPoints(points) : points;
@@ -120,14 +158,14 @@ export function MetricTrendChart({
     .map((point) => point.value)
     .filter((value): value is number => typeof value === 'number');
   const hasData = values.length > 0;
-  const chartMax = getNiceChartMax(Math.max(...values, 0), minimumMax);
+  const chartMax = getNiceChartMax(Math.max(...values, 0), minimumMax, smallestChartMax);
   const yTicks = [chartMax, Math.round(chartMax * 0.5), Math.round(chartMax * 0.25), 0].filter(
     (value, index, list) => list.indexOf(value) === index
   );
   const xTicks = getXAxisTickIndexes(displayPoints);
   const maxIndex = Math.max(1, displayPoints.length - 1);
-  const path = getValuePath(displayPoints, chartMax);
-  const areaPath = getAreaPath(displayPoints, chartMax);
+  const path = getValuePath(displayPoints, chartMax, smooth);
+  const areaPath = getAreaPath(displayPoints, chartMax, smooth);
   const singlePoint =
     values.length === 1
       ? displayPoints
@@ -162,17 +200,20 @@ export function MetricTrendChart({
   const tooltipLeft = Math.min(Math.max(tooltipX + 10, PLOT_LEFT), PLOT_RIGHT - tooltipWidth);
 
   return (
-    <section className="profile-analytics-card profile-analytics-metric-trend-card">
+    <section
+      className={`profile-analytics-card profile-analytics-metric-trend-card${className ? ` ${className}` : ''}`}
+    >
       <div className="profile-analytics-metric-trend-header">
         <div className="profile-analytics-metric-trend-title" style={{ color }}>
           {icon}
           <h2>{title}</h2>
           <span>{summary}</span>
-          <span className="profile-analytics-metric-trend-range">{rangeLabel}</span>
+          {rangeLabel ? <span className="profile-analytics-metric-trend-range">{rangeLabel}</span> : null}
           {tooltip ? (
             <InfoTooltip label={`About ${title} data`} content={tooltip} placement={tooltipPlacement} />
           ) : null}
         </div>
+        {headerActions}
       </div>
       <div className="profile-analytics-metric-line-chart">
         {hasData || showEmptyPlot ? (

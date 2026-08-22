@@ -1,4 +1,5 @@
 import type { UserInfo } from '../types';
+import { reportExtensionUiEntered } from '../../../runtime/extension-entry';
 
 interface SidebarSessionDeps {
   sendMsg: (message: Record<string, unknown>) => Promise<Record<string, unknown>>;
@@ -135,6 +136,8 @@ export function toggleSidebar(
         (async () => {
           await checkAuth(deps);
           if (deps.getCurrentUser()) {
+            // A signed-in person opened the sidebar: a real extension entry.
+            reportExtensionUiEntered();
             await deps.loadFeeds();
           }
         })(),

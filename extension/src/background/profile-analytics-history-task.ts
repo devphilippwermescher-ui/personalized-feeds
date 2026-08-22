@@ -1,11 +1,10 @@
-import type { ProfileAnalyticsSnapshot } from 'shared/types';
+import type { ProfileAnalyticsConnectionHistoryJob, ProfileAnalyticsSnapshot } from 'shared/types';
 import { setProfileAnalyticsConnectionHistoryJob } from 'shared/firestore-service';
 import {
   CONNECTION_HISTORY_AGGRESSIVE_BATCH_PAGE_LIMIT,
   CONNECTION_HISTORY_AGGRESSIVE_PAGE_DELAY_MS,
   CONNECTION_HISTORY_CAUTIOUS_BATCH_PAGE_LIMIT,
   CONNECTION_HISTORY_CAUTIOUS_PAGE_DELAY_MS,
-  ensureConnectionHistoryBootstrapJob,
   reconcileCompletedConnectionHistory,
   restartConnectionHistoryBootstrap,
   resumeConnectionHistoryBootstrap,
@@ -41,16 +40,24 @@ function isLinkedInRestriction(error: unknown): boolean {
   );
 }
 
+/**
+ * Continues an existing one-time Connections history job.
+ *
+ * The job must already exist: creation is owned by the first authenticated
+ * extension entry, so no routine trigger can start a backfill from here.
+ */
 export async function runConnectionHistoryTask({
   state: initialState,
   snapshot: initialSnapshot,
   trigger,
   linkedInTabId,
+  job: initialJob,
 }: {
   state: ProfileAnalyticsSyncState;
   snapshot: ProfileAnalyticsSnapshot | null;
   trigger: ProfileAnalyticsSyncTrigger;
   linkedInTabId?: number;
+  job: ProfileAnalyticsConnectionHistoryJob;
 }): Promise<{
   state: ProfileAnalyticsSyncState;
   snapshot: ProfileAnalyticsSnapshot | null;
@@ -63,10 +70,7 @@ export async function runConnectionHistoryTask({
   const state = { ...initialState };
   let snapshot = initialSnapshot;
   let historySynced = false;
-  let job = await ensureConnectionHistoryBootstrapJob({
-    userId: state.userId,
-    profile: initialSnapshot.profile,
-  });
+  let job = initialJob;
 
   if (trigger === 'history_repair') {
     job = await restartConnectionHistoryBootstrap({ userId: state.userId, profile: initialSnapshot.profile });

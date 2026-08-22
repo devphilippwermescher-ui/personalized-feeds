@@ -10,7 +10,10 @@ export interface LinkedInSsiPageResponse {
  * Keep this function self-contained: imported runtime values are unavailable
  * after Chrome serializes it for page execution.
  */
-export async function collectSocialSellingIndexInLinkedInPage(url: string): Promise<LinkedInSsiPageResponse> {
+export async function collectSocialSellingIndexInLinkedInPage(
+  url: string,
+  csrfToken = ''
+): Promise<LinkedInSsiPageResponse> {
   function collectVisibleMemberScore(): number | undefined {
     const text = (document.body?.innerText || document.body?.textContent || '').replace(/\s+/g, ' ').trim();
     const value =
@@ -51,7 +54,15 @@ export async function collectSocialSellingIndexInLinkedInPage(url: string): Prom
       credentials: 'include',
       cache: 'no-store',
       referrer: 'https://www.linkedin.com/sales/ssi',
-      headers: { accept: '*/*' },
+      headers: {
+        accept: '*/*',
+        ...(csrfToken
+          ? {
+              'csrf-token': csrfToken,
+              'x-restli-protocol-version': '2.0.0',
+            }
+          : {}),
+      },
       signal: controller.signal,
     });
     if (!response.ok) return (await waitForVisibleScore(response.status)) || { ok: false, status: response.status };

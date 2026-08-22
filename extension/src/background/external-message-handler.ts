@@ -81,15 +81,26 @@ function handleDashboardMessage(message: DashboardMessage, sendResponse: (respon
     return true;
   }
 
-  if (message.type === 'DASHBOARD_PROFILE_ANALYTICS_OPENED') {
-    // Backward-compatible response for older deployed dashboards. Opening the
-    // dashboard no longer starts LinkedIn requests; alarms and LinkedIn-owned
-    // activity are the only routine sync triggers.
-    sendResponse({ success: true, queued: false });
+  if (message.type === 'DASHBOARD_ANALYTICS_OPENED' || message.type === 'DASHBOARD_PROFILE_ANALYTICS_OPENED') {
+    // This refreshes the unified fast Profile + Content cores. The connections
+    // history bootstrap is still created exclusively by `first_extension_entry`.
+    // Respond before the LinkedIn work finishes so the dashboard bridge cannot
+    // time out while the coordinator publishes the new snapshot.
+    void queueProfileAnalyticsSync('dashboard_open').catch((error) => {
+      console.warn('[dashboard-analytics] dashboard-open sync failed', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
+    sendResponse({ success: true, queued: true });
     return false;
   }
 
-  if (message.type === 'DASHBOARD_GET_PROFILE_ANALYTICS_SYNC_STATUS') {
+  // `DASHBOARD_GET_PROFILE_ANALYTICS_SYNC_STATUS` is the pre-Dashboard-Analytics
+  // name. Already-deployed dashboards still send it, so both are accepted.
+  if (
+    message.type === 'DASHBOARD_GET_ANALYTICS_SYNC_STATUS' ||
+    message.type === 'DASHBOARD_GET_PROFILE_ANALYTICS_SYNC_STATUS'
+  ) {
     getProfileAnalyticsSyncStatus()
       .then((status) => sendResponse({ success: true, status }))
       .catch((error) => {
@@ -102,7 +113,10 @@ function handleDashboardMessage(message: DashboardMessage, sendResponse: (respon
     return true;
   }
 
-  if (message.type === 'DASHBOARD_RESUME_PROFILE_ANALYTICS_HISTORY') {
+  if (
+    message.type === 'DASHBOARD_RESUME_ANALYTICS_HISTORY' ||
+    message.type === 'DASHBOARD_RESUME_PROFILE_ANALYTICS_HISTORY'
+  ) {
     queueProfileAnalyticsSync('history_resume')
       .then((result) =>
         sendResponse({

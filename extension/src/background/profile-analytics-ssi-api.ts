@@ -1,8 +1,10 @@
 import type { ProfileAnalyticsSsiSnapshot } from 'shared/types';
 import { fetchWithTimeout } from './fetch-with-timeout';
 import type { LinkedInSsiPageResponse } from './linkedin-ssi-page-collector';
+import { collectSocialSellingIndexInLinkedInPage } from './linkedin-ssi-page-collector';
 import { parseSocialSellingIndexSnapshot } from './profile-analytics-ssi-parser';
 import { getLinkedInCsrfToken } from './profile-viewers-api-client';
+import { withPromiseTimeout } from './promise-timeout';
 
 const REQUEST_TIMEOUT_MS = 12_000;
 const TAB_SCRIPT_TIMEOUT_MS = 12_000;
@@ -18,27 +20,28 @@ function throwIfBlocked(status: number | undefined): void {
   throw error;
 }
 
-async function fetchFromLinkedInTab(linkedInTabId: number): Promise<LinkedInSsiPageResponse | null> {
-  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+async function fetchFromLinkedInTab(
+  linkedInTabId: number,
+  csrfToken: string
+): Promise<LinkedInSsiPageResponse | null> {
   try {
-    const results = await Promise.race([
-      chrome.tabs.sendMessage(linkedInTabId, { type: 'PROFILE_ANALYTICS_FETCH_SSI' }),
-      new Promise<never>((_, reject) => {
-        timeoutId = setTimeout(
-          () => reject(new Error(`LinkedIn tab SSI script timed out after ${TAB_SCRIPT_TIMEOUT_MS}ms`)),
-          TAB_SCRIPT_TIMEOUT_MS
-        );
+    const results = await withPromiseTimeout(
+      chrome.scripting.executeScript({
+        target: { tabId: linkedInTabId },
+        world: 'MAIN',
+        func: collectSocialSellingIndexInLinkedInPage,
+        args: [SOCIAL_SELLING_INDEX_URL, csrfToken],
       }),
-    ]);
-    const result = (results || null) as LinkedInSsiPageResponse | null;
+      TAB_SCRIPT_TIMEOUT_MS,
+      'LinkedIn tab SSI script'
+    );
+    const result = results[0]?.result || null;
     return result?.ok || typeof result?.status === 'number' ? result : null;
   } catch (error) {
     console.info('[profile-analytics] SSI request could not run through the LinkedIn bridge', {
       error: error instanceof Error ? error.message : String(error),
     });
     return null;
-  } finally {
-    if (timeoutId) clearTimeout(timeoutId);
   }
 }
 
@@ -69,6 +72,7 @@ export async function fetchSocialSellingIndexSnapshot(
   collectedAt: number,
   linkedInTabId?: number
 ): Promise<ProfileAnalyticsSsiSnapshot | null> {
+  const csrfToken = await getLinkedInCsrfToken();
   const backgroundResponse: LinkedInSsiPageResponse = await fetchFromBackground().catch((error) => ({
     ok: false,
     error: error instanceof Error ? error.message : String(error),
@@ -86,7 +90,7 @@ export async function fetchSocialSellingIndexSnapshot(
   }
 
   const activePageResponse =
-    typeof linkedInTabId === 'number' ? await fetchFromLinkedInTab(linkedInTabId) : null;
+    typeof linkedInTabId === 'number' ? await fetchFromLinkedInTab(linkedInTabId, csrfToken) : null;
   const activePageSnapshot = activePageResponse?.ok
     ? parseSocialSellingIndexSnapshot(activePageResponse.payload, collectedAt, SOCIAL_SELLING_INDEX_URL)
     : null;

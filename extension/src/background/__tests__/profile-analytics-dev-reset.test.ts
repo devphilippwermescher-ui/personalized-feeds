@@ -60,23 +60,33 @@ describe('Profile Analytics development reset', () => {
 
     expect(result).toMatchObject({
       userId: 'test-user',
-      deletedDocuments: 7,
+      deletedDocuments: 12,
       deletedByCollection: {
         profileAnalytics: 1,
         profileViewerMetadata: 1,
         connectionInvites: 1,
       },
     });
-    expect(mocks.getDocs).toHaveBeenCalledTimes(7);
+    expect(mocks.getDocs).toHaveBeenCalledTimes(12);
     expect(mocks.getDocs).toHaveBeenCalledWith({
       segments: [{ id: 'test-db' }, 'users', 'test-user', 'profileAnalytics'],
     });
     const queriedCollections = mocks.getDocs.mock.calls.map(
       ([collectionReference]) => collectionReference.segments[collectionReference.segments.length - 1]
     );
+    // The development reset now covers the whole Dashboard Analytics surface.
+    expect(queriedCollections).toEqual(
+      expect.arrayContaining([
+        'contentAnalytics',
+        'contentAnalyticsRanges',
+        'contentAnalyticsDaily',
+        'contentAnalyticsPosts',
+        'dashboardAnalyticsSync',
+      ])
+    );
     expect(queriedCollections).not.toContain('profileViewers');
     expect(queriedCollections).not.toContain('profileViewerSearches');
-    expect(mocks.deleteDocument).toHaveBeenCalledTimes(7);
+    expect(mocks.deleteDocument).toHaveBeenCalledTimes(12);
     expect(mocks.deleteDocument).toHaveBeenCalledWith({ id: 'profileAnalytics' });
     expect(mocks.deleteDocument).not.toHaveBeenCalledWith({ id: 'summary' });
     expect(mocks.commitBatch).toHaveBeenCalledOnce();

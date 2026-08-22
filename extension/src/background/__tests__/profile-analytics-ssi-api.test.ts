@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { fetchWithTimeout, getLinkedInCsrfToken } = vi.hoisted(() => ({
+const { executeScript, fetchWithTimeout, getLinkedInCsrfToken } = vi.hoisted(() => ({
+  executeScript: vi.fn(),
   fetchWithTimeout: vi.fn(),
   getLinkedInCsrfToken: vi.fn(),
 }));
@@ -16,8 +17,8 @@ describe('Social Selling Index API', () => {
     getLinkedInCsrfToken.mockResolvedValue('ajax:test-csrf-token');
     Object.assign(globalThis, {
       chrome: {
-        tabs: {
-          sendMessage: vi.fn(),
+        scripting: {
+          executeScript,
         },
       },
     });
@@ -50,16 +51,26 @@ describe('Social Selling Index API', () => {
 
   it('uses an existing LinkedIn tab bridge when the extension-origin request is forbidden', async () => {
     fetchWithTimeout.mockResolvedValue({ ok: false, status: 403 });
-    vi.mocked(chrome.tabs.sendMessage).mockResolvedValue({
-      ok: true,
-      status: 200,
-      payload: {
-        groupScore: [{ rank: 85, groupType: 'INDUSTRY' }],
-        memberScore: { overall: 15.683752 },
+    executeScript.mockResolvedValue([
+      {
+        result: {
+          ok: true,
+          status: 200,
+          payload: {
+            groupScore: [{ rank: 85, groupType: 'INDUSTRY' }],
+            memberScore: { overall: 15.683752 },
+          },
+        },
       },
-    });
+    ]);
 
     await expect(fetchSocialSellingIndexSnapshot(123, 42)).resolves.toMatchObject({ score: 16 });
-    expect(chrome.tabs.sendMessage).toHaveBeenCalledWith(42, { type: 'PROFILE_ANALYTICS_FETCH_SSI' });
+    expect(executeScript).toHaveBeenCalledWith(
+      expect.objectContaining({
+        target: { tabId: 42 },
+        world: 'MAIN',
+        args: [SOCIAL_SELLING_INDEX_URL, 'ajax:test-csrf-token'],
+      })
+    );
   });
 });

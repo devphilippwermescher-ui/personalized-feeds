@@ -1,6 +1,9 @@
 import { collection, doc, type DocumentData, type QueryDocumentSnapshot } from 'firebase/firestore';
 import { getFirebaseDb } from '../firebase-config';
 import type {
+  ContentAnalyticsDailySnapshot,
+  ContentAnalyticsPost,
+  ContentAnalyticsRangeSnapshot,
   Feed,
   FeedMember,
   FeedShareAccess,
@@ -53,6 +56,56 @@ export function profileAnalyticsDailyDoc(userId: string, date: string) {
 
 export function profileAnalyticsSampleDoc(userId: string, timestamp: number) {
   return doc(getFirebaseDb(), 'users', userId, 'profileAnalyticsSamples', String(timestamp));
+}
+
+export function contentAnalyticsDoc(userId: string) {
+  return doc(getFirebaseDb(), 'users', userId, 'contentAnalytics', 'current');
+}
+
+export function contentAnalyticsRangesCollection(userId: string) {
+  return collection(getFirebaseDb(), 'users', userId, 'contentAnalyticsRanges');
+}
+
+export function contentAnalyticsRangeDoc(userId: string, rangeId: string) {
+  return doc(getFirebaseDb(), 'users', userId, 'contentAnalyticsRanges', rangeId);
+}
+
+export function contentAnalyticsDailyCollection(userId: string) {
+  return collection(getFirebaseDb(), 'users', userId, 'contentAnalyticsDaily');
+}
+
+export function contentAnalyticsDailyDoc(userId: string, date: string) {
+  return doc(getFirebaseDb(), 'users', userId, 'contentAnalyticsDaily', date);
+}
+
+export function contentAnalyticsPostsCollection(userId: string) {
+  return collection(getFirebaseDb(), 'users', userId, 'contentAnalyticsPosts');
+}
+
+export function contentAnalyticsPostDoc(userId: string, activityId: string) {
+  return doc(getFirebaseDb(), 'users', userId, 'contentAnalyticsPosts', activityId);
+}
+
+export function dashboardAnalyticsSyncDoc(userId: string) {
+  return doc(getFirebaseDb(), 'users', userId, 'dashboardAnalyticsSync', 'current');
+}
+
+export function docToContentAnalyticsRangeSnapshot(
+  d: QueryDocumentSnapshot<DocumentData, DocumentData>
+): ContentAnalyticsRangeSnapshot {
+  return { id: d.id, ...d.data() } as ContentAnalyticsRangeSnapshot;
+}
+
+export function docToContentAnalyticsDailySnapshot(
+  d: QueryDocumentSnapshot<DocumentData, DocumentData>
+): ContentAnalyticsDailySnapshot {
+  return { id: d.id, ...d.data() } as ContentAnalyticsDailySnapshot;
+}
+
+export function docToContentAnalyticsPost(
+  d: QueryDocumentSnapshot<DocumentData, DocumentData>
+): ContentAnalyticsPost {
+  return { id: d.id, ...d.data() } as ContentAnalyticsPost;
 }
 
 export function profileConnectionInviteDoc(userId: string, linkedinUsername: string) {

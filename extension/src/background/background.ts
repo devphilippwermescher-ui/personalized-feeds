@@ -9,10 +9,10 @@ import {
 import { CONNECTION_INVITES_STATUS_ALARM_NAME } from './connection-invites-sync';
 import { initNativeInviteNetworkObserver } from './native-invite-network-observer';
 import {
-  forgetProfileAnalyticsLinkedInTab,
-  PROFILE_ANALYTICS_ALARM_NAME,
-  queueProfileAnalyticsSync,
-} from './profile-analytics-sync-coordinator';
+  forgetDashboardAnalyticsLinkedInTab,
+  queueDashboardAnalyticsSync,
+} from './dashboard-analytics/dashboard-analytics-sync-coordinator';
+import { DASHBOARD_ANALYTICS_ALARM_NAME } from './dashboard-analytics/dashboard-analytics-sync-runtime';
 import { migrateToIndependentLinkedInSync } from './linkedin-sync-state-migration';
 
 initNativeInviteNetworkObserver();
@@ -29,7 +29,7 @@ chrome.runtime.onInstalled.addListener((details) => {
   // Profile Analytics is allowed to acquire the Connections-history lock.
   void queueProfileViewersFirstSurfaceSync(trigger).finally(() => {
     void queueProfileViewersStatusSync({ trigger, urgent: true });
-    void queueProfileAnalyticsSync(trigger);
+    void queueDashboardAnalyticsSync(trigger);
   });
 });
 
@@ -40,14 +40,14 @@ chrome.runtime.onStartup.addListener(() => {
   });
   void queueProfileViewersFirstSurfaceSync('chrome_startup').finally(() => {
     void queueProfileViewersStatusSync({ trigger: 'chrome_startup' });
-    void queueProfileAnalyticsSync('chrome_startup');
+    void queueDashboardAnalyticsSync('chrome_startup');
   });
 });
 
 chrome.alarms?.onAlarm.addListener((alarm) => {
-  if (alarm.name === PROFILE_ANALYTICS_ALARM_NAME) {
+  if (alarm.name === DASHBOARD_ANALYTICS_ALARM_NAME) {
     const receivedAt = Date.now();
-    console.info('[profile-analytics] alarm fired', {
+    console.info('[dashboard-analytics] alarm fired', {
       alarmName: alarm.name,
       scheduledAt: alarm.scheduledTime,
       scheduledAtIso: new Date(alarm.scheduledTime).toISOString(),
@@ -55,7 +55,7 @@ chrome.alarms?.onAlarm.addListener((alarm) => {
       receivedAtIso: new Date(receivedAt).toISOString(),
       delayMs: Math.max(0, receivedAt - alarm.scheduledTime),
     });
-    void queueProfileAnalyticsSync('alarm');
+    void queueDashboardAnalyticsSync('alarm');
     return;
   }
   if (alarm.name === PROFILE_VIEWERS_STATUS_ALARM_NAME) {
@@ -75,12 +75,12 @@ chrome.alarms?.onAlarm.addListener((alarm) => {
   void queueProfileViewersFirstSurfaceSync('alarm').finally(() => {
     // A postponed first-time analytics bootstrap may now continue after the
     // sidebar collector has completed its next safe batch.
-    void queueProfileAnalyticsSync('alarm');
+    void queueDashboardAnalyticsSync('alarm');
   });
 });
 
 chrome.tabs.onRemoved.addListener((tabId) => {
-  forgetProfileAnalyticsLinkedInTab(tabId);
+  forgetDashboardAnalyticsLinkedInTab(tabId);
 });
 
 void appendProfileViewersWakeEvent({
@@ -90,9 +90,9 @@ void appendProfileViewersWakeEvent({
 // Acceptance Rate is now reconciled by the shared Profile Analytics alarm.
 // Remove the legacy standalone invitation-status alarm after upgrading.
 void chrome.alarms?.clear(CONNECTION_INVITES_STATUS_ALARM_NAME);
-void chrome.alarms?.get(PROFILE_ANALYTICS_ALARM_NAME).then((alarm) => {
-  console.info('[profile-analytics] alarm state on worker load', {
-    alarmName: PROFILE_ANALYTICS_ALARM_NAME,
+void chrome.alarms?.get(DASHBOARD_ANALYTICS_ALARM_NAME).then((alarm) => {
+  console.info('[dashboard-analytics] alarm state on worker load', {
+    alarmName: DASHBOARD_ANALYTICS_ALARM_NAME,
     exists: Boolean(alarm),
     scheduledAt: alarm?.scheduledTime,
     scheduledAtIso: alarm ? new Date(alarm.scheduledTime).toISOString() : undefined,
@@ -102,7 +102,7 @@ void migrateToIndependentLinkedInSync()
   .then(() => queueProfileViewersFirstSurfaceSync('service_worker'))
   .finally(() => {
     void queueProfileViewersStatusSync({ trigger: 'service_worker' });
-    void queueProfileAnalyticsSync('service_worker');
+    void queueDashboardAnalyticsSync('service_worker');
   });
 
 import './external-message-handler';
@@ -110,6 +110,7 @@ import './auth-settings-message-handler';
 import './linkedin-relationship-status-message-handler';
 import './profile-viewers-message-handler';
 import './profile-analytics-message-handler';
+import './dashboard-analytics/dashboard-analytics-message-handler';
 import './profile-analytics-passive-capture';
 import './feeds-message-handler';
 import './feed-sharing-message-handler';

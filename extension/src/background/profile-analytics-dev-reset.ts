@@ -12,6 +12,11 @@ const ANALYTICS_COLLECTION_TARGETS = [
   { collectionName: 'profileAnalyticsSamples' },
   { collectionName: 'profileAnalyticsJobs' },
   { collectionName: 'profileAnalyticsHistoryChunks' },
+  { collectionName: 'contentAnalytics' },
+  { collectionName: 'contentAnalyticsRanges' },
+  { collectionName: 'contentAnalyticsDaily' },
+  { collectionName: 'contentAnalyticsPosts' },
+  { collectionName: 'dashboardAnalyticsSync' },
   // Delete only the legacy analytics document from this mixed collection.
   // Profile Viewers summary and relationship metadata must remain intact.
   { collectionName: 'profileViewerMetadata', documentIds: ['profileAnalytics'] },

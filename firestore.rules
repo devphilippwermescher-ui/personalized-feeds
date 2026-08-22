@@ -81,6 +81,26 @@ service cloud.firestore {
         allow read, write: if isOwner(userId);
       }
 
+      match /contentAnalytics/{documentId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      match /contentAnalyticsRanges/{rangeId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      match /contentAnalyticsDaily/{snapshotId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      match /contentAnalyticsPosts/{postId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      match /dashboardAnalyticsSync/{documentId} {
+        allow read, write: if isOwner(userId);
+      }
+
       match /profileAnalyticsJobs/{jobId} {
         allow read, write: if isOwner(userId);
       }
