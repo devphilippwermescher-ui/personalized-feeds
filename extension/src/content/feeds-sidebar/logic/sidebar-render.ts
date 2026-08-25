@@ -193,3 +193,7 @@ export function escapeHtml(text: string): string {
 export function getLogoUrl(): string {
   return chrome.runtime.getURL('icons/icon48.png');
 }
+
+export function getLauncherLogoUrl(): string {
+  return chrome.runtime.getURL('icons/logo-mark.svg');
+}

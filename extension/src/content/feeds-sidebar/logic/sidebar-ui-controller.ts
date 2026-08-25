@@ -12,6 +12,7 @@ import {
 } from './feed-expansion-motion';
 import {
   captureSidebarDomSnapshot,
+  getLauncherLogoUrl,
   getLogoUrl,
   renderSidebarInnerMarkup,
   restoreSidebarDomSnapshot,
@@ -328,12 +329,14 @@ export function createSidebarUiController(deps: SidebarUiControllerDeps): {
     overlay.addEventListener('click', toggle);
     document.body.appendChild(overlay);
 
-    triggerBtn = document.createElement('div');
+    triggerBtn = document.createElement('button');
     triggerBtn.className = 'lfa-trigger-btn';
     triggerBtn.id = 'lfa-feeds-trigger-btn';
+    triggerBtn.setAttribute('type', 'button');
+    triggerBtn.setAttribute('aria-label', 'Open myFeedPilot sidebar');
     triggerBtn.setAttribute('data-extension', 'linkedin-analyzer-feeds');
     triggerBtn.title = 'myFeedPilot - Feeds';
-    triggerBtn.innerHTML = `<img src="${getLogoUrl()}" alt="myFeedPilot" />`;
+    triggerBtn.innerHTML = `<img src="${getLauncherLogoUrl()}" alt="" aria-hidden="true" />`;
     triggerBtn.addEventListener('click', toggle);
     document.body.appendChild(triggerBtn);
 
