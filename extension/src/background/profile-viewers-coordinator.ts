@@ -4,12 +4,14 @@ import {
   canMakeProfileViewersRequest,
   createProfileViewersSyncState,
   decideProfileViewersSync,
+  getIncompleteProfileViewersImportDueAt,
   getNextProfileViewersAlarmAt,
   getProfileViewersAuthRecoveryPlan,
   getProfileViewersRequestBudget,
   getProfileViewersScheduledIntervalMs,
   isProfileViewersFirstSurfaceReady,
   PROFILE_VIEWERS_BACKGROUND_RESERVE,
+  recordProfileViewersRequest,
   startProfileViewersSyncAttempt,
   type ProfileViewersSyncErrorCode,
   type ProfileViewersSyncLog,
@@ -35,7 +37,10 @@ import {
 import { queueProfileViewersStatusSync } from './profile-viewers-status-sync';
 import { recordProfileViewsAnalytics } from './profile-viewers-analytics';
 import type { ProfileViewersSyncResult } from './profile-viewers-sync-result';
-import { getActiveLinkedInHeavySyncLock } from './linkedin-heavy-sync-lock';
+import {
+  getActiveLinkedInHeavySyncLock,
+  releaseConnectionHistorySyncLock,
+} from './linkedin-heavy-sync-lock';
 
 const PROFILE_VIEWERS_SYNC_LOG_LIMIT = 50;
 const PROFILE_VIEWERS_SYNC_LOG_USERNAME_LIMIT = 50;
@@ -97,6 +102,24 @@ function appendProfileViewersSyncLog(
   return {
     ...state,
     logs: [log, ...state.logs].slice(0, PROFILE_VIEWERS_SYNC_LOG_LIMIT),
+  };
+}
+
+function mergeVisibleAndSummaryResults(
+  visible: ProfileViewersSyncResult,
+  summary: ProfileViewersSyncResult
+): ProfileViewersSyncResult {
+  return {
+    ...visible,
+    privateViewerCount: summary.privateViewerCount ?? visible.privateViewerCount,
+    recruiterViewerCount: summary.recruiterViewerCount ?? visible.recruiterViewerCount,
+    recruiterViewerUrl: summary.recruiterViewerUrl ?? visible.recruiterViewerUrl,
+    httpStatus: summary.httpStatus ?? visible.httpStatus,
+    responseLength: (visible.responseLength || 0) + (summary.responseLength || 0),
+    requestCount: (visible.requestCount || 0) + (summary.requestCount || 0),
+    pagesFetched: (visible.pagesFetched || 0) + (summary.pagesFetched || 0),
+    paginationComplete: visible.paginationComplete && summary.paginationComplete,
+    privateViewerCountStart: summary.privateViewerCountStart,
   };
 }
 
@@ -217,21 +240,32 @@ async function runProfileViewersSyncCoordinator(
 
   const heavySyncLock = await getActiveLinkedInHeavySyncLock(user.uid);
   if (heavySyncLock) {
-    const scheduledAt = heavySyncLock.expiresAt + 5_000;
-    if (hadAuthRecoveryState) await setProfileViewersSyncState(state);
-    await scheduleProfileViewersAlarmAt(scheduledAt, 'connections_history_bootstrap');
-    await appendProfileViewersWakeEvent({
-      event: 'sync_skipped',
-      trigger,
-      reason: 'connections_history_bootstrap',
-      scheduledAt,
-    });
-    console.info('[profile-viewers-sync] deferred for Connections history bootstrap', {
-      trigger,
-      scheduledAt,
-      accountKey: heavySyncLock.accountKey,
-    });
-    return { ran: false, success: true };
+    if (!isProfileViewersFirstSurfaceReady(state)) {
+      // Old extension builds could create the Connections job before the
+      // first Sidebar import completed. Recover those users by releasing the
+      // stale priority inversion and finishing Profile Visitors first.
+      await releaseConnectionHistorySyncLock(user.uid, heavySyncLock.accountKey);
+      console.info('[profile-viewers-sync] released Connections history lock for incomplete Sidebar bootstrap', {
+        trigger,
+        accountKey: heavySyncLock.accountKey,
+      });
+    } else {
+      const scheduledAt = heavySyncLock.expiresAt + 5_000;
+      if (hadAuthRecoveryState) await setProfileViewersSyncState(state);
+      await scheduleProfileViewersAlarmAt(scheduledAt, 'connections_history_bootstrap');
+      await appendProfileViewersWakeEvent({
+        event: 'sync_skipped',
+        trigger,
+        reason: 'connections_history_bootstrap',
+        scheduledAt,
+      });
+      console.info('[profile-viewers-sync] deferred for Connections history bootstrap', {
+        trigger,
+        scheduledAt,
+        accountKey: heavySyncLock.accountKey,
+      });
+      return { ran: false, success: true };
+    }
   }
 
   const decisionAt = Date.now();
@@ -286,6 +320,7 @@ async function runProfileViewersSyncCoordinator(
       await setProfileViewersSyncState(state);
     };
     let result: ProfileViewersSyncResult;
+    let ranVisibleTask = false;
     if (collectionTask === 'private_summary') {
       result = await syncPrivateProfileViewerSummaryViaApi(
         user,
@@ -294,14 +329,35 @@ async function runProfileViewersSyncCoordinator(
         requestBudgetReserve
       );
     } else {
+      ranVisibleTask = true;
       result = await syncProfileViewersViaApi(user, state, persistProgress, {
         requestBudgetReserve,
         pruneStaleAfterComplete: false,
         repairStoredIdentityMismatches: force && trigger === 'manual',
       });
+
+      // Every completed routine cycle refreshes both surfaces: first the
+      // newest visible profiles, then the private/recruiter aggregate from its
+      // persisted known position. The initial backfill uses the same hand-off
+      // as soon as it reaches LinkedIn's end.
+      if (
+        state.backfillStatus === 'complete' &&
+        state.nextCollectionTask === 'private_summary' &&
+        canMakeProfileViewersRequest(state, Date.now(), requestBudgetReserve)
+      ) {
+        state = recordProfileViewersRequest(state, Date.now());
+        await persistProgress(state);
+        const summaryResult = await syncPrivateProfileViewerSummaryViaApi(
+          user,
+          state,
+          persistProgress,
+          requestBudgetReserve
+        );
+        result = mergeVisibleAndSummaryResults(result, summaryResult);
+      }
     }
     const finishedAt = Date.now();
-    const visibleViewerCount = collectionTask === 'visible' ? result.visibleCount : undefined;
+    const visibleViewerCount = ranVisibleTask ? result.visibleCount : undefined;
     await recordProfileViewsAnalytics({
       userId: user.uid,
       visibleCount: visibleViewerCount,
@@ -313,7 +369,17 @@ async function runProfileViewersSyncCoordinator(
     });
     const scheduledIntervalMs = getProfileViewersScheduledIntervalMs();
     state = completeProfileViewersSyncSuccess(state, finishedAt, scheduledIntervalMs);
-    const requestBudget = getProfileViewersRequestBudget(state, finishedAt);
+    let requestBudget = getProfileViewersRequestBudget(state, finishedAt);
+    if (!isProfileViewersFirstSurfaceReady(state)) {
+      state = {
+        ...state,
+        // Initial imports resume at the earliest request-safe moment instead
+        // of falling into the normal 25-35 minute maintenance cadence.
+        nextDueAt: getIncompleteProfileViewersImportDueAt(state, finishedAt),
+        updatedAt: finishedAt,
+      };
+      requestBudget = getProfileViewersRequestBudget(state, finishedAt);
+    }
     const log: ProfileViewersSyncLog = {
       id: `${startedAt}-${attemptNumber}`,
       startedAt,
@@ -353,7 +419,7 @@ async function runProfileViewersSyncCoordinator(
     state = appendProfileViewersSyncLog(state, log);
     await setProfileViewersSyncState(state);
     await scheduleNextProfileViewersAlarm(state);
-    if (collectionTask === 'visible') {
+    if (ranVisibleTask) {
       await queueProfileViewersStatusSync({
         trigger: 'profile_viewers_sync',
         priorityUsernames: result.newProfileUsernames,

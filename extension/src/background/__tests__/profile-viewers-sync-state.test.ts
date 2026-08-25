@@ -17,6 +17,7 @@ import {
   completeProfileViewersSyncSuccess,
   createProfileViewersSyncState,
   decideProfileViewersSync,
+  getIncompleteProfileViewersImportDueAt,
   getNextProfileViewersAlarmAt,
   getProfileViewersAuthRecoveryPlan,
   getProfileViewersRequestBudget,
@@ -230,6 +231,21 @@ describe('profile viewers sync state', () => {
       PROFILE_VIEWERS_BUDGET_CAPACITY - 1
     );
     expect(completed.consecutiveFailedCycles).toBe(0);
+  });
+
+  it('resumes an incomplete first import at the earliest request-safe wake', () => {
+    const now = 10_000;
+    const readyBudget = createProfileViewersSyncState('user-1', now);
+    expect(getIncompleteProfileViewersImportDueAt(readyBudget, now)).toBe(now + 1_000);
+
+    const emptyBudget = {
+      ...readyBudget,
+      requestBudgetTokens: 0,
+      requestBudgetUpdatedAt: now,
+    };
+    expect(getIncompleteProfileViewersImportDueAt(emptyBudget, now)).toBe(
+      now + PROFILE_VIEWERS_BUDGET_REFILL_MS
+    );
   });
 
   it('does not make a request for lifecycle triggers before nextDueAt, but catches up once when overdue', () => {

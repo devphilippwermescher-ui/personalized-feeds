@@ -36,7 +36,12 @@ function normalizeLinkedInPayloadText(value: string): string {
 }
 
 function stripHtml(value: string): string {
-  return normalizeText(value.replace(/<script[\s\S]*?<\/script>/gi, ' ').replace(/<style[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]+>/g, ' '));
+  return normalizeText(
+    value
+      .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+      .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+      .replace(/<[^>]+>/g, ' ')
+  );
 }
 
 function getHtmlAttribute(html: string, attributeName: string): string {
@@ -84,10 +89,7 @@ function extractProfileViewerFromAnchor(
   const imageMatch = anchorHtml.match(/<img\b[^>]*>/i);
   const svgLabelMatch = anchorHtml.match(/<svg\b[^>]*\baria-label\s*=\s*("([^"]*)"|'([^']*)')/i);
   const displayName = normalizeText(
-    (imageMatch ? getHtmlAttribute(imageMatch[0], 'alt') : '') ||
-      svgLabelMatch?.[2] ||
-      svgLabelMatch?.[3] ||
-      ''
+    (imageMatch ? getHtmlAttribute(imageMatch[0], 'alt') : '') || svgLabelMatch?.[2] || svgLabelMatch?.[3] || ''
   );
 
   if (!displayName) {
@@ -210,9 +212,7 @@ function scoreProfileSlugMatch(value: string, linkedinUsername: string): number 
 }
 
 function getMeaningfulSlugParts(linkedinUsername: string): string[] {
-  return linkedinUsername
-    .split(/[-_]+/)
-    .filter((part) => part.length > 2 && !/^\d+$/.test(part));
+  return linkedinUsername.split(/[-_]+/).filter((part) => part.length > 2 && !/^\d+$/.test(part));
 }
 
 function isOpaqueLinkedInProfileUsername(linkedinUsername: string): boolean {
@@ -222,15 +222,8 @@ function isOpaqueLinkedInProfileUsername(linkedinUsername: string): boolean {
   return /^aco[a-z0-9_-]{8,}$/i.test(linkedinUsername);
 }
 
-function chooseDisplayNameForProfileContext(
-  displayNameCandidate: string,
-  linkedinUsername: string
-): string {
-  const displayName = chooseProfileViewerDisplayName(
-    displayNameCandidate,
-    undefined,
-    linkedinUsername
-  );
+function chooseDisplayNameForProfileContext(displayNameCandidate: string, linkedinUsername: string): string {
+  const displayName = chooseProfileViewerDisplayName(displayNameCandidate, undefined, linkedinUsername);
   const slugParts = getMeaningfulSlugParts(linkedinUsername);
 
   if (slugParts.length >= 2 && scoreProfileSlugMatch(displayName, linkedinUsername) === 0) {
@@ -296,7 +289,9 @@ function isLikelyProfileDisplayName(value: string): boolean {
     /viewed\s+.+?\sago/i.test(value) ||
     /\d+\s+mutual\s+connections?/i.test(value) ||
     /^(?:send a message to|invite|following, click|pending, click|sorry, unable|sort by)\b/i.test(value) ||
-    /^(?:someone|recruiter|consultant|business owner|photographer|specialist|manager|student)\b.+\b(?:at|in|from)\b/i.test(value) ||
+    /^(?:someone|recruiter|consultant|business owner|photographer|specialist|manager|student)\b.+\b(?:at|in|from)\b/i.test(
+      value
+    ) ||
     /[|@]/.test(value)
   ) {
     return false;
@@ -349,7 +344,13 @@ function parseProfileViewersFromRscPayload(payload: string): ProfileViewerInput[
       continue;
     }
 
-    const nextProfileIndex = references[referenceIndex + 1]?.index;
+    const nextProfileIndex = references.reduce<number | undefined>(
+      (closestIndex, candidate) =>
+        candidate.index > profile.index && (closestIndex === undefined || candidate.index < closestIndex)
+          ? candidate.index
+          : closestIndex,
+      undefined
+    );
     const referenceContextStart = profile.index;
     const referenceContextEnd = Math.min(
       normalizedPayload.length,
@@ -366,17 +367,10 @@ function parseProfileViewersFromRscPayload(payload: string): ProfileViewerInput[
       isOpaqueLinkedInProfileUsername(profile.linkedinUsername) ||
       (meaningfulSlugParts.length >= 2 &&
         scoreProfileSlugMatch(parsedDisplayNameCandidate, profile.linkedinUsername) === 0);
-    const displayName = chooseDisplayNameForProfileContext(
-      displayNameCandidate,
-      profile.linkedinUsername
-    );
+    const displayName = chooseDisplayNameForProfileContext(displayNameCandidate, profile.linkedinUsername);
 
-    const viewedAgoText = normalizeText(
-      referenceContext.match(/Viewed\s+[^"'<\\]{1,80}?\sago/i)?.[0] || ''
-    );
-    const mutualConnectionsText = normalizeText(
-      referenceContext.match(/\d+\s+mutual\s+connections?/i)?.[0] || ''
-    );
+    const viewedAgoText = normalizeText(referenceContext.match(/Viewed\s+[^"'<\\]{1,80}?\sago/i)?.[0] || '');
+    const mutualConnectionsText = normalizeText(referenceContext.match(/\d+\s+mutual\s+connections?/i)?.[0] || '');
     const connectionDegree = normalizeText(
       referenceStrings
         .find((value) => /^[•\u2022]?\s*(1st|2nd|3rd|\d+th)$/i.test(value))
@@ -389,15 +383,15 @@ function parseProfileViewersFromRscPayload(payload: string): ProfileViewerInput[
       headline: pickHeadlineFromStrings(referenceStrings, displayName, profile.linkedinUsername),
       // A name synthesized from the slug must never claim an avatar found in
       // a neighbouring RSC component. Enrichment will resolve it by username.
-      profileImageUrl: identityUncertain
-        ? ''
-        : imageUrlsByDisplayName.get(displayName.toLowerCase()) || '',
+      profileImageUrl: identityUncertain ? '' : imageUrlsByDisplayName.get(displayName.toLowerCase()) || '',
       connectionDegree,
       viewedAgoText,
       mutualConnectionsText,
       isPremium: hasExplicitProfileViewerPremiumSignal(referenceContext) || undefined,
       identityUncertain,
-      sourceIndex: profile.index,
+      // Streamed definitions can arrive in a different order than the React
+      // tree renders their cards. `references` already follows render order.
+      sourceIndex: referenceIndex,
     });
   }
 

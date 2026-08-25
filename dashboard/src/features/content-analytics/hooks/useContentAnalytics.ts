@@ -23,7 +23,6 @@ const CACHE_WRITE_DEBOUNCE_MS = 150;
 const SYNC_STATUS_POLL_MS = 5_000;
 const CURRENT_SYNC_STATUS_MESSAGE = 'DASHBOARD_GET_ANALYTICS_SYNC_STATUS';
 const LEGACY_SYNC_STATUS_MESSAGE = 'DASHBOARD_GET_PROFILE_ANALYTICS_SYNC_STATUS';
-const ANALYTICS_OPENED_MESSAGE = 'DASHBOARD_ANALYTICS_OPENED';
 
 interface AnalyticsSyncStatusResponse {
   success: boolean;
@@ -208,14 +207,9 @@ export function useContentAnalytics(userId: string) {
     setSyncStatus(null);
     setSyncStatusError(null);
     setSyncStatusLoaded(false);
-    // One user-initiated fast Dashboard Analytics refresh per page mount. The
-    // extension responds immediately and performs the LinkedIn work in the
-    // background; polling below observes its local status while Firestore
-    // listeners receive the coherently published Profile + Content snapshot.
-    void sendMessageToExtension(
-      { type: ANALYTICS_OPENED_MESSAGE },
-      { timeoutMs: 1_000 }
-    );
+    // Dashboard pages are read-only analytics consumers. Polling reads the
+    // extension-local status for existing notices, but opening this page must
+    // never queue LinkedIn collection work.
     void readSyncStatus();
     const intervalId = window.setInterval(() => void readSyncStatus(), SYNC_STATUS_POLL_MS);
 

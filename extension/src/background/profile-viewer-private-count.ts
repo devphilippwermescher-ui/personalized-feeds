@@ -4,6 +4,8 @@ const PRIVATE_VIEWERS_CONTEXT_AFTER_LENGTH = 4_000;
 const PRIVATE_VIEWERS_NEARBY_CONTEXT_LENGTH = 2_000;
 const PRIVATE_VIEWERS_MARKER_PATTERN =
   /(private|confidential|\u043a\u043e\u043d\u0444\u0456\u0434\u0435\u043d\u0446\u0456\u0439\u043d|\u043a\u043e\u043d\u0444\u0438\u0434\u0435\u043d\u0446\u0438\u0430\u043b)/iu;
+const PRIVATE_VIEWERS_MARKERS_PATTERN =
+  /(private|confidential|\u043a\u043e\u043d\u0444\u0456\u0434\u0435\u043d\u0446\u0456\u0439\u043d|\u043a\u043e\u043d\u0444\u0438\u0434\u0435\u043d\u0446\u0438\u0430\u043b)/giu;
 const LINKEDIN_MEMBER_COUNT_PATTERN =
   /LinkedIn[\s\S]{0,8000}?\(\s*(\d{1,6})\s*\)/giu;
 const PREFIXED_LINKEDIN_MEMBER_COUNT_PATTERN =
@@ -101,6 +103,25 @@ export function extractPrivateProfileViewerCount(payload: string): number | null
     }
 
     searchFrom = helpArticleIndex + PRIVATE_VIEWERS_HELP_ARTICLE.length;
+  }
+
+  // LinkedIn has started rendering the private-summary row without the old
+  // help-article URL in some pagination responses. The private-mode copy is
+  // still an unambiguous marker, so scope the same count parser around it.
+  const privateMarkers = Array.from(normalizedPayload.matchAll(PRIVATE_VIEWERS_MARKERS_PATTERN));
+  for (let index = privateMarkers.length - 1; index >= 0; index -= 1) {
+    const markerIndex = privateMarkers[index].index;
+    if (typeof markerIndex !== 'number') {
+      continue;
+    }
+    const context = normalizedPayload.slice(
+      Math.max(0, markerIndex - PRIVATE_VIEWERS_CONTEXT_LENGTH),
+      Math.min(normalizedPayload.length, markerIndex + PRIVATE_VIEWERS_CONTEXT_AFTER_LENGTH)
+    );
+    const count = extractPrivateCountNearHelpArticle(context);
+    if (count !== null) {
+      return count;
+    }
   }
 
   return null;

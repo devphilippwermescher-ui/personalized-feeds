@@ -2,6 +2,19 @@ import { describe, expect, it } from 'vitest';
 import { parseProfileViewersFromPayload } from '../profile-viewers-payload-parser';
 
 describe('parseProfileViewersFromPayload', () => {
+  it('returns blank-time viewers in React render order instead of definition order', () => {
+    const payload = [
+      'a:["$","div",null,{"children":["https://www.linkedin.com/in/yurii-klymchuk-it/","Yurii Klymchuk"]}]',
+      'b:["$","div",null,{"children":["https://www.linkedin.com/in/oleksandr-alieksandrov/","Oleksandr Aleksandrov"]}]',
+      '0:["$","div",null,{"children":["$Lb","$La"]}]',
+    ].join('\n');
+
+    const viewers = parseProfileViewersFromPayload(payload);
+
+    expect(viewers.map((viewer) => viewer.linkedinUsername)).toEqual(['oleksandr-alieksandrov', 'yurii-klymchuk-it']);
+    expect(viewers.map((viewer) => viewer.sourceIndex)).toEqual([0, 1]);
+  });
+
   it('extracts named viewers from a partial pagination payload', () => {
     const payload = [
       '"url":"https://www.linkedin.com/in/mariia-recruitment/"',
@@ -47,9 +60,9 @@ describe('parseProfileViewersFromPayload', () => {
         }),
       ])
     );
-    expect(
-      viewers.find((viewer) => viewer.linkedinUsername === 'alia-waleczek-806248315')?.displayName
-    ).not.toBe('Dima Lavrov');
+    expect(viewers.find((viewer) => viewer.linkedinUsername === 'alia-waleczek-806248315')?.displayName).not.toBe(
+      'Dima Lavrov'
+    );
   });
 
   it('uses the visible card name when the profile slug does not match it', () => {

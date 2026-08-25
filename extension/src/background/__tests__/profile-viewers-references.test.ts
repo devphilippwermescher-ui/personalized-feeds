@@ -41,10 +41,35 @@ describe('extractProfileViewerReferences', () => {
       '"https://www.linkedin.com/in/real-viewer/"',
     ].join(' ');
 
-    expect(
-      extractProfileViewerReferences(payload).map(
-        (reference) => reference.linkedinUsername
-      )
-    ).toEqual(['real-viewer']);
+    expect(extractProfileViewerReferences(payload).map((reference) => reference.linkedinUsername)).toEqual([
+      'real-viewer',
+    ]);
+  });
+
+  it('uses React render-tree order instead of streamed definition order', () => {
+    const payload = [
+      'a:["$","div",null,{"children":["https://www.linkedin.com/in/yurii-klymchuk-it/"]}]',
+      'b:["$","div",null,{"children":["https://www.linkedin.com/in/oleksandr-alieksandrov/"]}]',
+      '0:["$","div",null,{"children":["$Lb","$La"]}]',
+    ].join('\n');
+
+    expect(extractProfileViewerReferences(payload).map((reference) => reference.linkedinUsername)).toEqual([
+      'oleksandr-alieksandrov',
+      'yurii-klymchuk-it',
+    ]);
+  });
+
+  it('unwraps an SSE message before resolving React render-tree order', () => {
+    const rscPayload = [
+      'a:["$","div",null,{"children":["/in/yurii-klymchuk-it/"]}]',
+      'b:["$","div",null,{"children":["/in/oleksandr-alieksandrov/"]}]',
+      '0:["$","div",null,{"children":["$Lb","$La"]}]',
+    ].join('\n');
+    const payload = `data: ${JSON.stringify({ type: 'message', data: rscPayload })}`;
+
+    expect(extractProfileViewerReferences(payload).map((reference) => reference.linkedinUsername)).toEqual([
+      'oleksandr-alieksandrov',
+      'yurii-klymchuk-it',
+    ]);
   });
 });

@@ -89,7 +89,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         // still respects its cooldown and request-token budget.
         void queueProfileViewersFirstSurfaceSync('sign_in').finally(() => {
           void queueProfileViewersStatusSync({ trigger: 'sign_in', urgent: true });
-          void queueProfileAnalyticsSync('sign_in');
+          // Signing in from the Sidebar is itself the first authenticated
+          // extension entry. The analytics coordinator records that fact but
+          // remains gated until Profile Visitors and its summary are complete.
+          void queueProfileAnalyticsSync('first_extension_entry');
         });
       })
       .catch((error) => {

@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => ({
   setStoredDashboardAnalyticsSyncState: vi.fn(),
   loadDashboardAnalyticsSyncState: vi.fn(),
   getProfileViewersSyncState: vi.fn(),
+  isProfileViewersFirstSurfaceReady: vi.fn(),
   runProfileAnalyticsBootstrapTask: vi.fn(),
   runProfileAnalyticsMetadataTask: vi.fn(),
   runProfileAnalyticsNetworkTask: vi.fn(),
@@ -82,7 +83,9 @@ vi.mock('../../profile-analytics-history-request-result', () => ({
 vi.mock('../../profile-viewers-coordinator-storage', () => ({
   getProfileViewersSyncState: mocks.getProfileViewersSyncState,
 }));
-vi.mock('../../profile-viewers-sync-state', () => ({ isProfileViewersFirstSurfaceReady: () => true }));
+vi.mock('../../profile-viewers-sync-state', () => ({
+  isProfileViewersFirstSurfaceReady: mocks.isProfileViewersFirstSurfaceReady,
+}));
 vi.mock('../connection-history-bootstrap-gate', () => ({
   resolveConnectionHistoryJob: mocks.resolveConnectionHistoryJob,
 }));
@@ -149,6 +152,7 @@ beforeEach(() => {
   stubProfileTask(mocks.runSocialSellingIndexTask, 'profile:ssi');
   mocks.migrateLegacyProfileAnalyticsStorage.mockResolvedValue(undefined);
   mocks.getProfileViewersSyncState.mockResolvedValue({});
+  mocks.isProfileViewersFirstSurfaceReady.mockReturnValue(true);
   mocks.scheduleDashboardAnalyticsAlarm.mockResolvedValue(undefined);
   mocks.setStoredDashboardAnalyticsSyncState.mockResolvedValue(undefined);
   mocks.loadDashboardAnalyticsSyncState.mockImplementation(async (userId: string) => ({
@@ -184,14 +188,33 @@ beforeEach(() => {
 });
 
 describe('Dashboard Analytics sync ordering', () => {
-  it('runs the fast Profile core, then the fast Content core, then publishes once', async () => {
-    await queueDashboardAnalyticsSync('alarm');
+  it('records the first extension entry but defers every analytics source until Profile Visitors is ready', async () => {
+    mocks.isProfileViewersFirstSurfaceReady.mockReturnValue(false);
+    mocks.getProfileViewersSyncState.mockResolvedValue({
+      backfillStatus: 'in_progress',
+      privateSummaryStatus: 'scanning',
+    });
 
-    expect(callOrder.indexOf('profile:network')).toBeLessThan(callOrder.indexOf('content:core'));
-    expect(callOrder.indexOf('content:core')).toBeLessThan(callOrder.indexOf('publish'));
+    const result = await queueDashboardAnalyticsSync('first_extension_entry');
+
+    expect(result.reason).toBe('profile_viewers_pending');
+    expect(mocks.setStoredDashboardAnalyticsSyncState).toHaveBeenCalledWith(
+      expect.objectContaining({ firstExtensionEntryAt: expect.any(Number) })
+    );
+    expect(runContentAnalyticsRangeTask).not.toHaveBeenCalled();
+    expect(publishDashboardAnalyticsRun).not.toHaveBeenCalled();
+    expect(resolveConnectionHistoryJob).not.toHaveBeenCalled();
   });
 
-  it('runs both fast cores even while the connection-history heavy lock is held', async () => {
+  it('runs the fast Profile core without invoking the disabled Content collector', async () => {
+    await queueDashboardAnalyticsSync('alarm');
+
+    expect(callOrder.indexOf('profile:network')).toBeLessThan(callOrder.indexOf('publish'));
+    expect(callOrder).not.toContain('content:core');
+    expect(runContentAnalyticsRangeTask).not.toHaveBeenCalled();
+  });
+
+  it('keeps the Profile core running while Content collection is disabled and history holds the lock', async () => {
     getActiveLinkedInHeavySyncLock.mockResolvedValue({
       version: 1,
       owner: 'connections_history_bootstrap',
@@ -205,41 +228,43 @@ describe('Dashboard Analytics sync ordering', () => {
     const result = await queueDashboardAnalyticsSync('alarm');
 
     expect(callOrder).toContain('profile:network');
-    expect(callOrder).toContain('content:core');
+    expect(callOrder).not.toContain('content:core');
     expect(callOrder).toContain('publish');
-    expect(result.contentSynced).toBe(true);
+    expect(result.contentSynced).toBe(false);
     // Heavy work still yields to the lock.
     expect(callOrder).not.toContain('content:enrichment');
   });
 
-  it('does not block Content Analytics while first-profile data is still unavailable', async () => {
+  it('does not invoke Content collection while first-profile data is unavailable', async () => {
     getProfileAnalyticsSnapshot.mockResolvedValue(null);
 
     await queueDashboardAnalyticsSync('dashboard_open');
 
-    expect(runContentAnalyticsRangeTask).toHaveBeenCalled();
+    expect(runContentAnalyticsRangeTask).not.toHaveBeenCalled();
     expect(publishDashboardAnalyticsRun).toHaveBeenCalled();
   });
 
-  it('publishes Profile and Content under one sync run id', async () => {
+  it('publishes the Profile run while marking Content as skipped', async () => {
     await queueDashboardAnalyticsSync('alarm');
 
     const input = publishDashboardAnalyticsRun.mock.calls[0][0] as DashboardAnalyticsPublishInput;
     expect(input.syncRunId).toMatch(/\w+_\w+/);
     expect(input.profile.status).toBe('success');
-    expect(input.content.status).toBe('success');
+    expect(input.content.status).toBe('skipped');
+    expect(input.ranges).toEqual([]);
+    expect(input.daily).toEqual([]);
     expect(input.publishedAt).toBeGreaterThanOrEqual(input.startedAt);
   });
 
-  it('still publishes the Profile core when the Content core fails', async () => {
+  it('never invokes the disabled Content collector even if its implementation would fail', async () => {
     runContentAnalyticsRangeTask.mockRejectedValue(new Error('LinkedIn request was blocked with 999'));
 
     const result = await queueDashboardAnalyticsSync('alarm');
     const input = publishDashboardAnalyticsRun.mock.calls[0][0] as DashboardAnalyticsPublishInput;
 
     expect(input.profile.status).toBe('success');
-    expect(input.content.status).toBe('blocked');
-    // A failed source contributes no documents, so saved values survive.
+    expect(input.content.status).toBe('skipped');
+    expect(runContentAnalyticsRangeTask).not.toHaveBeenCalled();
     expect(input.ranges).toEqual([]);
     expect(input.currentRange).toBeUndefined();
     expect(result.contentSynced).toBe(false);
@@ -261,6 +286,23 @@ describe('Dashboard Analytics sync ordering', () => {
 
     expect(resolveConnectionHistoryJob).toHaveBeenCalledWith(expect.objectContaining({ trigger: 'alarm' }));
     expect(callOrder.indexOf('publish')).toBeLessThan(callOrder.indexOf('history:batch'));
+  });
+
+  it('allows a later safe alarm to create history when the authenticated entry was recorded before Sidebar completed', async () => {
+    mocks.loadDashboardAnalyticsSyncState.mockResolvedValue({
+      version: 3,
+      userId: 'user-1',
+      firstExtensionEntryAt: 1_800_000_000_000,
+      status: { status: 'idle', metrics: {} },
+      logs: [],
+      content: { version: 1, ranges: {}, postEnrichment: { enrichedAt: {} } },
+    });
+
+    await queueDashboardAnalyticsSync('alarm');
+
+    expect(resolveConnectionHistoryJob).toHaveBeenCalledWith(
+      expect.objectContaining({ trigger: 'first_extension_entry' })
+    );
   });
 
   it('skips the history batch entirely when no job exists', async () => {

@@ -19,7 +19,9 @@ export async function handleExtensionUiEntered(preferredTabId?: number): Promise
   if (!user) return { queued: false };
 
   console.info('[dashboard-analytics] authenticated extension entry observed', { preferredTabId });
-  void queueDashboardAnalyticsSync('first_extension_entry', preferredTabId);
+  void queueProfileViewersFirstSurfaceSync('linkedin_activity').finally(() => {
+    void queueDashboardAnalyticsSync('first_extension_entry', preferredTabId);
+  });
   return { queued: true };
 }
 
@@ -43,13 +45,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message?.type === 'DASHBOARD_ANALYTICS_CONNECTION_HISTORY_REPAIR_NOW') {
-    const trigger = message.mode === 'restart' ? 'history_repair' : 'history_resume';
-    void queueDashboardAnalyticsSync(trigger, sender.tab?.id)
-      .then((result) => sendResponse({ success: result.success, result }))
-      .catch((error) =>
-        sendResponse({ success: false, error: error instanceof Error ? error.message : String(error) })
-      );
-    return true;
+    sendResponse({ success: true, queued: false });
+    return false;
   }
 
   if (message?.type !== 'DASHBOARD_ANALYTICS_LINKEDIN_ACTIVITY') return false;

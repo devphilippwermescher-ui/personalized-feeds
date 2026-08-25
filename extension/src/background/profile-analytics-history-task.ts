@@ -15,7 +15,6 @@ import {
   PROFILE_ANALYTICS_HISTORY_COOLDOWN_BATCHES,
   PROFILE_ANALYTICS_HISTORY_COOLDOWN_MS,
   PROFILE_ANALYTICS_HISTORY_RETRY_DELAY_MS,
-  PROFILE_ANALYTICS_HISTORY_START_DELAY_MS,
   PROFILE_ANALYTICS_RESTRICTION_RETRY_MS,
   PROFILE_ANALYTICS_RETRY_DELAY_MS,
   type ProfileAnalyticsSyncState,
@@ -78,6 +77,11 @@ export async function runConnectionHistoryTask({
   } else if (trigger === 'history_resume' && job.status === 'needs_repair') {
     job = await resumeConnectionHistoryBootstrap({ userId: state.userId, profile: initialSnapshot.profile });
     state.historyNextRetryAt = Date.now();
+  } else if (job.status === 'needs_repair') {
+    // Dashboard is read-only. A persisted repair state is recovered by the
+    // background owner on its next safe wake without requiring a UI command.
+    job = await restartConnectionHistoryBootstrap({ userId: state.userId, profile: initialSnapshot.profile });
+    state.historyNextRetryAt = Date.now();
   }
 
   if (job.status === 'complete') {
@@ -108,14 +112,6 @@ export async function runConnectionHistoryTask({
     return { state, snapshot, historySynced: false };
   }
 
-  const firstSchedule =
-    !job.lastAttemptAt && trigger !== 'alarm' && trigger !== 'history_repair' && trigger !== 'history_resume';
-  if (firstSchedule) {
-    await acquireConnectionHistorySyncLock({ userId: state.userId, accountKey: job.accountKey });
-    state.historyNextRetryAt = Date.now() + PROFILE_ANALYTICS_HISTORY_START_DELAY_MS;
-    await setStoredProfileAnalyticsSyncState(state);
-    return { state, snapshot, historySynced: false };
-  }
   if (
     state.historyNextRetryAt &&
     Date.now() < state.historyNextRetryAt &&

@@ -205,27 +205,22 @@ export async function syncPrivateProfileViewerSummaryViaApi(
       continue;
     }
 
-    await updateProfileViewerSummary(
-      user.uid,
-      {
-        privateViewerCount: 0,
-        recruiterViewerCount,
-        recruiterViewerUrl,
-      },
-      attemptedAt
-    );
     state = {
       ...state,
-      nextCollectionTask: 'visible',
-      privateSummaryStatus: 'ready',
-      privateSummaryNextStart: undefined,
+      nextCollectionTask: 'private_summary',
+      privateSummaryStatus: 'scanning',
+      privateSummaryNextStart: PROFILE_VIEWERS_PAGINATION_PAGE_SIZE,
+      privateSummaryPageSize: PROFILE_VIEWERS_PAGINATION_PAGE_SIZE,
       privateSummaryKnownStart: undefined,
-      privateSummaryScanOrigin: undefined,
+      privateSummaryScanOrigin: 'full',
       privateSummaryLastAttemptAt: attemptedAt,
-      privateSummaryLastSuccessAt: attemptedAt,
       updatedAt: attemptedAt,
     };
     await persistSyncProgress(state);
-    return createPrivateSummaryResult(page, stats, 0);
+    throw new ProfileViewersSyncError(
+      'LinkedIn pagination ended before the private profile viewer summary row was parsed.',
+      'parse_error',
+      page.httpStatus
+    );
   }
 }

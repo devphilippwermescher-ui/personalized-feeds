@@ -18,7 +18,6 @@ import {
   queueProfileViewersStatusSync,
   runProfileViewersStatusSync,
 } from './profile-viewers-status-sync';
-import { syncProfileViewersViaPage } from './profile-viewers-page-sync';
 import { getAuthenticatedFeedsUser } from './feeds-auth';
 import { getFeedsAuthErrorResponse, normalizeFeedsError } from './feeds-errors';
 import { findProfileViewerUpdateTargets } from './profile-viewers-update-targets';
@@ -281,24 +280,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           newCount: 0,
           visibleCount: 0,
           source: 'api',
-        });
-      });
-    return true;
-  }
-
-  if (message.type === 'PROFILE_VIEWERS_SYNC_PAGE_NOW') {
-    syncProfileViewersViaPage()
-      .then((result) => {
-        sendResponse({ success: true, source: 'page', ...result });
-      })
-      .catch((error) => {
-        sendResponse({
-          success: false,
-          error: normalizeFeedsError(error, 'Failed to sync profile visitors via LinkedIn page'),
-          savedCount: 0,
-          newCount: 0,
-          visibleCount: 0,
-          source: 'page',
         });
       });
     return true;

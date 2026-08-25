@@ -268,12 +268,8 @@ export function useProfileAnalytics(userId: string) {
     setSyncStatus(null);
     setSyncStatusError(null);
     setSyncStatusLoaded(false);
-    // Profile and Content are refreshed by the same Dashboard Analytics run,
-    // whichever analytics page the user opens first.
-    void sendMessageToExtension(
-      { type: 'DASHBOARD_PROFILE_ANALYTICS_OPENED' },
-      { timeoutMs: 1_000 }
-    );
+    // Dashboard pages are read-only analytics consumers. Status polling is a
+    // read-only compatibility path and must not start LinkedIn collection.
     void readSyncStatus();
     // Subsequent polls only read extension-local progress/errors.
     const intervalId = window.setInterval(() => void readSyncStatus(), 5_000);

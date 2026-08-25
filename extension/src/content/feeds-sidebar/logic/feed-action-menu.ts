@@ -109,6 +109,14 @@ export function renderFeedActions(feed: FeedInfo): string {
       return '';
     }
 
+    // Manual Profile Visitors refresh is intentionally hidden while the
+    // automatic collector is the production path. Keep the implementation
+    // below intact so it can be re-enabled without restoring deleted code.
+    const profileViewersManualRefreshEnabled = false;
+    if (!profileViewersManualRefreshEnabled) {
+      return '';
+    }
+
     const isRefreshing = feed.isRefreshingProfileViewers === true;
     const isConfirming = feed.isConfirmingProfileViewersRefresh === true;
     if (isConfirming && !isRefreshing) {

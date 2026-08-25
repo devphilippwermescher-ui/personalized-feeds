@@ -77,7 +77,7 @@ describe('profile viewers pagination', () => {
     ).toBe(true);
   });
 
-  it('does not stop merely because one previously known viewer appears before new viewers', () => {
+  it('stops after persisting a page that reaches the first previously known viewer', () => {
     const existingUsernames = new Set(['known-repeat', 'known-1', 'known-2']);
     const collected = [viewer('known-repeat'), viewer('new-a'), viewer('new-b'), viewer('known-1'), viewer('known-2')];
 
@@ -89,7 +89,19 @@ describe('profile viewers pagination', () => {
         ['known-repeat', 'known-1', 'known-2'],
         0
       )
-    ).toBe(false);
+    ).toBe(true);
+  });
+
+  it('stops the visible scan on the first anonymous-only page', () => {
+    expect(
+      shouldStopIncrementalProfileViewerPagination(
+        [viewer('new-a'), viewer('new-b'), viewer('new-c')],
+        [],
+        new Set(['known-1']),
+        ['known-1'],
+        1
+      )
+    ).toBe(true);
   });
 
   it('stops after a no-new page reaches the stable previous snapshot', () => {

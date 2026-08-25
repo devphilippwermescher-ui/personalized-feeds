@@ -82,16 +82,9 @@ function handleDashboardMessage(message: DashboardMessage, sendResponse: (respon
   }
 
   if (message.type === 'DASHBOARD_ANALYTICS_OPENED' || message.type === 'DASHBOARD_PROFILE_ANALYTICS_OPENED') {
-    // This refreshes the unified fast Profile + Content cores. The connections
-    // history bootstrap is still created exclusively by `first_extension_entry`.
-    // Respond before the LinkedIn work finishes so the dashboard bridge cannot
-    // time out while the coordinator publishes the new snapshot.
-    void queueProfileAnalyticsSync('dashboard_open').catch((error) => {
-      console.warn('[dashboard-analytics] dashboard-open sync failed', {
-        error: error instanceof Error ? error.message : String(error),
-      });
-    });
-    sendResponse({ success: true, queued: true });
+    // Compatibility no-op for an older deployed dashboard. Dashboard pages
+    // are Firestore readers and are never allowed to start LinkedIn work.
+    sendResponse({ success: true, queued: false });
     return false;
   }
 
@@ -117,21 +110,10 @@ function handleDashboardMessage(message: DashboardMessage, sendResponse: (respon
     message.type === 'DASHBOARD_RESUME_ANALYTICS_HISTORY' ||
     message.type === 'DASHBOARD_RESUME_PROFILE_ANALYTICS_HISTORY'
   ) {
-    queueProfileAnalyticsSync('history_resume')
-      .then((result) =>
-        sendResponse({
-          success: result.success,
-          result,
-          ...(!result.success ? { error: result.reason || 'Connections history could not be resumed.' } : {}),
-        })
-      )
-      .catch((error) => {
-        sendResponse({
-          success: false,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      });
-    return true;
+    // Compatibility no-op. Recovery belongs to the extension background
+    // scheduler; a Dashboard action must never start LinkedIn work.
+    sendResponse({ success: true, queued: false });
+    return false;
   }
 
   if (message.type === 'DASHBOARD_DEV_RESET_ANALYTICS') {

@@ -12,7 +12,7 @@ export const PROFILE_VIEWERS_BUDGET_CAPACITY = 72;
 export const PROFILE_VIEWERS_BUDGET_REFILL_MS = 20 * 60 * 1000;
 export const PROFILE_VIEWERS_BACKGROUND_RESERVE = 8;
 export const PROFILE_VIEWERS_SCHEDULE_POLICY_VERSION = 3;
-export const PROFILE_VIEWERS_SUMMARY_COLLECTION_VERSION = 2;
+export const PROFILE_VIEWERS_SUMMARY_COLLECTION_VERSION = 4;
 export const PROFILE_VIEWERS_AUTH_RECOVERY_DELAYS_MS = [
   2 * 60 * 1000,
   5 * 60 * 1000,
@@ -99,7 +99,7 @@ export interface ProfileViewersSyncLog {
 export interface ProfileViewersSyncState {
   version: 1;
   schedulePolicyVersion: 2 | 3;
-  summaryCollectionVersion: 2;
+  summaryCollectionVersion: 2 | 3 | 4;
   userId: string;
   lastSuccessAt?: number;
   lastAttemptAt?: number;
@@ -202,13 +202,9 @@ export function scheduleProfileViewersPrivateSummaryCollection(
     privateSummaryStatus: hasKnownPosition ? 'ready' : 'scanning',
     privateSummaryNextStart: hasKnownPosition
       ? undefined
-      : state.privateSummaryNextStart ||
-        continuationCursor?.start ||
-        PROFILE_VIEWERS_PAGINATION_PAGE_SIZE,
+      : state.privateSummaryNextStart || continuationCursor?.start || PROFILE_VIEWERS_PAGINATION_PAGE_SIZE,
     privateSummaryPageSize:
-      state.privateSummaryPageSize ||
-      continuationCursor?.count ||
-      PROFILE_VIEWERS_PAGINATION_PAGE_SIZE,
+      state.privateSummaryPageSize || continuationCursor?.count || PROFILE_VIEWERS_PAGINATION_PAGE_SIZE,
     privateSummaryScanOrigin: hasKnownPosition
       ? undefined
       : hasCheckpoint && state.privateSummaryScanOrigin
@@ -303,27 +299,20 @@ export function getProfileViewersRequestBudget(
   const nextWholeToken = Math.floor(tokensAvailable) + 1;
   return {
     tokensAvailable,
-    nextTokenAt:
-      now +
-      Math.ceil(
-        (nextWholeToken - tokensAvailable) *
-          PROFILE_VIEWERS_BUDGET_REFILL_MS
-      ),
+    nextTokenAt: now + Math.ceil((nextWholeToken - tokensAvailable) * PROFILE_VIEWERS_BUDGET_REFILL_MS),
   };
 }
 
-export function canMakeProfileViewersRequest(
-  state: ProfileViewersSyncState,
-  now: number,
-  reserveTokens = 0
-): boolean {
+export function getIncompleteProfileViewersImportDueAt(state: ProfileViewersSyncState, now: number): number {
+  const budget = getProfileViewersRequestBudget(state, now);
+  return budget.tokensAvailable >= 1 ? now + 1_000 : budget.nextTokenAt || now + 1_000;
+}
+
+export function canMakeProfileViewersRequest(state: ProfileViewersSyncState, now: number, reserveTokens = 0): boolean {
   return getProfileViewersRequestBudget(state, now).tokensAvailable >= reserveTokens + 1;
 }
 
-export function recordProfileViewersRequest(
-  state: ProfileViewersSyncState,
-  now: number
-): ProfileViewersSyncState {
+export function recordProfileViewersRequest(state: ProfileViewersSyncState, now: number): ProfileViewersSyncState {
   const { tokensAvailable } = getProfileViewersRequestBudget(state, now);
 
   return {
@@ -512,22 +501,13 @@ export function getNextProfileViewersAlarmAt(state: ProfileViewersSyncState, now
   }
 
   const budget = getProfileViewersRequestBudget(state, now);
-  const budgetAvailableAt =
-    budget.tokensAvailable < 1 ? budget.nextTokenAt || 0 : 0;
+  const budgetAvailableAt = budget.tokensAvailable < 1 ? budget.nextTokenAt || 0 : 0;
   const retryAt =
     state.attemptsInCycle === 1 && state.retryAt
-      ? Math.max(
-          state.retryAt,
-          state.cooldownUntil || 0,
-          budgetAvailableAt
-        )
+      ? Math.max(state.retryAt, state.cooldownUntil || 0, budgetAvailableAt)
       : undefined;
   const nextDueAt = state.nextDueAt
-    ? Math.max(
-        state.nextDueAt,
-        state.cooldownUntil || 0,
-        budgetAvailableAt
-      )
+    ? Math.max(state.nextDueAt, state.cooldownUntil || 0, budgetAvailableAt)
     : budgetAvailableAt || undefined;
 
   if (retryAt && (!nextDueAt || retryAt < nextDueAt)) {

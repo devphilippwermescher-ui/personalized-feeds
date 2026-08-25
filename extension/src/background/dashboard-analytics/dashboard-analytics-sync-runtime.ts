@@ -1,4 +1,5 @@
 import type { DashboardAnalyticsSourceStatus, DashboardAnalyticsSyncStatus } from 'shared/types';
+import { CONTENT_ANALYTICS_ENABLED } from 'shared/feature-flags';
 import {
   PROFILE_ANALYTICS_ALARM_NAME,
   getNextProfileAnalyticsAlarmAt,
@@ -69,6 +70,10 @@ export function toSourceStatusFromError(error: unknown, nextRetryAt?: number): D
 }
 
 export function getNextDashboardAnalyticsAlarmAt(state: DashboardAnalyticsSyncState, now: number): number {
+  if (!CONTENT_ANALYTICS_ENABLED) {
+    return getNextProfileAnalyticsAlarmAt(state, now);
+  }
+
   const content = getContentAnalyticsState(state);
   const contentAt =
     content.nextRetryAt || content.nextDueAt || (content.lastSuccessAt || now) + CONTENT_ANALYTICS_CORE_INTERVAL_MS;
@@ -86,6 +91,15 @@ export function getNextDashboardAnalyticsAlarmAt(state: DashboardAnalyticsSyncSt
 }
 
 export function logDashboardAnalyticsPlan(state: DashboardAnalyticsSyncState, nextScheduledAt: number): void {
+  if (!CONTENT_ANALYTICS_ENABLED) {
+    console.info('[dashboard-analytics] next checks planned', {
+      contentAnalyticsEnabled: false,
+      nextScheduledAt,
+      nextScheduledAtIso: toIso(nextScheduledAt),
+    });
+    return;
+  }
+
   const content = getContentAnalyticsState(state);
   console.info('[dashboard-analytics] next checks planned', {
     contentNextDueAt: content.nextRetryAt || content.nextDueAt,

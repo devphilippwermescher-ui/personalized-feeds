@@ -14,6 +14,7 @@ import {
 } from './profile-viewers-pagination';
 import { ProfileViewersSyncError } from './profile-viewers-error';
 import type { ProfileViewersSyncErrorCode } from './profile-viewers-sync-state';
+import { orderProfileViewersPage } from './profile-viewers-page-order';
 
 const PROFILE_VIEWERS_RSC_TIMEOUT_MS = 20_000;
 const PROFILE_VIEWERS_RSC_URL =
@@ -81,16 +82,15 @@ export interface ProfileViewersRscPage {
   httpStatus: number;
   responseLength: number;
   nextCursor: ProfileViewersPaginationCursor | null;
+  /** LinkedIn explicitly says this account can browse only three named viewers. */
+  freeViewerLimit?: boolean;
 }
 
-function assignVisibleViewerPositions(viewers: ProfileViewerInput[]): void {
-  [...viewers]
-    .sort(
-      (left, right) => (left.sourceIndex ?? Number.MAX_SAFE_INTEGER) - (right.sourceIndex ?? Number.MAX_SAFE_INTEGER)
-    )
-    .forEach((viewer, listPosition) => {
-      viewer.listPosition = listPosition;
-    });
+export function hasFreeProfileViewerLimit(payload: string): boolean {
+  return (
+    /browse\s+up\s+to\s+3\s+viewers\s+for\s+free/iu.test(payload) ||
+    /unlock\s+the\s+full\s+list\s+with\s+premium/iu.test(payload)
+  );
 }
 
 async function fetchProfileViewersRscPage(
@@ -146,13 +146,12 @@ async function fetchProfileViewersRscPage(
   }
 
   try {
-    const viewers = parseProfileViewersFromPayload(payload);
+    const viewers = orderProfileViewersPage(parseProfileViewersFromPayload(payload));
     const privateViewerCount = extractPrivateProfileViewerCount(payload);
     const recruiterViewerCount = extractRecruiterProfileViewerCount(payload);
     const recruiterViewerUrl = extractRecruiterProfileViewerUrl(payload);
     const paginationNeeded = extractProfileViewersPaginationNeeded(payload);
-    assignVisibleViewerPositions(viewers);
-
+    const freeViewerLimit = hasFreeProfileViewerLimit(payload);
     const parsedNextCursor = extractNextProfileViewersPaginationCursor(payload);
     const probedNextCursor = requestedCursor
       ? paginationNeeded === true
@@ -177,6 +176,7 @@ async function fetchProfileViewersRscPage(
       httpStatus: response.status,
       responseLength: payload.length,
       nextCursor: parsedNextCursor || probedNextCursor,
+      freeViewerLimit,
     };
   } catch (error) {
     throw new ProfileViewersSyncError(

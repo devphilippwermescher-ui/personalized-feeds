@@ -175,21 +175,21 @@ export function hasStableProfileViewerOverlap(
 }
 
 export function shouldStopIncrementalProfileViewerPagination(
-  collectedViewers: ProfileViewerInput[],
+  _collectedViewers: ProfileViewerInput[],
   pageViewers: ProfileViewerInput[],
   existingUsernames: Set<string>,
-  previousSnapshot: string[],
+  _previousSnapshot: string[],
   consecutivePagesWithoutNewProfiles: number
 ): boolean {
-  const pageHasNewProfiles = pageViewers.some(
-    (viewer) => !existingUsernames.has(viewer.linkedinUsername.toLowerCase())
+  // LinkedIn orders named viewers newest-first. Once a persisted identity is
+  // encountered, everything after it belongs to the already imported tail.
+  // Free accounts may expose only anonymous rows after the first named page;
+  // stop that visible scan on the first empty parsed page and jump directly to
+  // the persisted private-summary cursor instead of walking the hidden tail.
+  return (
+    pageViewers.some((viewer) => existingUsernames.has(viewer.linkedinUsername.toLowerCase())) ||
+    (pageViewers.length === 0 && consecutivePagesWithoutNewProfiles >= 1)
   );
-  if (pageHasNewProfiles) {
-    return false;
-  }
-
-  const collectedUsernames = collectedViewers.map((viewer) => viewer.linkedinUsername);
-  return hasStableProfileViewerOverlap(collectedUsernames, previousSnapshot) || consecutivePagesWithoutNewProfiles >= 2;
 }
 
 export function createRecentProfileViewerSnapshot(collectedUsernames: string[], previousSnapshot: string[]): string[] {

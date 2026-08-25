@@ -9,9 +9,8 @@ import type { DashboardAnalyticsSyncTrigger } from './dashboard-analytics-sync-p
 /**
  * The one-time Connections history backfill is expensive, so it is created
  * only when a signed-in person actually opens the extension UI for the first
- * time. Every other wake-up - install, update, Chrome startup, service-worker
- * load, alarms, LinkedIn activity, dashboard visits, manual refresh - may only
- * continue a job that already exists.
+ * time. Background wake-ups may continue a job that already exists, but a
+ * Dashboard page is only a Firestore reader and never enters this flow.
  */
 export const CONNECTION_HISTORY_BOOTSTRAP_TRIGGER: DashboardAnalyticsSyncTrigger = 'first_extension_entry';
 

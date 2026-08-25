@@ -55,4 +55,13 @@ describe('extractPrivateProfileViewerCount', () => {
   it('does not infer private viewers without the stable help article marker', () => {
     expect(extractPrivateProfileViewerCount('LinkedIn members (14)')).toBeNull();
   });
+
+  it('uses explicit private-mode copy when LinkedIn omits the legacy help link', () => {
+    const payload = `
+      "children":["32 LinkedIn members"]
+      "children":["These people viewed your profile in Private mode"]
+    `;
+
+    expect(extractPrivateProfileViewerCount(payload)).toBe(32);
+  });
 });

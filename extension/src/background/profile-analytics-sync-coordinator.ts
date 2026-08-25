@@ -25,7 +25,7 @@ export interface ProfileAnalyticsSyncResult {
   success: boolean;
   currentSynced: boolean;
   historySynced: boolean;
-  reason: 'fresh' | 'no_auth' | 'no_linkedin_tab' | 'synced' | 'failed';
+  reason: 'fresh' | 'no_auth' | 'no_linkedin_tab' | 'profile_viewers_pending' | 'synced' | 'failed';
   error?: string;
 }
 

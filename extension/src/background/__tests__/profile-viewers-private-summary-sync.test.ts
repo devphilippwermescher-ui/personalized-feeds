@@ -227,7 +227,7 @@ describe('private profile viewer summary sync', () => {
     });
   });
 
-  it('writes zero only after a full scan reaches LinkedIn end naturally', async () => {
+  it('fails and preserves the stored count when pagination ends without a private summary row', async () => {
     const state = {
       ...createProfileViewersSyncState(user.uid, 1),
       backfillStatus: 'complete' as const,
@@ -239,14 +239,19 @@ describe('private profile viewer summary sync', () => {
     mocks.fetchProfileViewersPaginationPage.mockResolvedValue(page());
     const persist = vi.fn().mockResolvedValue(undefined);
 
-    const result = await syncPrivateProfileViewerSummaryViaApi(user, state, persist);
+    await expect(syncPrivateProfileViewerSummaryViaApi(user, state, persist)).rejects.toMatchObject({
+      code: 'parse_error',
+    });
 
-    expect(mocks.updateProfileViewerSummary).toHaveBeenCalledWith(
-      user.uid,
-      expect.objectContaining({ privateViewerCount: 0 }),
-      expect.any(Number)
+    expect(mocks.updateProfileViewerSummary).not.toHaveBeenCalled();
+    expect(persist).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        nextCollectionTask: 'private_summary',
+        privateSummaryStatus: 'scanning',
+        privateSummaryNextStart: 10,
+        privateSummaryScanOrigin: 'full',
+      })
     );
-    expect(result.privateViewerCount).toBe(0);
   });
 
   it('keeps the checkpoint without fetching another page when the shared request budget is exhausted', async () => {

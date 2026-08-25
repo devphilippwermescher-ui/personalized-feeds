@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { CONTENT_ANALYTICS_ENABLED } from 'shared/feature-flags';
 import { useAuth } from './hooks/useAuth';
 import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
@@ -64,7 +65,16 @@ function App() {
             <Route path="/" element={<DashboardPage userId={user.uid} />} />
             <Route path="/feed/:feedId" element={<FeedDetailPage userId={user.uid} />} />
             <Route path="/analytics/profile" element={<ProfileAnalyticsPage userId={user.uid} />} />
-            <Route path="/analytics/content" element={<ContentAnalyticsPage userId={user.uid} />} />
+            <Route
+              path="/analytics/content"
+              element={
+                CONTENT_ANALYTICS_ENABLED ? (
+                  <ContentAnalyticsPage userId={user.uid} />
+                ) : (
+                  <BlankDashboardPage title="Content Analytics" />
+                )
+              }
+            />
             <Route path="/analytics/comments" element={<BlankDashboardPage title="Comment Analytics" />} />
             <Route path="/settings/profile" element={<BlankDashboardPage title="Manage account" />} />
             <Route path="/settings/api-extension" element={<BlankDashboardPage title="API & Extension" />} />

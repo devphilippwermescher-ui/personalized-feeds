@@ -207,6 +207,19 @@ export async function syncProfileViewersViaApi(
 
     if (
       paginationMode === 'incremental' &&
+      positionOffset === 0 &&
+      page.freeViewerLimit === true &&
+      typeof syncState.privateSummaryKnownStart === 'number'
+    ) {
+      // Free accounts expose the newest three named viewers first and then a
+      // long anonymous tail. Once the initial import has stored the private
+      // aggregate position, routine runs can jump there directly.
+      paginationComplete = true;
+      break;
+    }
+
+    if (
+      paginationMode === 'incremental' &&
       shouldStopIncrementalProfileViewerPagination(
         collectedViewers,
         pageViewers,

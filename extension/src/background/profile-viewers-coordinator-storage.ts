@@ -8,7 +8,10 @@ import {
   type ProfileViewersSyncState,
   type ProfileViewersSyncTrigger,
 } from './profile-viewers-sync-state';
-import { PROFILE_VIEWERS_RECENT_SNAPSHOT_LIMIT } from './profile-viewers-pagination';
+import {
+  PROFILE_VIEWERS_PAGINATION_PAGE_SIZE,
+  PROFILE_VIEWERS_RECENT_SNAPSHOT_LIMIT,
+} from './profile-viewers-pagination';
 import { getStorageValue, setStorageValue } from './feeds-auth';
 import type { ProfileViewersSyncResult } from './profile-viewers-sync-result';
 
@@ -112,6 +115,10 @@ export async function getProfileViewersSyncState(userId: string): Promise<Profil
 
   const isCurrentSchedulePolicy =
     state.schedulePolicyVersion === PROFILE_VIEWERS_SCHEDULE_POLICY_VERSION;
+  const isCurrentSummaryCollection =
+    state.summaryCollectionVersion === PROFILE_VIEWERS_SUMMARY_COLLECTION_VERSION;
+  const needsPrivateSummaryRescan =
+    !isCurrentSummaryCollection && state.backfillStatus === 'complete';
   const migrationDueAt = getProfileViewersSummaryMigrationDueAt(state, now);
 
   return {
@@ -174,13 +181,23 @@ export async function getProfileViewersSyncState(userId: string): Promise<Profil
           .filter((username): username is string => typeof username === 'string')
           .slice(0, PROFILE_VIEWERS_RECENT_SNAPSHOT_LIMIT)
       : [],
-    nextCollectionTask: state.nextCollectionTask === 'private_summary' ? 'private_summary' : 'visible',
+    // Run the newest visible page first so the same migration repairs both
+    // rendered order and the private aggregate in one coordinator cycle.
+    nextCollectionTask: needsPrivateSummaryRescan
+      ? 'visible'
+      : state.nextCollectionTask === 'private_summary'
+        ? 'private_summary'
+        : 'visible',
     privateSummaryStatus:
-      state.privateSummaryStatus === 'scanning' || state.privateSummaryStatus === 'ready'
+      needsPrivateSummaryRescan
+        ? 'scanning'
+        : state.privateSummaryStatus === 'scanning' || state.privateSummaryStatus === 'ready'
         ? state.privateSummaryStatus
         : 'not_started',
     privateSummaryNextStart:
-      typeof state.privateSummaryNextStart === 'number' && state.privateSummaryNextStart >= 0
+      needsPrivateSummaryRescan
+        ? PROFILE_VIEWERS_PAGINATION_PAGE_SIZE
+        : typeof state.privateSummaryNextStart === 'number' && state.privateSummaryNextStart >= 0
         ? state.privateSummaryNextStart
         : undefined,
     privateSummaryPageSize:
@@ -188,11 +205,14 @@ export async function getProfileViewersSyncState(userId: string): Promise<Profil
         ? state.privateSummaryPageSize
         : undefined,
     privateSummaryKnownStart:
+      !needsPrivateSummaryRescan &&
       typeof state.privateSummaryKnownStart === 'number' && state.privateSummaryKnownStart >= 0
         ? state.privateSummaryKnownStart
         : undefined,
     privateSummaryScanOrigin:
-      state.privateSummaryScanOrigin === 'known_position'
+      needsPrivateSummaryRescan
+        ? 'full'
+        : state.privateSummaryScanOrigin === 'known_position'
         ? 'known_position'
         : state.privateSummaryScanOrigin === 'full'
           ? 'full'

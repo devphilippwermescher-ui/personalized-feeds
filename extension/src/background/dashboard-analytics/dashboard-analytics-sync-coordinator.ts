@@ -12,9 +12,12 @@ import type {
   ProfileAnalyticsSnapshot,
   ProfileAnalyticsSyncMetric,
 } from 'shared/types';
+import { CONTENT_ANALYTICS_ENABLED } from 'shared/feature-flags';
 import { getAuthenticatedFeedsUser } from '../feeds-auth';
 import { getActiveLinkedInHeavySyncLock } from '../linkedin-heavy-sync-lock';
 import { selectLinkedInExecutionTabs } from '../linkedin-tab-selection';
+import { getProfileViewersSyncState } from '../profile-viewers-coordinator-storage';
+import { isProfileViewersFirstSurfaceReady } from '../profile-viewers-sync-state';
 import { runDueAcceptanceTask } from '../profile-analytics-acceptance-task';
 import { runProfileAnalyticsBootstrapTask } from '../profile-analytics-bootstrap-task';
 import { runSearchAppearancesTask, runSocialSellingIndexTask } from '../profile-analytics-daily-sync-tasks';
@@ -74,7 +77,7 @@ export interface DashboardAnalyticsSyncResult {
   currentSynced: boolean;
   contentSynced: boolean;
   historySynced: boolean;
-  reason: 'fresh' | 'no_auth' | 'no_linkedin_tab' | 'synced' | 'failed';
+  reason: 'fresh' | 'no_auth' | 'no_linkedin_tab' | 'profile_viewers_pending' | 'synced' | 'failed';
   error?: string;
 }
 
@@ -242,6 +245,17 @@ async function runContentCore({
   startedAt: number;
 }): Promise<ContentCoreOutcome> {
   const content = getContentAnalyticsState(state);
+
+  if (!CONTENT_ANALYTICS_ENABLED) {
+    return {
+      status: { status: 'skipped' },
+      ranges: [],
+      daily: [],
+      posts: [],
+      contentState: content,
+    };
+  }
+
   const profileUrn = snapshot?.profile?.profileUrn;
 
   if (!isContentAnalyticsCoreDue({ now: startedAt, state, trigger })) {
@@ -400,15 +414,41 @@ async function runDashboardAnalyticsSync(
     };
   }
 
+  // An authenticated extension entry is remembered even when Sidebar data is
+  // not ready yet. A later Profile Visitors alarm can then finish the sidebar
+  // bootstrap and let this coordinator create the one-time Connections job.
+  let state = recoverInterruptedProfileAnalyticsState(
+    await loadDashboardAnalyticsSyncState(user.uid)
+  ) as DashboardAnalyticsSyncState;
+  if (trigger === 'first_extension_entry' && !state.firstExtensionEntryAt) {
+    state.firstExtensionEntryAt = Date.now();
+    await setStoredDashboardAnalyticsSyncState(state);
+  }
+
+  const profileViewersState = await getProfileViewersSyncState(user.uid);
+  if (!isProfileViewersFirstSurfaceReady(profileViewersState)) {
+    console.info('[dashboard-analytics] deferred until Profile Visitors bootstrap completes', {
+      trigger,
+      backfillStatus: profileViewersState.backfillStatus,
+      privateSummaryStatus: profileViewersState.privateSummaryStatus,
+    });
+    return {
+      ran: false,
+      success: true,
+      syncRunId,
+      currentSynced: false,
+      contentSynced: false,
+      historySynced: false,
+      reason: 'profile_viewers_pending',
+    };
+  }
+
   const linkedInTabs = await chrome.tabs.query({ url: 'https://www.linkedin.com/*' });
   const availableLinkedInTabs = selectLinkedInExecutionTabs(linkedInTabs, preferredTabId);
   const linkedInTab = availableLinkedInTabs[0];
   const linkedInTabIds = availableLinkedInTabs.map((tab) => tab.id);
   const startedAt = Date.now();
 
-  let state = recoverInterruptedProfileAnalyticsState(
-    await loadDashboardAnalyticsSyncState(user.uid)
-  ) as DashboardAnalyticsSyncState;
   await migrateLegacyProfileAnalyticsStorage(user.uid);
   let snapshot = await getProfileAnalyticsSnapshot(user.uid);
 
@@ -418,10 +458,6 @@ async function runDashboardAnalyticsSync(
       ? Math.min(state.acceptanceNextDueAt, firstCheckAt)
       : firstCheckAt;
   }
-  if (trigger === 'first_extension_entry' && !state.firstExtensionEntryAt) {
-    state.firstExtensionEntryAt = startedAt;
-  }
-
   state = {
     ...state,
     lastSyncRunId: syncRunId,
@@ -495,6 +531,7 @@ async function runDashboardAnalyticsSync(
   // 4. Optional bounded post enrichment - heavy, so it yields to the lock.
   let postEnrichmentStatus: DashboardAnalyticsSourceStatus | undefined;
   if (
+    CONTENT_ANALYTICS_ENABLED &&
     !heavySyncLock &&
     contentCore.posts.length > 0 &&
     isContentAnalyticsPostEnrichmentDue({ now: publishedAt, state })
@@ -541,7 +578,10 @@ async function runDashboardAnalyticsSync(
   const historyAccess = await resolveConnectionHistoryJob({
     userId: user.uid,
     profile: snapshot?.profile,
-    trigger,
+    // Creation is still authorized only by a real extension entry. If that
+    // entry happened while Profile Visitors were incomplete, preserve the
+    // authorization and create the job on the first safe later wake.
+    trigger: state.firstExtensionEntryAt ? 'first_extension_entry' : trigger,
     now: startedAt,
   });
   let historySynced = false;

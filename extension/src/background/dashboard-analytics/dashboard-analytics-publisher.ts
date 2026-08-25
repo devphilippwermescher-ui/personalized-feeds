@@ -1,5 +1,6 @@
 import { writeBatch } from 'firebase/firestore';
 import { getFirebaseDb } from 'shared/firebase-config';
+import { CONTENT_ANALYTICS_ENABLED } from 'shared/feature-flags';
 import { profileAnalyticsDoc } from 'shared/firestore/refs';
 import {
   publishContentAnalytics,
@@ -41,15 +42,17 @@ export async function publishDashboardAnalyticsRun(input: DashboardAnalyticsPubl
     { merge: true }
   );
 
-  await publishContentAnalytics(
-    input.userId,
-    {
-      snapshot: buildContentAnalyticsSnapshot(input),
-      ranges: input.ranges,
-      daily: input.daily,
-    },
-    batch
-  );
+  if (CONTENT_ANALYTICS_ENABLED) {
+    await publishContentAnalytics(
+      input.userId,
+      {
+        snapshot: buildContentAnalyticsSnapshot(input),
+        ranges: input.ranges,
+        daily: input.daily,
+      },
+      batch
+    );
+  }
   stageDashboardAnalyticsSyncManifest(input.userId, manifest, batch);
 
   try {
@@ -71,7 +74,7 @@ export async function publishContentAnalyticsPosts(
   userId: string,
   posts: ContentAnalyticsPost[]
 ): Promise<void> {
-  if (posts.length === 0) return;
+  if (!CONTENT_ANALYTICS_ENABLED || posts.length === 0) return;
 
   try {
     await writeContentAnalyticsPosts(userId, posts);
