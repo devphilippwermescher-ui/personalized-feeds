@@ -100,7 +100,7 @@ export function setupProfileContentDomBindings(deps: DomBindingDeps): void {
       const result = (await deps.sendMessageToBackground({
         type: 'FEEDS_CREATE',
         name,
-        description: descriptionInput.value.trim(),
+        description: descriptionInput?.value.trim() || '',
         color: getSelectedCreateFeedColor(),
       })) as { success: boolean; feed?: FeedInfo; error?: string } | null;
 

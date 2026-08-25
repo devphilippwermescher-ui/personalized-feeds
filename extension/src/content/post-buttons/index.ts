@@ -227,11 +227,17 @@ function bindCreateFeedModal(overlay: HTMLElement): void {
     createFeedSubmitInFlight = true;
     submitButton.disabled = true;
     nameInput.disabled = true;
-    descriptionInput.disabled = true;
+    if (descriptionInput) {
+      descriptionInput.disabled = true;
+    }
     submitButton.textContent = CONTENT_COPY.profile.creatingFeedSubmit;
     let createdFeedName = '';
     try {
-      const feed = await createFeed(feedName, getSelectedCreateFeedColor(), descriptionInput.value.trim());
+      const feed = await createFeed(
+        feedName,
+        getSelectedCreateFeedColor(),
+        descriptionInput?.value.trim() || ''
+      );
       createdFeedName = feed.name;
       submitButton.textContent = CONTENT_COPY.profile.addToFeedSubmitting;
       const added = await addProfileToFeed(feed.id, feed.name, activeProfile);
@@ -247,7 +253,9 @@ function bindCreateFeedModal(overlay: HTMLElement): void {
       showToast(createdFeedName ? feedCreatedButProfileAddFailedMessage(createdFeedName) : message, 'error');
       submitButton.disabled = false;
       nameInput.disabled = false;
-      descriptionInput.disabled = false;
+      if (descriptionInput) {
+        descriptionInput.disabled = false;
+      }
       submitButton.textContent = CONTENT_COPY.profile.createFeedSubmit;
     } finally {
       createFeedSubmitInFlight = false;
