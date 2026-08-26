@@ -3,6 +3,7 @@ import {
   getProfileViewerSummary,
   upsertProfileAnalyticsSnapshot,
 } from 'shared/firestore-service';
+import { DASHBOARD_ANALYTICS_SYNC_ENABLED } from 'shared/feature-flags';
 
 export async function recordProfileViewsAnalytics({
   userId,
@@ -17,6 +18,8 @@ export async function recordProfileViewsAnalytics({
   recruiterCount?: number;
   updatedAt: number;
 }): Promise<void> {
+  if (!DASHBOARD_ANALYTICS_SYNC_ENABLED) return;
+
   const current = await getProfileAnalyticsSnapshot(userId);
   const resolvedVisibleCount = visibleCount ?? current?.profileViews?.visibleCount;
   if (typeof resolvedVisibleCount !== 'number') {

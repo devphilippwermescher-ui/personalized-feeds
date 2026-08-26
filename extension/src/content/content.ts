@@ -12,6 +12,7 @@ import '../runtime/set-public-path';
  */
 
 import { loadFeatureSettings, onFeatureSettingsChange } from './feature-settings';
+import { DASHBOARD_ANALYTICS_SYNC_ENABLED } from 'shared/feature-flags';
 import { initNativeInviteTracking } from './native-invite-tracking';
 import { initLinkedInAnalyticsPassiveCapture } from './linkedin-analytics-passive-capture';
 import { destroyPostButtons, initPostButtons } from './post-buttons';
@@ -51,8 +52,10 @@ function applyFeatureSettings(nextSettings: UserFeatureSettings): void {
 
 void loadFeatureSettings().then(applyFeatureSettings);
 onFeatureSettingsChange(applyFeatureSettings);
-initNativeInviteTracking();
-initLinkedInAnalyticsPassiveCapture();
+if (DASHBOARD_ANALYTICS_SYNC_ENABLED) {
+  initNativeInviteTracking();
+  initLinkedInAnalyticsPassiveCapture();
+}
 
 // ── Bootstrap ────────────────────────────────────────────────────────
 

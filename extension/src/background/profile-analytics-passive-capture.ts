@@ -1,4 +1,5 @@
 import { getProfileAnalyticsSnapshot, upsertProfileAnalyticsSnapshot } from 'shared/firestore-service';
+import { DASHBOARD_ANALYTICS_SYNC_ENABLED } from 'shared/feature-flags';
 import type { ProfileAnalyticsProfileSnapshot } from 'shared/types';
 import { getAuthenticatedFeedsUser } from './feeds-auth';
 
@@ -148,6 +149,10 @@ async function persistPassiveCapture(capture: PassiveAnalyticsCapture): Promise<
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type !== 'PROFILE_ANALYTICS_PASSIVE_CAPTURE') return false;
+  if (!DASHBOARD_ANALYTICS_SYNC_ENABLED) {
+    sendResponse({ success: true, written: false, disabled: true });
+    return false;
+  }
   if (!sender.tab?.url?.startsWith('https://www.linkedin.com/')) {
     sendResponse({ success: false });
     return false;

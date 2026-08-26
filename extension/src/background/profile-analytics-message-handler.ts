@@ -1,3 +1,4 @@
+import { DASHBOARD_ANALYTICS_SYNC_ENABLED } from 'shared/feature-flags';
 import {
   queueProfileAnalyticsForLinkedInActivity,
   queueProfileAnalyticsSync,
@@ -5,6 +6,15 @@ import {
 import { queueProfileViewersFirstSurfaceSync } from './profile-viewers-coordinator';
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (
+    !DASHBOARD_ANALYTICS_SYNC_ENABLED &&
+    typeof message?.type === 'string' &&
+    message.type.startsWith('PROFILE_ANALYTICS_')
+  ) {
+    sendResponse({ success: true, queued: false, disabled: true });
+    return false;
+  }
+
   if (message.type === 'PROFILE_ANALYTICS_CONNECTION_HISTORY_REPAIR_NOW') {
     const trigger = message.mode === 'restart' ? 'history_repair' : 'history_resume';
     void queueProfileAnalyticsSync(trigger, sender.tab?.id)

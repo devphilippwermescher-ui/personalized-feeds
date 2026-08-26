@@ -1,4 +1,5 @@
 import { getAuthenticatedFeedsUser } from '../feeds-auth';
+import { DASHBOARD_ANALYTICS_SYNC_ENABLED } from 'shared/feature-flags';
 import { queueProfileViewersFirstSurfaceSync } from '../profile-viewers-coordinator';
 import {
   queueDashboardAnalyticsForLinkedInActivity,
@@ -18,9 +19,13 @@ export async function handleExtensionUiEntered(preferredTabId?: number): Promise
   const user = await getAuthenticatedFeedsUser();
   if (!user) return { queued: false };
 
-  console.info('[dashboard-analytics] authenticated extension entry observed', { preferredTabId });
+  if (DASHBOARD_ANALYTICS_SYNC_ENABLED) {
+    console.info('[dashboard-analytics] authenticated extension entry observed', { preferredTabId });
+  }
   void queueProfileViewersFirstSurfaceSync('linkedin_activity').finally(() => {
-    void queueDashboardAnalyticsSync('first_extension_entry', preferredTabId);
+    if (DASHBOARD_ANALYTICS_SYNC_ENABLED) {
+      void queueDashboardAnalyticsSync('first_extension_entry', preferredTabId);
+    }
   });
   return { queued: true };
 }
@@ -52,11 +57,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type !== 'DASHBOARD_ANALYTICS_LINKEDIN_ACTIVITY') return false;
 
   void queueProfileViewersFirstSurfaceSync('linkedin_activity').finally(() => {
-    void queueDashboardAnalyticsForLinkedInActivity(sender.tab?.id).catch((error) => {
-      console.warn('[dashboard-analytics] LinkedIn activity sync failed', {
-        error: error instanceof Error ? error.message : String(error),
+    if (DASHBOARD_ANALYTICS_SYNC_ENABLED) {
+      void queueDashboardAnalyticsForLinkedInActivity(sender.tab?.id).catch((error) => {
+        console.warn('[dashboard-analytics] LinkedIn activity sync failed', {
+          error: error instanceof Error ? error.message : String(error),
+        });
       });
-    });
+    }
   });
   sendResponse({ success: true, queued: true });
   return false;

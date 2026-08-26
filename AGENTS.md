@@ -79,6 +79,135 @@ dashboard/src/
 - A function injected with `chrome.scripting.executeScript` must live in a clearly named module, remain self-contained, and document that imported runtime values are unavailable after serialization.
 - Keep content/background message contracts explicit and typed. Avoid hidden DOM or storage side effects inside parsers and utilities.
 
+### Required feature-first layout
+
+New non-trivial code must be organized by feature ownership. Do not add more domain-prefixed production files to an already flat directory.
+
+Use this structure for extension background work:
+
+```text
+extension/src/background/
+  background.ts                    service-worker entrypoint and registration only
+
+  runtime/                         Chrome lifecycle wiring
+    register-alarms.ts
+    register-message-handlers.ts
+    register-tab-listeners.ts
+
+  features/
+    <feature>/
+      api/                          external request orchestration
+      parsers/                      pure payload parsing and model mapping
+      services/                     domain operations and external I/O
+      sync/                         coordinator, policy, runtime, and state
+      storage/                      feature-owned persistence adapters
+      messaging/                    typed Chrome message contracts and handlers
+      testing/                      reusable test factories and fixtures
+      __tests__/                    behavior-focused tests
+      types.ts                      feature-local shared types
+      constants.ts                 feature-local constants
+      public.ts                     optional narrow cross-feature API
+
+  platform/
+    chrome/                         generic Chrome API adapters
+    linkedin/                       generic LinkedIn transport and execution helpers
+
+  shared/                           utilities reused by multiple background features
+```
+
+A feature should include only the folders it actually needs. Do not create empty folders or speculative abstraction layers.
+
+Use this structure for content-script features:
+
+```text
+extension/src/content/<feature>/
+  index.ts                          content-script bootstrap only
+  components/                      feature UI
+  controllers/                     DOM event and UI orchestration
+  services/                        external I/O and background messaging
+  parsers/                         pure DOM or response parsing
+  logic/                           feature-specific pure behavior
+  styles/                          feature-owned styles
+  testing/                         reusable test factories and fixtures
+  __tests__/                       behavior-focused tests
+  types.ts
+  constants.ts
+```
+
+### Entrypoints and registration
+
+- `background.ts`, content-script entrypoints, pages, and application entrypoints only register and compose features.
+- Entrypoints must not contain endpoint parsing, Firestore operations, substantial state transitions, or reusable domain behavior.
+- Chrome listeners and alarms must delegate to named feature handlers.
+- Registration must be explicit. Importing a feature module must not unexpectedly register listeners, patch browser APIs, start synchronization, or write storage.
+- Prefer functions such as `registerFeatureMessages()` or `registerFeatureRuntime()` over import-time side effects.
+
+### Feature boundaries
+
+- A feature owns its API calls, parsing, state, storage rules, synchronization, tests, and feature-specific UI.
+- One feature must not import another feature's internal parser, storage module, coordinator, or private types.
+- When a cross-feature dependency is necessary, expose a small typed contract from `public.ts`. Do not re-export every internal module.
+- Imports within one feature should remain direct. Do not create broad barrel files that hide dependencies or introduce circular imports.
+- Cross-feature orchestration belongs at the runtime/application boundary, not inside either feature.
+- Avoid generic event buses for simple sequencing. Prefer explicit calls between narrow typed public APIs.
+- Platform adapters must not contain product-specific decisions.
+- Pure parsers and utilities must not import Chrome APIs, Firebase, React, DOM mutation code, or feature coordinators.
+
+### Ownership rules
+
+Place code according to its narrowest real owner:
+
+1. One feature consumer: keep it inside that feature.
+2. Multiple features in one application: move it to that application's `shared/`.
+3. Both extension and dashboard consumers: move it to root `shared/` only when it is platform-neutral.
+4. Generic Chrome or LinkedIn transport behavior: place it under `platform/`.
+5. Endpoint-specific LinkedIn behavior: keep it beside the feature using that endpoint.
+
+Do not promote code because it might be reusable later. Promote it only after a second real consumer appears or when it is intrinsically generic.
+
+### File naming and responsibility
+
+Use capability-based names:
+
+- `profile-viewer-parser.ts`
+- `relationship-status-service.ts`
+- `sync-policy.ts`
+- `sync-state.ts`
+- `message-handler.ts`
+- `firestore-repository.ts`
+
+Avoid catch-all names:
+
+- `helpers.ts`
+- `common.ts`
+- `manager.ts`
+- large generic `utils.ts`
+- files containing unrelated feature prefixes
+
+A file should normally belong to one category: entrypoint, component, controller, service, API adapter, parser, storage adapter, policy, state, or types. If a file contains several of these categories, split it.
+
+### Tests and test support
+
+- Keep tests beside the feature they protect.
+- Do not add new domain tests to a global or root `__tests__/` directory.
+- Name tests after behavior rather than implementation details.
+- Shared test factories and fixtures belong in the feature's `testing/` directory.
+- Production modules must never import from `testing/` or `__tests__/`.
+- Split large test files by scenario or behavior when they become difficult to navigate.
+- The number of tests is not a reason to merge or delete them.
+
+### Incremental migration
+
+Existing flat modules may remain until they are deliberately migrated.
+
+- Do not perform a repository-wide move as part of an unrelated feature change.
+- Do not add new files that continue an existing flat prefix pattern.
+- When materially changing a flat feature, prefer moving that feature into its owned directory first or in a separate structural commit.
+- Keep move-only refactors separate from behavior changes.
+- Preserve public exports during migration with temporary compatibility re-exports when necessary.
+- File moves must not rename storage keys, alarm names, message types, Firestore paths, persisted fields, or external request contracts.
+- Remove compatibility re-exports only after all consumers have migrated.
+
 ### File responsibility and size
 
 - One file should have one reason to change. Do not mix route composition, React components, hooks, network calls, payload parsing, and generic utilities in one file.

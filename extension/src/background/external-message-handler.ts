@@ -1,5 +1,6 @@
 import { getCurrentUser } from '../services/auth';
 import { updateUserFeatureSettings } from 'shared/firestore-service';
+import { DASHBOARD_ENABLED } from 'shared/feature-flags';
 import type { UserFeatureSettings } from 'shared/types';
 import { getProfileAnalyticsSyncStatus, queueProfileAnalyticsSync } from './profile-analytics-sync-coordinator';
 import {
@@ -28,6 +29,15 @@ function isDashboardOrigin(urlValue: string | undefined): boolean {
 }
 
 function handleDashboardMessage(message: DashboardMessage, sendResponse: (response: unknown) => void): boolean {
+  if (!DASHBOARD_ENABLED) {
+    sendResponse({
+      success: false,
+      disabled: true,
+      error: 'The myFeedPilot dashboard is temporarily unavailable.',
+    });
+    return false;
+  }
+
   if (message.type === 'DASHBOARD_GET_EXTENSION_AUTH_STATE') {
     getAuthenticatedFeedsUser()
       .then((user) => {

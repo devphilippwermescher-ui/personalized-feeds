@@ -1,5 +1,6 @@
 import { normalizeFeedsError } from './feeds-errors';
 import { trackConnectionInviteSent } from 'shared/firestore-service';
+import { DASHBOARD_ANALYTICS_SYNC_ENABLED } from 'shared/feature-flags';
 import { getAuthenticatedFeedsUser } from './feeds-auth';
 import { resolveLinkedInProfileIdentity } from './linkedin-profile-identity-resolver';
 import { rememberNativeInviteContext } from './native-invite-network-observer';
@@ -95,6 +96,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.type === 'LINKEDIN_CONNECTION_INVITE_TRACK_SENT') {
+    if (!DASHBOARD_ANALYTICS_SYNC_ENABLED) {
+      sendResponse({ success: true, tracked: false, disabled: true });
+      return false;
+    }
+
     getAuthenticatedFeedsUser()
       .then(async (user) => {
         if (!user) {

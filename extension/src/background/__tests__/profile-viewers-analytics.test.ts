@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+vi.mock('shared/feature-flags', () => ({
+  DASHBOARD_ANALYTICS_SYNC_ENABLED: true,
+}));
+
 const mocks = vi.hoisted(() => ({
   getProfileAnalyticsSnapshot: vi.fn(),
   getProfileViewerSummary: vi.fn(),

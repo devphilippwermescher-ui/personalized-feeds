@@ -53,6 +53,11 @@ vi.mock('shared/firestore-service', () => ({
   getProfileAnalyticsSnapshot: mocks.getProfileAnalyticsSnapshot,
   migrateLegacyProfileAnalyticsStorage: mocks.migrateLegacyProfileAnalyticsStorage,
 }));
+vi.mock('shared/feature-flags', () => ({
+  DASHBOARD_ENABLED: true,
+  DASHBOARD_ANALYTICS_SYNC_ENABLED: true,
+  CONTENT_ANALYTICS_ENABLED: false,
+}));
 vi.mock('../../feeds-auth', () => ({ getAuthenticatedFeedsUser: mocks.getAuthenticatedFeedsUser }));
 vi.mock('../../linkedin-heavy-sync-lock', () => ({
   getActiveLinkedInHeavySyncLock: mocks.getActiveLinkedInHeavySyncLock,
@@ -275,12 +280,10 @@ describe('Dashboard Analytics sync ordering', () => {
       job: { id: 'job-1', accountKey: 'urn:li:fsd_profile:ACoAA-example', status: 'scheduled' },
       created: false,
     });
-    runConnectionHistoryTask.mockImplementation(
-      async ({ state, snapshot }: { state: unknown; snapshot: unknown }) => {
-        callOrder.push('history:batch');
-        return { state, snapshot, historySynced: false };
-      }
-    );
+    runConnectionHistoryTask.mockImplementation(async ({ state, snapshot }: { state: unknown; snapshot: unknown }) => {
+      callOrder.push('history:batch');
+      return { state, snapshot, historySynced: false };
+    });
 
     await queueDashboardAnalyticsSync('alarm');
 

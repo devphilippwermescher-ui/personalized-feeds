@@ -12,7 +12,7 @@ import type {
   ProfileAnalyticsSnapshot,
   ProfileAnalyticsSyncMetric,
 } from 'shared/types';
-import { CONTENT_ANALYTICS_ENABLED } from 'shared/feature-flags';
+import { CONTENT_ANALYTICS_ENABLED, DASHBOARD_ANALYTICS_SYNC_ENABLED } from 'shared/feature-flags';
 import { getAuthenticatedFeedsUser } from '../feeds-auth';
 import { getActiveLinkedInHeavySyncLock } from '../linkedin-heavy-sync-lock';
 import { selectLinkedInExecutionTabs } from '../linkedin-tab-selection';
@@ -36,10 +36,7 @@ import {
 import { resolveConnectionHistoryJob } from './connection-history-bootstrap-gate';
 import { runContentAnalyticsPostEnrichmentTask } from './content-analytics-post-enrichment-task';
 import { runContentAnalyticsRangeTask } from './content-analytics-sync-task';
-import {
-  classifyDashboardAnalyticsFailure,
-  redactDiagnosticText,
-} from './dashboard-analytics-errors';
+import { classifyDashboardAnalyticsFailure, redactDiagnosticText } from './dashboard-analytics-errors';
 import { publishContentAnalyticsPosts, publishDashboardAnalyticsRun } from './dashboard-analytics-publisher';
 import {
   CONTENT_ANALYTICS_DEFAULT_RANGE,
@@ -307,9 +304,7 @@ async function runContentCore({
   } catch (error) {
     const failure = classifyDashboardAnalyticsFailure(error);
     const retryDelay =
-      failure.retryKind === 'restriction'
-        ? CONTENT_ANALYTICS_RESTRICTION_RETRY_MS
-        : CONTENT_ANALYTICS_RETRY_DELAY_MS;
+      failure.retryKind === 'restriction' ? CONTENT_ANALYTICS_RESTRICTION_RETRY_MS : CONTENT_ANALYTICS_RETRY_DELAY_MS;
     console.warn('[dashboard-analytics] content core failed', {
       trigger,
       errorCode: failure.errorCode,
@@ -562,11 +557,7 @@ async function runDashboardAnalyticsSync(
     }
     postEnrichmentStatus = {
       status:
-        enrichment.succeeded === enrichment.attempted
-          ? 'success'
-          : enrichment.succeeded > 0
-            ? 'partial'
-            : 'failed',
+        enrichment.succeeded === enrichment.attempted ? 'success' : enrichment.succeeded > 0 ? 'partial' : 'failed',
       capturedAt: publishedAt,
       lastSuccessAt: enrichment.succeeded > 0 ? publishedAt : undefined,
       errorCode: enrichment.lastErrorCode,
@@ -693,6 +684,18 @@ export function queueDashboardAnalyticsSync(
   trigger: DashboardAnalyticsSyncTrigger,
   preferredTabId?: number
 ): Promise<DashboardAnalyticsSyncResult> {
+  if (!DASHBOARD_ANALYTICS_SYNC_ENABLED) {
+    return Promise.resolve({
+      ran: false,
+      success: true,
+      syncRunId: 'dashboard-disabled',
+      currentSynced: false,
+      contentSynced: false,
+      historySynced: false,
+      reason: 'fresh',
+    });
+  }
+
   const request: DashboardAnalyticsSyncRequest = { trigger, preferredTabId };
   if (activeSync && activeSyncRequest) {
     pendingSyncRequest = selectPendingDashboardAnalyticsRequest(activeSyncRequest, pendingSyncRequest, request);

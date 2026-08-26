@@ -29,10 +29,9 @@ export const CONTENT_COPY = {
     signInTitle: 'Sign in to continue',
     signInDescription: 'Access your curated feeds and manage your contacts.',
     signInButton: 'Sign in with Google',
-    signInHint: 'This signs in the extension directly. Logging in on the dashboard website does not automatically sign in this panel.',
+    signInHint: 'This signs in the extension directly.',
     premiumTitle: 'Personalized Feeds',
-    premiumDescription:
-      'Unlock custom feeds with a paid subscription and manage everything from your myFeedPilot dashboard.',
+    premiumDescription: 'Unlock custom feeds with a paid subscription.',
     premiumHint: 'View subscription plans',
   },
   profile: {
@@ -129,7 +128,10 @@ export function getSidebarEmptyCopy(
   };
 }
 
-export function getDeleteFeedDescription(feedName: string, memberCount: number): { title: string; description: string } {
+export function getDeleteFeedDescription(
+  feedName: string,
+  memberCount: number
+): { title: string; description: string } {
   return {
     title: `Delete "${feedName}"?`,
     description: `This will remove the feed and ${memberCount === 1 ? '1 profile' : `${memberCount} profiles`} inside "${feedName}".`,

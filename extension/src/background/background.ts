@@ -1,3 +1,4 @@
+import { DASHBOARD_ANALYTICS_SYNC_ENABLED } from 'shared/feature-flags';
 import type { ProfileViewersSyncTrigger } from './profile-viewers-sync-state';
 import { appendProfileViewersWakeEvent, PROFILE_VIEWERS_ALARM_NAME } from './profile-viewers-coordinator-storage';
 import { queueProfileViewersFirstSurfaceSync } from './profile-viewers-coordinator';
@@ -12,10 +13,21 @@ import {
   forgetDashboardAnalyticsLinkedInTab,
   queueDashboardAnalyticsSync,
 } from './dashboard-analytics/dashboard-analytics-sync-coordinator';
-import { DASHBOARD_ANALYTICS_ALARM_NAME } from './dashboard-analytics/dashboard-analytics-sync-runtime';
+import {
+  clearDashboardAnalyticsAlarm,
+  DASHBOARD_ANALYTICS_ALARM_NAME,
+} from './dashboard-analytics/dashboard-analytics-sync-runtime';
 import { migrateToIndependentLinkedInSync } from './linkedin-sync-state-migration';
 
-initNativeInviteNetworkObserver();
+function queueDashboardAnalyticsWhenEnabled(trigger: Parameters<typeof queueDashboardAnalyticsSync>[0]): void {
+  if (DASHBOARD_ANALYTICS_SYNC_ENABLED) {
+    void queueDashboardAnalyticsSync(trigger);
+  }
+}
+
+if (DASHBOARD_ANALYTICS_SYNC_ENABLED) {
+  initNativeInviteNetworkObserver();
+}
 
 chrome.runtime.onInstalled.addListener((details) => {
   const trigger: ProfileViewersSyncTrigger = details.reason === 'install' ? 'install' : 'update';
@@ -29,7 +41,7 @@ chrome.runtime.onInstalled.addListener((details) => {
   // Profile Analytics is allowed to acquire the Connections-history lock.
   void queueProfileViewersFirstSurfaceSync(trigger).finally(() => {
     void queueProfileViewersStatusSync({ trigger, urgent: true });
-    void queueDashboardAnalyticsSync(trigger);
+    queueDashboardAnalyticsWhenEnabled(trigger);
   });
 });
 
@@ -40,12 +52,16 @@ chrome.runtime.onStartup.addListener(() => {
   });
   void queueProfileViewersFirstSurfaceSync('chrome_startup').finally(() => {
     void queueProfileViewersStatusSync({ trigger: 'chrome_startup' });
-    void queueDashboardAnalyticsSync('chrome_startup');
+    queueDashboardAnalyticsWhenEnabled('chrome_startup');
   });
 });
 
 chrome.alarms?.onAlarm.addListener((alarm) => {
   if (alarm.name === DASHBOARD_ANALYTICS_ALARM_NAME) {
+    if (!DASHBOARD_ANALYTICS_SYNC_ENABLED) {
+      void clearDashboardAnalyticsAlarm();
+      return;
+    }
     const receivedAt = Date.now();
     console.info('[dashboard-analytics] alarm fired', {
       alarmName: alarm.name,
@@ -73,9 +89,7 @@ chrome.alarms?.onAlarm.addListener((alarm) => {
     scheduledAt: alarm.scheduledTime,
   });
   void queueProfileViewersFirstSurfaceSync('alarm').finally(() => {
-    // A postponed first-time analytics bootstrap may now continue after the
-    // sidebar collector has completed its next safe batch.
-    void queueDashboardAnalyticsSync('alarm');
+    queueDashboardAnalyticsWhenEnabled('alarm');
   });
 });
 
@@ -90,19 +104,23 @@ void appendProfileViewersWakeEvent({
 // Acceptance Rate is now reconciled by the shared Profile Analytics alarm.
 // Remove the legacy standalone invitation-status alarm after upgrading.
 void chrome.alarms?.clear(CONNECTION_INVITES_STATUS_ALARM_NAME);
-void chrome.alarms?.get(DASHBOARD_ANALYTICS_ALARM_NAME).then((alarm) => {
-  console.info('[dashboard-analytics] alarm state on worker load', {
-    alarmName: DASHBOARD_ANALYTICS_ALARM_NAME,
-    exists: Boolean(alarm),
-    scheduledAt: alarm?.scheduledTime,
-    scheduledAtIso: alarm ? new Date(alarm.scheduledTime).toISOString() : undefined,
+if (DASHBOARD_ANALYTICS_SYNC_ENABLED) {
+  void chrome.alarms?.get(DASHBOARD_ANALYTICS_ALARM_NAME).then((alarm) => {
+    console.info('[dashboard-analytics] alarm state on worker load', {
+      alarmName: DASHBOARD_ANALYTICS_ALARM_NAME,
+      exists: Boolean(alarm),
+      scheduledAt: alarm?.scheduledTime,
+      scheduledAtIso: alarm ? new Date(alarm.scheduledTime).toISOString() : undefined,
+    });
   });
-});
+} else {
+  void clearDashboardAnalyticsAlarm();
+}
 void migrateToIndependentLinkedInSync()
   .then(() => queueProfileViewersFirstSurfaceSync('service_worker'))
   .finally(() => {
     void queueProfileViewersStatusSync({ trigger: 'service_worker' });
-    void queueDashboardAnalyticsSync('service_worker');
+    queueDashboardAnalyticsWhenEnabled('service_worker');
   });
 
 import './external-message-handler';

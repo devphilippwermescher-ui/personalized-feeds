@@ -5,19 +5,14 @@ import {
   updateProfileViewer,
 } from 'shared/firestore-service';
 import type { ProfileViewerSummary } from 'shared/types';
+import { DASHBOARD_ANALYTICS_SYNC_ENABLED } from 'shared/feature-flags';
 import {
   appendProfileViewersWakeEvent,
   getProfileViewersSyncState,
   resetProfileViewersSyncState,
 } from './profile-viewers-coordinator-storage';
-import {
-  queueProfileViewersFirstSurfaceSync,
-  queueProfileViewersSync,
-} from './profile-viewers-coordinator';
-import {
-  queueProfileViewersStatusSync,
-  runProfileViewersStatusSync,
-} from './profile-viewers-status-sync';
+import { queueProfileViewersFirstSurfaceSync, queueProfileViewersSync } from './profile-viewers-coordinator';
+import { queueProfileViewersStatusSync, runProfileViewersStatusSync } from './profile-viewers-status-sync';
 import { getAuthenticatedFeedsUser } from './feeds-auth';
 import { getFeedsAuthErrorResponse, normalizeFeedsError } from './feeds-errors';
 import { findProfileViewerUpdateTargets } from './profile-viewers-update-targets';
@@ -41,10 +36,8 @@ function getProfileViewerSummaryFromSyncState(
 ): ProfileViewerSummary | null {
   const logWithSummaryCount = syncState.logs.find(
     (log) =>
-      (Number.isSafeInteger(log.privateViewerCount) &&
-        (log.privateViewerCount || 0) >= 0) ||
-      (Number.isSafeInteger(log.recruiterViewerCount) &&
-        (log.recruiterViewerCount || 0) >= 0)
+      (Number.isSafeInteger(log.privateViewerCount) && (log.privateViewerCount || 0) >= 0) ||
+      (Number.isSafeInteger(log.recruiterViewerCount) && (log.recruiterViewerCount || 0) >= 0)
   );
 
   if (!logWithSummaryCount) {
@@ -59,8 +52,7 @@ function getProfileViewerSummaryFromSyncState(
         ? logWithSummaryCount.recruiterViewerCount
         : undefined,
     recruiterViewerUrl:
-      typeof logWithSummaryCount.recruiterViewerUrl === 'string' &&
-      logWithSummaryCount.recruiterViewerUrl.trim()
+      typeof logWithSummaryCount.recruiterViewerUrl === 'string' && logWithSummaryCount.recruiterViewerUrl.trim()
         ? logWithSummaryCount.recruiterViewerUrl.trim()
         : undefined,
     updatedAt: logWithSummaryCount.finishedAt,
@@ -76,9 +68,7 @@ async function updateProfileViewerByBestMatch(
   const targets = findProfileViewerUpdateTargets(viewers, viewerId, updates);
   if (targets.length > 0) {
     await Promise.all(
-      targets.map((target) =>
-        updateProfileViewer(userId, target.linkedinUsername || target.id, updates)
-      )
+      targets.map((target) => updateProfileViewer(userId, target.linkedinUsername || target.id, updates))
     );
     console.info('[profile-viewers-sync] updated profile viewer status targets', {
       viewerId,
@@ -150,11 +140,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         });
       })
       .finally(() => {
-        // A LinkedIn page becoming available must prepare Profile Viewers
-        // before any dashboard history/bootstrap work can take the heavy lock.
-        void queueProfileAnalyticsForLinkedInActivity(sender.tab?.id).catch((error) => {
-          console.warn('[profile-analytics] LinkedIn activity sync failed after Profile Viewers', error);
-        });
+        if (DASHBOARD_ANALYTICS_SYNC_ENABLED) {
+          void queueProfileAnalyticsForLinkedInActivity(sender.tab?.id).catch((error) => {
+            console.warn('[profile-analytics] LinkedIn activity sync failed after Profile Viewers', error);
+          });
+        }
       });
     return true;
   }
@@ -247,12 +237,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     getAuthenticatedFeedsUser()
       .then(async (user) => {
         if (!user) {
-          sendResponse(getFeedsAuthErrorResponse({
-            savedCount: 0,
-            newCount: 0,
-            visibleCount: 0,
-            source: 'api',
-          }));
+          sendResponse(
+            getFeedsAuthErrorResponse({
+              savedCount: 0,
+              newCount: 0,
+              visibleCount: 0,
+              source: 'api',
+            })
+          );
           return;
         }
 

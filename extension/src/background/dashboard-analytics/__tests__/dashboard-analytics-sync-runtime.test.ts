@@ -1,9 +1,15 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createProfileAnalyticsSyncState } from '../../profile-analytics-sync-policy';
 import { migrateToDashboardAnalyticsSyncState } from '../dashboard-analytics-sync-policy';
-import { getNextDashboardAnalyticsAlarmAt } from '../dashboard-analytics-sync-runtime';
+import {
+  clearDashboardAnalyticsAlarm,
+  getNextDashboardAnalyticsAlarmAt,
+  scheduleDashboardAnalyticsAlarm,
+} from '../dashboard-analytics-sync-runtime';
 
 describe('Dashboard Analytics sync runtime while Content Analytics is disabled', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
   it('ignores an overdue Content range when planning the shared alarm', () => {
     const now = 1_800_000_000_000;
     const state = migrateToDashboardAnalyticsSyncState(createProfileAnalyticsSyncState('user-1'));
@@ -20,5 +26,23 @@ describe('Dashboard Analytics sync runtime while Content Analytics is disabled',
     };
 
     expect(getNextDashboardAnalyticsAlarmAt(state, now)).toBe(now + 60_000);
+  });
+
+  it('clears the shared analytics alarm left by a dashboard-enabled build', async () => {
+    const clear = vi.fn().mockResolvedValue(true);
+    vi.stubGlobal('chrome', { alarms: { clear } });
+
+    await expect(clearDashboardAnalyticsAlarm()).resolves.toBe(true);
+    expect(clear).toHaveBeenCalledWith('profile-analytics-sync-v1');
+  });
+
+  it('refuses to schedule a new analytics alarm in a dashboard-disabled release', async () => {
+    const clear = vi.fn().mockResolvedValue(true);
+    const create = vi.fn();
+    vi.stubGlobal('chrome', { alarms: { clear, create } });
+
+    await expect(scheduleDashboardAnalyticsAlarm(Date.now() + 60_000, 'test')).resolves.toBeUndefined();
+    expect(clear).toHaveBeenCalledWith('profile-analytics-sync-v1');
+    expect(create).not.toHaveBeenCalled();
   });
 });

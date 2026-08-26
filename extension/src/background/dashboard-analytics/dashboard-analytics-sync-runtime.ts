@@ -1,5 +1,5 @@
 import type { DashboardAnalyticsSourceStatus, DashboardAnalyticsSyncStatus } from 'shared/types';
-import { CONTENT_ANALYTICS_ENABLED } from 'shared/feature-flags';
+import { CONTENT_ANALYTICS_ENABLED, DASHBOARD_ANALYTICS_SYNC_ENABLED } from 'shared/feature-flags';
 import {
   PROFILE_ANALYTICS_ALARM_NAME,
   getNextProfileAnalyticsAlarmAt,
@@ -31,11 +31,21 @@ export const DASHBOARD_ANALYTICS_ALARM_NAME = PROFILE_ANALYTICS_ALARM_NAME;
 export { toIso } from '../profile-analytics-sync-runtime';
 
 export function scheduleDashboardAnalyticsAlarm(scheduledAt: number, reason: string): Promise<void> {
+  if (!DASHBOARD_ANALYTICS_SYNC_ENABLED) {
+    return clearDashboardAnalyticsAlarm().then(() => undefined);
+  }
   return scheduleProfileAnalyticsAlarm(scheduledAt, reason);
+}
+
+/** Removes an alarm created by a previous dashboard-enabled extension build. */
+export async function clearDashboardAnalyticsAlarm(): Promise<boolean> {
+  if (!chrome.alarms?.clear) return false;
+  return chrome.alarms.clear(DASHBOARD_ANALYTICS_ALARM_NAME);
 }
 
 /** Local-only status the dashboard may poll; it never starts LinkedIn work. */
 export async function getDashboardAnalyticsSyncStatus(): Promise<DashboardAnalyticsSyncStatus | null> {
+  if (!DASHBOARD_ANALYTICS_SYNC_ENABLED) return null;
   const state = await getStoredDashboardAnalyticsSyncState();
   if (!state) return null;
   const content = getContentAnalyticsState(state);

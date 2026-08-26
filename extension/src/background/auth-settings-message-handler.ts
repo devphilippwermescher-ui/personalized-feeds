@@ -1,5 +1,6 @@
 import { signInWithGoogleTokens, signOutUser } from '../services/auth';
 import { getUserFeatureSettings, updateUserFeatureSettings } from 'shared/firestore-service';
+import { DASHBOARD_ANALYTICS_SYNC_ENABLED } from 'shared/feature-flags';
 import type { UserFeatureSettings } from 'shared/types';
 import {
   clearStoredFeedsAuthTokens,
@@ -92,7 +93,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           // Signing in from the Sidebar is itself the first authenticated
           // extension entry. The analytics coordinator records that fact but
           // remains gated until Profile Visitors and its summary are complete.
-          void queueProfileAnalyticsSync('first_extension_entry');
+          if (DASHBOARD_ANALYTICS_SYNC_ENABLED) {
+            void queueProfileAnalyticsSync('first_extension_entry');
+          }
         });
       })
       .catch((error) => {

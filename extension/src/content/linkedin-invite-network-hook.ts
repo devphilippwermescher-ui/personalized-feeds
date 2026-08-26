@@ -4,8 +4,13 @@ import {
   isSuccessfulInviteCreationResponse,
   parseNativeInviteNetworkResult,
 } from './native-invite-network-parser';
+import { DASHBOARD_ANALYTICS_SYNC_ENABLED } from 'shared/feature-flags';
 
 (() => {
+  if (!DASHBOARD_ANALYTICS_SYNC_ENABLED) {
+    return;
+  }
+
   const marker = '__mfpLinkedInInviteNetworkHookInstalled';
   const postMessageType = 'MFP_LINKEDIN_NATIVE_INVITE_SENT';
   const hookPingMessageType = 'MFP_LINKEDIN_INVITE_NETWORK_HOOK_PING';
@@ -22,7 +27,11 @@ import {
   }
 
   window.addEventListener('message', (event) => {
-    if (event.source === window && event.origin === window.location.origin && event.data?.type === hookPingMessageType) {
+    if (
+      event.source === window &&
+      event.origin === window.location.origin &&
+      event.data?.type === hookPingMessageType
+    ) {
       postHookReady();
     }
   });
@@ -82,7 +91,10 @@ import {
     }
 
     if (typeof Request !== 'undefined' && input instanceof Request) {
-      return input.clone().text().catch(() => '');
+      return input
+        .clone()
+        .text()
+        .catch(() => '');
     }
 
     return '';
@@ -98,7 +110,10 @@ import {
     if (shouldInspect && response.ok) {
       void Promise.all([
         requestBodyPromise,
-        response.clone().text().catch(() => ''),
+        response
+          .clone()
+          .text()
+          .catch(() => ''),
       ]).then(([requestBody, responseText]) => {
         if (isInviteCreationRequest(url, requestBody) && isSuccessfulInviteCreationResponse(url, responseText)) {
           postInvite(url, requestBody, responseText);

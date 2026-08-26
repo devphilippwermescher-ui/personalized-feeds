@@ -1,3 +1,5 @@
+import { DASHBOARD_ENABLED } from 'shared/feature-flags';
+
 const REQUEST_TYPE = 'MFP_DASHBOARD_EXTENSION_REQUEST';
 const RESPONSE_TYPE = 'MFP_DASHBOARD_EXTENSION_RESPONSE';
 const ALLOWED_MESSAGE_TYPES = new Set([
@@ -32,7 +34,7 @@ function respond(requestId: string, response: unknown): void {
   );
 }
 
-window.addEventListener('message', (event: MessageEvent<DashboardBridgeRequest>) => {
+function handleDashboardBridgeMessage(event: MessageEvent<DashboardBridgeRequest>): void {
   if (event.source !== window || event.origin !== window.location.origin) {
     return;
   }
@@ -64,4 +66,8 @@ window.addEventListener('message', (event: MessageEvent<DashboardBridgeRequest>)
       respond(request.requestId || '', response);
     }
   );
-});
+}
+
+if (DASHBOARD_ENABLED) {
+  window.addEventListener('message', handleDashboardBridgeMessage);
+}
