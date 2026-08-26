@@ -3,6 +3,13 @@ const webpack = require('webpack');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
 const CopyWebpackPlugin = require('copy-webpack-plugin');
 
+const appEnvironment = process.env.APP_ENV || 'production';
+const validAppEnvironments = new Set(['development', 'staging', 'production']);
+
+if (!validAppEnvironments.has(appEnvironment)) {
+  throw new Error(`Invalid APP_ENV: ${appEnvironment}`);
+}
+
 module.exports = (_environment, argv) => ({
   entry: {
     popup: './src/popup/index.tsx',
@@ -55,6 +62,7 @@ module.exports = (_environment, argv) => ({
   plugins: [
     new webpack.DefinePlugin({
       __MFP_DEV_BUILD__: JSON.stringify(argv.mode === 'development'),
+      __APP_ENV__: JSON.stringify(appEnvironment),
     }),
     new HtmlWebpackPlugin({
       template: './src/popup/index.html',

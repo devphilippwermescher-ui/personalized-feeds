@@ -1,4 +1,4 @@
-import { initializeApp, type FirebaseApp } from 'firebase/app';
+import { initializeApp, type FirebaseApp, type FirebaseOptions } from 'firebase/app';
 import {
   browserPopupRedirectResolver,
   indexedDBLocalPersistence,
@@ -6,17 +6,39 @@ import {
   type Auth,
 } from 'firebase/auth';
 import { getFirestore, type Firestore } from 'firebase/firestore';
+import { getAppEnvironment, type AppEnvironment } from './app-environment';
 
-const firebaseConfig = {
-  apiKey: 'AIzaSyBSHzW50UxkGtUuU06CFHz8eA5jtJsvuDI',
-  authDomain: 'linkedin-feed-sorter.firebaseapp.com',
-  projectId: 'linkedin-feed-sorter',
-  storageBucket: 'linkedin-feed-sorter.firebasestorage.app',
-  messagingSenderId: '1087764863577',
-  appId: '1:1087764863577:web:375df1aac1cc2c2071af48',
-  measurementId: 'G-2WXT0K8077',
+const firebaseConfigs: Record<AppEnvironment, FirebaseOptions> = {
+  development: {
+    apiKey: 'AIzaSyB6kAzSDEJ8o9kEznq5X6igpUb6Jvlgsk4',
+    authDomain: 'myfeedpilot-dev.firebaseapp.com',
+    projectId: 'myfeedpilot-dev',
+    storageBucket: 'myfeedpilot-dev.firebasestorage.app',
+    messagingSenderId: '234163823433',
+    appId: '1:234163823433:web:4b6c2fc058aeab076e7098',
+    measurementId: 'G-KVZFT26V37',
+  },
+  staging: {
+    apiKey: 'AIzaSyA2zeEsr0lYSGCt4m276mnR9HjgiTUUhEQ',
+    authDomain: 'myfeedpilot-staging.firebaseapp.com',
+    projectId: 'myfeedpilot-staging',
+    storageBucket: 'myfeedpilot-staging.firebasestorage.app',
+    messagingSenderId: '701144218123',
+    appId: '1:701144218123:web:de3819b26a4d067b29250e',
+    measurementId: 'G-NMMJNGW2C5',
+  },
+  production: {
+    apiKey: 'AIzaSyAjF3vVaa_YmgPaQ81hRqo-l5QLM1RUsCs',
+    authDomain: 'myfeedpilot-production.firebaseapp.com',
+    projectId: 'myfeedpilot-production',
+    storageBucket: 'myfeedpilot-production.firebasestorage.app',
+    messagingSenderId: '707587386707',
+    appId: '1:707587386707:web:2bb76c0038b59107e4c5a6',
+    measurementId: 'G-HZ0JZ6SNW6',
+  },
 };
 
+const firebaseConfig = firebaseConfigs[getAppEnvironment()];
 const app: FirebaseApp = initializeApp(firebaseConfig);
 const isBrowserPopupEnvironment =
   typeof window !== 'undefined' &&

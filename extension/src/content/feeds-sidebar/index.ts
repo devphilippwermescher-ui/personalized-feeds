@@ -48,8 +48,9 @@ import { createSidebarAuthController } from './logic/sidebar-auth-controller';
 import { createSharedFeedLinkController } from './logic/shared-feed-link-controller';
 import { createSidebarMemberController } from './logic/sidebar-member-controller';
 import { createSidebarUiController } from './logic/sidebar-ui-controller';
+import { getDashboardOrigin } from 'shared/app-environment';
 
-const DASHBOARD_URL = 'https://linkedin-feed-sorter.web.app';
+const DASHBOARD_URL = getDashboardOrigin();
 
 let currentUser: UserInfo | null = null;
 let feedsList: FeedInfo[] = [];

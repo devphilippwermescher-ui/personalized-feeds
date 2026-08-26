@@ -54,17 +54,48 @@
       const statusEl = document.getElementById('status');
       const params = new URLSearchParams(window.location.search);
       const extensionId = params.get('extensionId');
-      const extensionOrigin = extensionId ? `chrome-extension://${extensionId}` : '*';
+      const extensionOrigin = extensionId?.match(/^[a-p]{32}$/)
+        ? `chrome-extension://${extensionId}`
+        : null;
 
-      const firebaseConfig = {
-        apiKey: 'AIzaSyBSHzW50UxkGtUuU06CFHz8eA5jtJsvuDI',
-        authDomain: 'linkedin-feed-sorter.firebaseapp.com',
-        projectId: 'linkedin-feed-sorter',
-        storageBucket: 'linkedin-feed-sorter.firebasestorage.app',
-        messagingSenderId: '1087764863577',
-        appId: '1:1087764863577:web:375df1aac1cc2c2071af48',
-        measurementId: 'G-2WXT0K8077',
+      const firebaseConfigs = {
+        development: {
+          apiKey: 'AIzaSyB6kAzSDEJ8o9kEznq5X6igpUb6Jvlgsk4',
+          authDomain: 'myfeedpilot-dev.firebaseapp.com',
+          projectId: 'myfeedpilot-dev',
+          storageBucket: 'myfeedpilot-dev.firebasestorage.app',
+          messagingSenderId: '234163823433',
+          appId: '1:234163823433:web:4b6c2fc058aeab076e7098',
+          measurementId: 'G-KVZFT26V37',
+        },
+        staging: {
+          apiKey: 'AIzaSyA2zeEsr0lYSGCt4m276mnR9HjgiTUUhEQ',
+          authDomain: 'myfeedpilot-staging.firebaseapp.com',
+          projectId: 'myfeedpilot-staging',
+          storageBucket: 'myfeedpilot-staging.firebasestorage.app',
+          messagingSenderId: '701144218123',
+          appId: '1:701144218123:web:de3819b26a4d067b29250e',
+          measurementId: 'G-NMMJNGW2C5',
+        },
+        production: {
+          apiKey: 'AIzaSyAjF3vVaa_YmgPaQ81hRqo-l5QLM1RUsCs',
+          authDomain: 'myfeedpilot-production.firebaseapp.com',
+          projectId: 'myfeedpilot-production',
+          storageBucket: 'myfeedpilot-production.firebasestorage.app',
+          messagingSenderId: '707587386707',
+          appId: '1:707587386707:web:2bb76c0038b59107e4c5a6',
+          measurementId: 'G-HZ0JZ6SNW6',
+        },
       };
+
+      const hostname = window.location.hostname;
+      let environment = 'production';
+      if (hostname.includes('myfeedpilot-dev') || ['localhost', '127.0.0.1'].includes(hostname)) {
+        environment = 'development';
+      } else if (hostname.includes('myfeedpilot-staging')) {
+        environment = 'staging';
+      }
+      const firebaseConfig = firebaseConfigs[environment];
 
       const app = initializeApp(firebaseConfig);
       const auth = getAuth(app);
@@ -72,10 +103,18 @@
       let authStarted = false;
 
       function postResult(payload) {
+        if (!extensionOrigin) {
+          return;
+        }
         window.parent.postMessage(payload, extensionOrigin);
       }
 
       async function startAuth() {
+        if (!extensionOrigin) {
+          statusEl.textContent = 'A valid extension ID is required to start sign-in.';
+          return;
+        }
+
         if (authStarted) {
           return;
         }
@@ -111,7 +150,7 @@
       }
 
       window.addEventListener('message', (event) => {
-        if (extensionOrigin !== '*' && event.origin !== extensionOrigin) {
+        if (!extensionOrigin || event.origin !== extensionOrigin) {
           return;
         }
 
@@ -121,4 +160,4 @@
       });
     </script>
   </body>
-  </html>
+</html>

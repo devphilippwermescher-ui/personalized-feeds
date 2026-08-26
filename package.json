@@ -1,6 +1,6 @@
 {
   "name": "personalized-feeds",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "private": true,
   "description": "Personalized Feeds - Chrome extension + Dashboard",
   "scripts": {
@@ -9,13 +9,14 @@
     "build:extension": "cd extension && npm run build",
     "build:dashboard": "cd dashboard && npm run build",
     "build": "npm run build:extension && npm run build:dashboard",
-    "deploy:dashboard": "npm run build:dashboard && firebase deploy --only hosting --project linkedin-feed-sorter",
+    "deploy:dashboard": "npm run build:dashboard && firebase deploy --only hosting:dashboard --project production",
     "install:all": "cd extension && npm install && cd ../dashboard && npm install",
     "type-check": "cd extension && npm run type-check && cd ../dashboard && npm run type-check",
     "lint": "cd extension && npm run lint",
     "format": "prettier --write \"**/*.{ts,tsx,css,json,js}\" --ignore-path .prettierignore",
     "format:check": "prettier --check \"**/*.{ts,tsx,css,json,js}\" --ignore-path .prettierignore",
-    "package": "cd extension && npm run package"
+    "package": "cd extension && npm run package",
+    "version:set": "node scripts/set-version.mjs"
   },
   "keywords": [
     "linkedin",

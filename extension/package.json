@@ -1,6 +1,6 @@
 {
   "name": "personalized-feeds-extension",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "private": true,
   "description": "Personalized Feeds Chrome extension",
   "scripts": {
@@ -10,8 +10,7 @@
     "lint:fix": "eslint src/ --fix",
     "test": "vitest run",
     "type-check": "tsc --noEmit",
-    "package": "npm run build && node -e \"const v=require('./package.json').version; const {execSync}=require('child_process'); process.chdir('dist'); execSync('zip -r ../personalized-feeds-v'+v+'.zip .');\"",
-    "version:sync": "node -e \"const p=require('./package.json'); const m=require('./src/manifest.json'); m.version=p.version; require('fs').writeFileSync('./src/manifest.json', JSON.stringify(m,null,2));\""
+    "package": "npm run build && node -e \"const v=require('./package.json').version; const {execSync}=require('child_process'); process.chdir('dist'); execSync('zip -r ../personalized-feeds-v'+v+'.zip .');\""
   },
   "dependencies": {
     "firebase": "^11.0.0",

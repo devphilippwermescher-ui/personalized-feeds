@@ -1,0 +1,24 @@
+{
+  "projects": {
+    "development": "myfeedpilot-dev",
+    "staging": "myfeedpilot-staging",
+    "production": "myfeedpilot-production"
+  },
+  "targets": {
+    "myfeedpilot-dev": {
+      "hosting": {
+        "dashboard": ["myfeedpilot-dev"]
+      }
+    },
+    "myfeedpilot-staging": {
+      "hosting": {
+        "dashboard": ["myfeedpilot-staging"]
+      }
+    },
+    "myfeedpilot-production": {
+      "hosting": {
+        "dashboard": ["myfeedpilot-app"]
+      }
+    }
+  }
+}

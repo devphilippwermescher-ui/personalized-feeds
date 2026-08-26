@@ -1,4 +1,6 @@
-const DASHBOARD_ORIGIN = 'https://linkedin-feed-sorter.web.app';
+import { getDashboardOrigin } from 'shared/app-environment';
+
+const DASHBOARD_ORIGIN = getDashboardOrigin();
 const AUTH_HELPER_URL = `${DASHBOARD_ORIGIN}/auth-helper.html?extensionId=${encodeURIComponent(chrome.runtime.id)}`;
 
 type AuthMessage =

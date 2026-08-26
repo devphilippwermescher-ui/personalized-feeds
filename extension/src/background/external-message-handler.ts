@@ -11,7 +11,12 @@ import {
 } from './feeds-auth';
 import { resetCurrentUserAnalyticsForDevelopment } from './profile-analytics-dev-reset';
 
-const DASHBOARD_ORIGIN = 'https://linkedin-feed-sorter.web.app';
+const DASHBOARD_ORIGINS = new Set([
+  'https://myfeedpilot-dev.web.app',
+  'https://myfeedpilot-staging.web.app',
+  'https://myfeedpilot-app.web.app',
+  'http://localhost:5173',
+]);
 
 interface DashboardMessage {
   type?: string;
@@ -22,7 +27,7 @@ function isDashboardOrigin(urlValue: string | undefined): boolean {
   if (!urlValue) return false;
   try {
     const url = new URL(urlValue);
-    return url.origin === DASHBOARD_ORIGIN || (url.protocol === 'http:' && url.hostname === 'localhost');
+    return DASHBOARD_ORIGINS.has(url.origin);
   } catch {
     return false;
   }

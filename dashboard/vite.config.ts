@@ -9,6 +9,9 @@ const nestedFirebaseModules = path.resolve(
 
 export default defineConfig({
   plugins: [react()],
+  define: {
+    __APP_ENV__: JSON.stringify('auto'),
+  },
   server: {
     port: 5173,
   },
