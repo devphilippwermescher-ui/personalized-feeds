@@ -2,11 +2,12 @@ import { describe, expect, it } from 'vitest';
 import {
   PROFILE_VIEWERS_ATTEMPT_LEASE_MS,
   PROFILE_VIEWERS_AUTH_RECOVERY_DELAYS_MS,
+  PROFILE_VIEWERS_BACKGROUND_RESERVE,
+  PROFILE_VIEWERS_BUDGET_CAPACITY,
+  PROFILE_VIEWERS_BUDGET_REFILL_MS,
   PROFILE_VIEWERS_FIRST_FAILURE_BACKOFF_MS,
-  PROFILE_VIEWERS_MAX_REQUESTS_PER_WINDOW,
   PROFILE_VIEWERS_MAX_SYNC_INTERVAL_MS,
   PROFILE_VIEWERS_MIN_SYNC_INTERVAL_MS,
-  PROFILE_VIEWERS_RATE_LIMIT_WINDOW_MS,
   PROFILE_VIEWERS_REPEATED_FAILURE_BACKOFF_MS,
   PROFILE_VIEWERS_RESTRICTED_BACKOFF_MS,
   PROFILE_VIEWERS_RETRY_DELAY_MS,
@@ -16,11 +17,15 @@ import {
   completeProfileViewersSyncSuccess,
   createProfileViewersSyncState,
   decideProfileViewersSync,
+  getIncompleteProfileViewersImportDueAt,
   getNextProfileViewersAlarmAt,
   getProfileViewersAuthRecoveryPlan,
+  getProfileViewersRequestBudget,
   getProfileViewersScheduledIntervalMs,
   getProfileViewersSummaryMigrationDueAt,
+  isProfileViewersFirstSurfaceReady,
   recordProfileViewersRequest,
+  scheduleProfileViewersPrivateSummaryCollection,
   startProfileViewersSyncAttempt,
   type ProfileViewersSyncTrigger,
 } from '../profile-viewers-sync-state';
@@ -29,13 +34,33 @@ describe('profile viewers sync state', () => {
   it('starts with a resumable profile history backfill state', () => {
     const state = createProfileViewersSyncState('user-1', 1_000);
 
-    expect(state.summaryCollectionVersion).toBe(
-      PROFILE_VIEWERS_SUMMARY_COLLECTION_VERSION
-    );
+    expect(state.summaryCollectionVersion).toBe(PROFILE_VIEWERS_SUMMARY_COLLECTION_VERSION);
     expect(state.backfillStatus).toBe('not_started');
     expect(state.backfillPagesFetched).toBe(0);
     expect(state.backfillProfilesSaved).toBe(0);
     expect(state.recentProfileViewerUsernames).toEqual([]);
+    expect(state.nextCollectionTask).toBe('visible');
+    expect(state.privateSummaryStatus).toBe('not_started');
+    expect(isProfileViewersFirstSurfaceReady(state)).toBe(false);
+  });
+
+  it('marks the sidebar ready only after visible viewers and the hidden summary are complete', () => {
+    const state = createProfileViewersSyncState('user-1', 1_000);
+
+    expect(
+      isProfileViewersFirstSurfaceReady({
+        ...state,
+        backfillStatus: 'complete',
+        privateSummaryStatus: 'scanning',
+      })
+    ).toBe(false);
+    expect(
+      isProfileViewersFirstSurfaceReady({
+        ...state,
+        backfillStatus: 'complete',
+        privateSummaryStatus: 'ready',
+      })
+    ).toBe(true);
   });
 
   it('makes an idle legacy state due once for private viewer summary collection', () => {
@@ -59,9 +84,7 @@ describe('profile viewers sync state', () => {
       nextDueAt,
     };
 
-    expect(getProfileViewersSummaryMigrationDueAt(currentState, now)).toBe(
-      nextDueAt
-    );
+    expect(getProfileViewersSummaryMigrationDueAt(currentState, now)).toBe(nextDueAt);
   });
 
   it('does not interrupt an active legacy sync to run the summary migration', () => {
@@ -75,18 +98,47 @@ describe('profile viewers sync state', () => {
       attemptsInCycle: 1,
     };
 
-    expect(
-      getProfileViewersSummaryMigrationDueAt(activeLegacyState, now)
-    ).toBe(nextDueAt);
+    expect(getProfileViewersSummaryMigrationDueAt(activeLegacyState, now)).toBe(nextDueAt);
   });
 
-  it('counts every pagination request inside the rolling request window', () => {
+  it('spends one token per request and refills gradually', () => {
     const initial = createProfileViewersSyncState('user-1', 1_000);
     const firstRequest = recordProfileViewersRequest(initial, 1_000);
-    const secondRequest = recordProfileViewersRequest(firstRequest, 2_000);
+    const secondRequest = recordProfileViewersRequest(firstRequest, 1_000);
 
-    expect(secondRequest.requestWindowStartedAt).toBe(1_000);
-    expect(secondRequest.requestCountInWindow).toBe(2);
+    expect(secondRequest.requestBudgetTokens).toBe(
+      PROFILE_VIEWERS_BUDGET_CAPACITY - 2
+    );
+    expect(
+      getProfileViewersRequestBudget(
+        secondRequest,
+        1_000 + PROFILE_VIEWERS_BUDGET_REFILL_MS
+      ).tokensAvailable
+    ).toBe(PROFILE_VIEWERS_BUDGET_CAPACITY - 1);
+  });
+
+  it('preserves a known private-summary position instead of scheduling a new full scan', () => {
+    const state = {
+      ...createProfileViewersSyncState('user-1', 1_000),
+      privateSummaryStatus: 'ready' as const,
+      privateSummaryKnownStart: 70,
+      privateSummaryNextStart: 10,
+      privateSummaryScanOrigin: 'full' as const,
+    };
+
+    const scheduled = scheduleProfileViewersPrivateSummaryCollection(
+      state,
+      { start: 10, count: 10 },
+      2_000
+    );
+
+    expect(scheduled).toMatchObject({
+      nextCollectionTask: 'private_summary',
+      privateSummaryStatus: 'ready',
+      privateSummaryKnownStart: 70,
+      privateSummaryNextStart: undefined,
+      privateSummaryScanOrigin: undefined,
+    });
   });
 
   it('clears the alarm only when there is no durable authentication hint', () => {
@@ -150,11 +202,7 @@ describe('profile viewers sync state', () => {
       action: 'schedule_alarm',
       reason: 'retry_auth_restore',
       attempts: PROFILE_VIEWERS_AUTH_RECOVERY_DELAYS_MS.length,
-      scheduledAt:
-        now +
-        PROFILE_VIEWERS_AUTH_RECOVERY_DELAYS_MS[
-          PROFILE_VIEWERS_AUTH_RECOVERY_DELAYS_MS.length - 1
-        ],
+      scheduledAt: now + PROFILE_VIEWERS_AUTH_RECOVERY_DELAYS_MS[PROFILE_VIEWERS_AUTH_RECOVERY_DELAYS_MS.length - 1],
     });
   });
 
@@ -175,16 +223,29 @@ describe('profile viewers sync state', () => {
     });
 
     const started = startProfileViewersSyncAttempt(initial, now, 1, PROFILE_VIEWERS_SYNC_INTERVAL_MS);
-    const completed = completeProfileViewersSyncSuccess(
-      started,
-      now + 500,
-      PROFILE_VIEWERS_MAX_SYNC_INTERVAL_MS
-    );
+    const completed = completeProfileViewersSyncSuccess(started, now + 500, PROFILE_VIEWERS_MAX_SYNC_INTERVAL_MS);
 
     expect(completed.nextDueAt).toBe(now + 500 + PROFILE_VIEWERS_MAX_SYNC_INTERVAL_MS);
     expect(completed.attemptsInCycle).toBe(0);
-    expect(completed.requestCountInWindow).toBe(1);
+    expect(completed.requestBudgetTokens).toBe(
+      PROFILE_VIEWERS_BUDGET_CAPACITY - 1
+    );
     expect(completed.consecutiveFailedCycles).toBe(0);
+  });
+
+  it('resumes an incomplete first import at the earliest request-safe wake', () => {
+    const now = 10_000;
+    const readyBudget = createProfileViewersSyncState('user-1', now);
+    expect(getIncompleteProfileViewersImportDueAt(readyBudget, now)).toBe(now + 1_000);
+
+    const emptyBudget = {
+      ...readyBudget,
+      requestBudgetTokens: 0,
+      requestBudgetUpdatedAt: now,
+    };
+    expect(getIncompleteProfileViewersImportDueAt(emptyBudget, now)).toBe(
+      now + PROFILE_VIEWERS_BUDGET_REFILL_MS
+    );
   });
 
   it('does not make a request for lifecycle triggers before nextDueAt, but catches up once when overdue', () => {
@@ -300,24 +361,30 @@ describe('profile viewers sync state', () => {
     });
   });
 
-  it('caps all API attempts at 48 within a rolling 24-hour window', () => {
+  it('waits only until the next token instead of blocking for a fixed 24-hour window', () => {
     const now = 60_000;
     const rateLimited = {
       ...createProfileViewersSyncState('user-1', now),
       nextDueAt: now - 1,
-      requestWindowStartedAt: now,
-      requestCountInWindow: PROFILE_VIEWERS_MAX_REQUESTS_PER_WINDOW,
+      requestBudgetTokens: 0,
+      requestBudgetUpdatedAt: now,
     };
 
-    expect(decideProfileViewersSync(rateLimited, now + 1_000, 'alarm')).toEqual({ shouldRun: false });
+    expect(decideProfileViewersSync(rateLimited, now + 1_000, 'alarm')).toEqual({
+      shouldRun: false,
+    });
     expect(decideProfileViewersSync(rateLimited, now + 1_000, 'manual', true)).toEqual({
       shouldRun: false,
     });
     expect(getNextProfileViewersAlarmAt(rateLimited, now + 1_000)).toBe(
-      now + PROFILE_VIEWERS_RATE_LIMIT_WINDOW_MS
+      now + PROFILE_VIEWERS_BUDGET_REFILL_MS
     );
     expect(
-      decideProfileViewersSync(rateLimited, now + PROFILE_VIEWERS_RATE_LIMIT_WINDOW_MS, 'alarm')
+      decideProfileViewersSync(
+        rateLimited,
+        now + PROFILE_VIEWERS_BUDGET_REFILL_MS,
+        'alarm'
+      )
     ).toEqual({
       shouldRun: true,
       attemptNumber: 1,
@@ -325,15 +392,34 @@ describe('profile viewers sync state', () => {
     });
   });
 
-  it('waits for cooldown after an expired rate-limit window instead of rescheduling continuously', () => {
+  it('preserves a background reserve against repeated manual syncs', () => {
+    const now = 62_000;
+    const state = {
+      ...createProfileViewersSyncState('user-1', now),
+      nextDueAt: now - 1,
+      requestBudgetTokens: PROFILE_VIEWERS_BACKGROUND_RESERVE,
+      requestBudgetUpdatedAt: now,
+    };
+
+    expect(decideProfileViewersSync(state, now, 'manual', true)).toEqual({
+      shouldRun: false,
+    });
+    expect(decideProfileViewersSync(state, now, 'alarm')).toEqual({
+      shouldRun: true,
+      attemptNumber: 1,
+      runType: 'initial',
+    });
+  });
+
+  it('waits for cooldown even when the request bucket starts refilling earlier', () => {
     const now = 65_000;
     const cooldownUntil = now + PROFILE_VIEWERS_RESTRICTED_BACKOFF_MS;
     const state = {
       ...createProfileViewersSyncState('user-1', now),
       nextDueAt: now - 1,
       cooldownUntil,
-      requestWindowStartedAt: now - PROFILE_VIEWERS_RATE_LIMIT_WINDOW_MS,
-      requestCountInWindow: PROFILE_VIEWERS_MAX_REQUESTS_PER_WINDOW,
+      requestBudgetTokens: 0,
+      requestBudgetUpdatedAt: now,
     };
 
     expect(getNextProfileViewersAlarmAt(state, now)).toBe(cooldownUntil);

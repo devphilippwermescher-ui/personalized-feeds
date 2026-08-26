@@ -3,6 +3,7 @@ import type { ProfileViewerInput } from 'shared/types';
 import {
   createProfileViewersPaginationBody,
   createRecentProfileViewerSnapshot,
+  extractProfileViewersPaginationNeeded,
   extractNextProfileViewersPaginationCursor,
   extendBackfillRecentProfileViewerSnapshot,
   hasStableProfileViewerOverlap,
@@ -34,16 +35,18 @@ describe('profile viewers pagination', () => {
 
   it('returns null when LinkedIn does not provide another pagination request', () => {
     expect(
-      extractNextProfileViewersPaginationCursor(
-        `${'x'.repeat(100)}"isPartialPage":true,"viewer-list-next-page-loaded"`
-      )
+      extractNextProfileViewersPaginationCursor(`${'x'.repeat(100)}"isPartialPage":true,"viewer-list-next-page-loaded"`)
     ).toBeNull();
   });
 
+  it('reads LinkedIn paginationNeeded without assuming a page count', () => {
+    expect(extractProfileViewersPaginationNeeded('x"paginationNeeded":true')).toBe(true);
+    expect(extractProfileViewersPaginationNeeded('x"paginationNeeded" : false')).toBe(false);
+    expect(extractProfileViewersPaginationNeeded('x"other":true')).toBeNull();
+  });
+
   it('builds the Premium WVMP request with date range states and the requested cursor', () => {
-    const body = JSON.parse(
-      createProfileViewersPaginationBody({ start: 30, count: 10 })
-    ) as {
+    const body = JSON.parse(createProfileViewersPaginationBody({ start: 30, count: 10 })) as {
       pagerId: string;
       clientArguments: {
         payload: { start: number; count: number };
@@ -61,12 +64,8 @@ describe('profile viewers pagination', () => {
       start: 30,
       count: 10,
     });
-    expect(body.clientArguments.screenId).toBe(
-      'com.linkedin.sdui.flagshipnav.premium.wvmp.WVMP'
-    );
-    expect(body.clientArguments.states[0].value).toEqual([
-      'WvmpSearchFilterTimeRange_LAST_90_DAYS',
-    ]);
+    expect(body.clientArguments.screenId).toBe('com.linkedin.sdui.flagshipnav.premium.wvmp.WVMP');
+    expect(body.clientArguments.states[0].value).toEqual(['WvmpSearchFilterTimeRange_LAST_90_DAYS']);
   });
 
   it('recognizes a stable ordered overlap with the previous recent snapshot', () => {
@@ -78,15 +77,9 @@ describe('profile viewers pagination', () => {
     ).toBe(true);
   });
 
-  it('does not stop merely because one previously known viewer appears before new viewers', () => {
+  it('stops after persisting a page that reaches the first previously known viewer', () => {
     const existingUsernames = new Set(['known-repeat', 'known-1', 'known-2']);
-    const collected = [
-      viewer('known-repeat'),
-      viewer('new-a'),
-      viewer('new-b'),
-      viewer('known-1'),
-      viewer('known-2'),
-    ];
+    const collected = [viewer('known-repeat'), viewer('new-a'), viewer('new-b'), viewer('known-1'), viewer('known-2')];
 
     expect(
       shouldStopIncrementalProfileViewerPagination(
@@ -96,17 +89,23 @@ describe('profile viewers pagination', () => {
         ['known-repeat', 'known-1', 'known-2'],
         0
       )
-    ).toBe(false);
+    ).toBe(true);
+  });
+
+  it('stops the visible scan on the first anonymous-only page', () => {
+    expect(
+      shouldStopIncrementalProfileViewerPagination(
+        [viewer('new-a'), viewer('new-b'), viewer('new-c')],
+        [],
+        new Set(['known-1']),
+        ['known-1'],
+        1
+      )
+    ).toBe(true);
   });
 
   it('stops after a no-new page reaches the stable previous snapshot', () => {
-    const existingUsernames = new Set([
-      'known-1',
-      'known-2',
-      'known-3',
-      'known-4',
-      'known-5',
-    ]);
+    const existingUsernames = new Set(['known-1', 'known-2', 'known-3', 'known-4', 'known-5']);
     const collected = [
       viewer('new-a'),
       viewer('known-1'),
@@ -130,10 +129,7 @@ describe('profile viewers pagination', () => {
 
   it('keeps a bounded unique recent snapshot with the latest usernames first', () => {
     expect(
-      createRecentProfileViewerSnapshot(
-        ['new-a', 'known-1', 'known-2'],
-        ['known-1', 'known-2', 'known-3']
-      )
+      createRecentProfileViewerSnapshot(['new-a', 'known-1', 'known-2'], ['known-1', 'known-2', 'known-3'])
     ).toEqual(['new-a', 'known-1', 'known-2', 'known-3']);
   });
 
@@ -141,11 +137,7 @@ describe('profile viewers pagination', () => {
     const currentSnapshot = ['top-1', 'top-2', 'top-3'];
 
     expect(
-      extendBackfillRecentProfileViewerSnapshot(
-        currentSnapshot,
-        ['historical-100', 'historical-101'],
-        100
-      )
+      extendBackfillRecentProfileViewerSnapshot(currentSnapshot, ['historical-100', 'historical-101'], 100)
     ).toEqual(currentSnapshot);
   });
 });

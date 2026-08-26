@@ -2,11 +2,16 @@ import {
   createProfileViewersSyncState,
   getNextProfileViewersAlarmAt,
   getProfileViewersSummaryMigrationDueAt,
+  PROFILE_VIEWERS_BUDGET_CAPACITY,
+  PROFILE_VIEWERS_SCHEDULE_POLICY_VERSION,
   PROFILE_VIEWERS_SUMMARY_COLLECTION_VERSION,
   type ProfileViewersSyncState,
   type ProfileViewersSyncTrigger,
 } from './profile-viewers-sync-state';
-import { PROFILE_VIEWERS_RECENT_SNAPSHOT_LIMIT } from './profile-viewers-pagination';
+import {
+  PROFILE_VIEWERS_PAGINATION_PAGE_SIZE,
+  PROFILE_VIEWERS_RECENT_SNAPSHOT_LIMIT,
+} from './profile-viewers-pagination';
 import { getStorageValue, setStorageValue } from './feeds-auth';
 import type { ProfileViewersSyncResult } from './profile-viewers-sync-result';
 
@@ -82,10 +87,7 @@ export function appendProfileViewersWakeEvent(
         : [];
 
       await setStorageValue({
-        [PROFILE_VIEWERS_WAKE_LOG_STORAGE_KEY]: [wakeEvent, ...events].slice(
-          0,
-          PROFILE_VIEWERS_WAKE_LOG_LIMIT
-        ),
+        [PROFILE_VIEWERS_WAKE_LOG_STORAGE_KEY]: [wakeEvent, ...events].slice(0, PROFILE_VIEWERS_WAKE_LOG_LIMIT),
       });
     })
     .catch((error) => {
@@ -111,13 +113,18 @@ export async function getProfileViewersSyncState(userId: string): Promise<Profil
     return createProfileViewersSyncState(userId, now);
   }
 
-  const isCurrentSchedulePolicy = state.schedulePolicyVersion === 2;
+  const isCurrentSchedulePolicy =
+    state.schedulePolicyVersion === PROFILE_VIEWERS_SCHEDULE_POLICY_VERSION;
+  const isCurrentSummaryCollection =
+    state.summaryCollectionVersion === PROFILE_VIEWERS_SUMMARY_COLLECTION_VERSION;
+  const needsPrivateSummaryRescan =
+    !isCurrentSummaryCollection && state.backfillStatus === 'complete';
   const migrationDueAt = getProfileViewersSummaryMigrationDueAt(state, now);
 
   return {
     ...createProfileViewersSyncState(userId, now),
     ...state,
-    schedulePolicyVersion: 2,
+    schedulePolicyVersion: PROFILE_VIEWERS_SCHEDULE_POLICY_VERSION,
     summaryCollectionVersion: PROFILE_VIEWERS_SUMMARY_COLLECTION_VERSION,
     nextDueAt: isCurrentSchedulePolicy ? migrationDueAt : now,
     retryAt: isCurrentSchedulePolicy ? state.retryAt : undefined,
@@ -125,18 +132,26 @@ export async function getProfileViewersSyncState(userId: string): Promise<Profil
     cycleStartedAt: isCurrentSchedulePolicy ? state.cycleStartedAt : undefined,
     attemptStartedAt: isCurrentSchedulePolicy ? state.attemptStartedAt : undefined,
     attemptExpiresAt: isCurrentSchedulePolicy ? state.attemptExpiresAt : undefined,
-    requestWindowStartedAt: isCurrentSchedulePolicy ? state.requestWindowStartedAt : undefined,
+    requestWindowStartedAt: undefined,
     lastError: isCurrentSchedulePolicy ? state.lastError : undefined,
-    requestCountInWindow:
+    requestCountInWindow: undefined,
+    requestBudgetTokens:
       isCurrentSchedulePolicy &&
-      typeof state.requestCountInWindow === 'number' &&
-      state.requestCountInWindow >= 0
-        ? state.requestCountInWindow
-        : 0,
+      typeof state.requestBudgetTokens === 'number' &&
+      Number.isFinite(state.requestBudgetTokens)
+        ? Math.min(
+            PROFILE_VIEWERS_BUDGET_CAPACITY,
+            Math.max(0, state.requestBudgetTokens)
+          )
+        : PROFILE_VIEWERS_BUDGET_CAPACITY,
+    requestBudgetUpdatedAt:
+      isCurrentSchedulePolicy &&
+      typeof state.requestBudgetUpdatedAt === 'number' &&
+      Number.isFinite(state.requestBudgetUpdatedAt)
+        ? state.requestBudgetUpdatedAt
+        : now,
     consecutiveFailedCycles:
-      isCurrentSchedulePolicy &&
-      typeof state.consecutiveFailedCycles === 'number' &&
-      state.consecutiveFailedCycles >= 0
+      isCurrentSchedulePolicy && typeof state.consecutiveFailedCycles === 'number' && state.consecutiveFailedCycles >= 0
         ? state.consecutiveFailedCycles
         : 0,
     authRecoveryAttempts:
@@ -144,9 +159,7 @@ export async function getProfileViewersSyncState(userId: string): Promise<Profil
         ? state.authRecoveryAttempts
         : 0,
     authRecoveryAt:
-      typeof state.authRecoveryAt === 'number' && state.authRecoveryAt > 0
-        ? state.authRecoveryAt
-        : undefined,
+      typeof state.authRecoveryAt === 'number' && state.authRecoveryAt > 0 ? state.authRecoveryAt : undefined,
     backfillStatus:
       state.backfillStatus === 'in_progress' || state.backfillStatus === 'complete'
         ? state.backfillStatus
@@ -160,18 +173,58 @@ export async function getProfileViewersSyncState(userId: string): Promise<Profil
         ? state.backfillProfilesSaved
         : 0,
     backfillNextStart:
-      typeof state.backfillNextStart === 'number' && state.backfillNextStart >= 0
-        ? state.backfillNextStart
-        : undefined,
+      typeof state.backfillNextStart === 'number' && state.backfillNextStart >= 0 ? state.backfillNextStart : undefined,
     backfillPageSize:
-      typeof state.backfillPageSize === 'number' && state.backfillPageSize > 0
-        ? state.backfillPageSize
-        : undefined,
+      typeof state.backfillPageSize === 'number' && state.backfillPageSize > 0 ? state.backfillPageSize : undefined,
     recentProfileViewerUsernames: Array.isArray(state.recentProfileViewerUsernames)
-      ? state.recentProfileViewerUsernames.filter(
-          (username): username is string => typeof username === 'string'
-        ).slice(0, PROFILE_VIEWERS_RECENT_SNAPSHOT_LIMIT)
+      ? state.recentProfileViewerUsernames
+          .filter((username): username is string => typeof username === 'string')
+          .slice(0, PROFILE_VIEWERS_RECENT_SNAPSHOT_LIMIT)
       : [],
+    // Run the newest visible page first so the same migration repairs both
+    // rendered order and the private aggregate in one coordinator cycle.
+    nextCollectionTask: needsPrivateSummaryRescan
+      ? 'visible'
+      : state.nextCollectionTask === 'private_summary'
+        ? 'private_summary'
+        : 'visible',
+    privateSummaryStatus:
+      needsPrivateSummaryRescan
+        ? 'scanning'
+        : state.privateSummaryStatus === 'scanning' || state.privateSummaryStatus === 'ready'
+        ? state.privateSummaryStatus
+        : 'not_started',
+    privateSummaryNextStart:
+      needsPrivateSummaryRescan
+        ? PROFILE_VIEWERS_PAGINATION_PAGE_SIZE
+        : typeof state.privateSummaryNextStart === 'number' && state.privateSummaryNextStart >= 0
+        ? state.privateSummaryNextStart
+        : undefined,
+    privateSummaryPageSize:
+      typeof state.privateSummaryPageSize === 'number' && state.privateSummaryPageSize > 0
+        ? state.privateSummaryPageSize
+        : undefined,
+    privateSummaryKnownStart:
+      !needsPrivateSummaryRescan &&
+      typeof state.privateSummaryKnownStart === 'number' && state.privateSummaryKnownStart >= 0
+        ? state.privateSummaryKnownStart
+        : undefined,
+    privateSummaryScanOrigin:
+      needsPrivateSummaryRescan
+        ? 'full'
+        : state.privateSummaryScanOrigin === 'known_position'
+        ? 'known_position'
+        : state.privateSummaryScanOrigin === 'full'
+          ? 'full'
+          : undefined,
+    privateSummaryLastAttemptAt:
+      typeof state.privateSummaryLastAttemptAt === 'number' && state.privateSummaryLastAttemptAt > 0
+        ? state.privateSummaryLastAttemptAt
+        : undefined,
+    privateSummaryLastSuccessAt:
+      typeof state.privateSummaryLastSuccessAt === 'number' && state.privateSummaryLastSuccessAt > 0
+        ? state.privateSummaryLastSuccessAt
+        : undefined,
     attemptsInCycle:
       isCurrentSchedulePolicy && (state.attemptsInCycle === 1 || state.attemptsInCycle === 2)
         ? state.attemptsInCycle

@@ -1,12 +1,16 @@
 const path = require('path');
+const webpack = require('webpack');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
 const CopyWebpackPlugin = require('copy-webpack-plugin');
 
-module.exports = {
+module.exports = (_environment, argv) => ({
   entry: {
     popup: './src/popup/index.tsx',
     offscreen: './src/offscreen/index.ts',
     content: './src/content/content.ts',
+    'dashboard-extension-bridge': './src/content/dashboard-extension-bridge.ts',
+    'linkedin-invite-network-hook': './src/content/linkedin-invite-network-hook.ts',
+    'linkedin-analytics-network-hook': './src/content/linkedin-analytics-network-hook.ts',
     'profile-content': './src/content/profile-content/index.ts',
     'sharefeed-capture': './src/content/sharefeed-capture.ts',
     'feeds-sidebar': './src/content/feeds-sidebar/index.ts',
@@ -49,6 +53,9 @@ module.exports = {
     modules: [path.resolve(__dirname, 'node_modules'), 'node_modules'],
   },
   plugins: [
+    new webpack.DefinePlugin({
+      __MFP_DEV_BUILD__: JSON.stringify(argv.mode === 'development'),
+    }),
     new HtmlWebpackPlugin({
       template: './src/popup/index.html',
       filename: 'popup.html',
@@ -67,4 +74,4 @@ module.exports = {
     }),
   ],
   devtool: 'source-map',
-};
+});

@@ -67,4 +67,33 @@ describe('mergeProfileViewerCandidates', () => {
 
     expect(result.map((item) => item.linkedinUsername)).toEqual(['real-viewer']);
   });
+
+  it('does not replace a verified anchor identity with an uncertain RSC neighbour', () => {
+    const adamImage =
+      'https://media.licdn.com/dms/image/v2/adam/profile-displayphoto-shrink_100_100/photo?e=4102444800';
+    const result = mergeProfileViewerCandidates([
+      [
+        viewer('acoaadamtoken123', {
+          displayName: 'Adam Ivaniush',
+          profileImageUrl: adamImage,
+          identityUncertain: false,
+        }),
+      ],
+      [
+        viewer('acoaadamtoken123', {
+          displayName: 'Julia Mozharova',
+          profileImageUrl: '',
+          identityUncertain: true,
+        }),
+      ],
+    ]);
+
+    expect(result[0]).toEqual(
+      expect.objectContaining({
+        displayName: 'Adam Ivaniush',
+        profileImageUrl: adamImage,
+        identityUncertain: false,
+      })
+    );
+  });
 });

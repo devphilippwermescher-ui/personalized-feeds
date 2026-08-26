@@ -1,0 +1,74 @@
+import { describe, expect, it } from 'vitest';
+import { parsePassiveAnalyticsResponse } from '../linkedin-analytics-passive-parser';
+
+describe('LinkedIn analytics passive response parsing', () => {
+  it('captures the rounded member SSI and ignores group ranks', () => {
+    const result = parsePassiveAnalyticsResponse(
+      'https://www.linkedin.com/sales-api/salesApiSsi',
+      JSON.stringify({
+        groupScore: [
+          { rank: 85, groupType: 'INDUSTRY' },
+          { rank: 94, groupType: 'NETWORK' },
+        ],
+        memberScore: { overall: 15.683752 },
+      }),
+      123
+    );
+
+    expect(result).toEqual({
+      sourceUrl: 'https://www.linkedin.com/sales-api/salesApiSsi',
+      capturedAt: 123,
+      socialSellingIndexScore: 16,
+    });
+  });
+
+  it('captures the exact connections total from LinkedIn RSC', () => {
+    const result = parsePassiveAnalyticsResponse(
+      'https://www.linkedin.com/flagship-web/mynetwork/invite-connect/connections',
+      'x{"id":"totalConnectionsCount","value":{"intValue":86}}y',
+      100
+    );
+    expect(result).toMatchObject({ connectionsCount: 86, connectionsExact: true, capturedAt: 100 });
+  });
+
+  it('does not trust a connections total from a related server-request response', () => {
+    const result = parsePassiveAnalyticsResponse(
+      'https://www.linkedin.com/flagship-web/rsc-action/actions/server-request?sduiid=mynetwork.connectionsList',
+      'x{"id": "totalConnectionsCount", "value":{"longValue":"1,086"}}y',
+      150
+    );
+    expect(result).toBeNull();
+  });
+
+  it('ignores unrelated connections totals from pagination responses', () => {
+    const result = parsePassiveAnalyticsResponse(
+      'https://www.linkedin.com/flagship-web/rsc-action/actions/pagination?sduiid=com.linkedin.sdui.pagers.mynetwork.connectionsList',
+      'x{"id":"totalConnectionsCount","value":{"intValue":1}}y',
+      175
+    );
+
+    expect(result).toBeNull();
+  });
+
+  it('captures the followers search result total', () => {
+    const result = parsePassiveAnalyticsResponse(
+      'https://www.linkedin.com/voyager/api/graphql?variables=FOLLOWERS',
+      '{"metadata":{"totalResultCount":86},"paging":{"total":80}}',
+      200
+    );
+    expect(result).toMatchObject({ followersCount: 86, capturedAt: 200 });
+  });
+
+  it("uses LinkedIn's visible follower total when the normalized response only contains that text", () => {
+    const result = parsePassiveAnalyticsResponse(
+      'https://www.linkedin.com/voyager/api/graphql?variables=FOLLOWERS',
+      '{"text":"1,286 people are following you"}',
+      250
+    );
+    expect(result).toMatchObject({ followersCount: 1_286, capturedAt: 250 });
+  });
+
+  it('ignores unrelated LinkedIn responses', () => {
+    expect(parsePassiveAnalyticsResponse('https://www.linkedin.com/voyager/api/messaging', '{"total":86}')).toBeNull();
+  });
+});

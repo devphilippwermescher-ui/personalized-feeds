@@ -1,10 +1,13 @@
 import {
   deleteDoc,
   doc,
+  type DocumentData,
   getDoc,
   getDocs,
+  onSnapshot,
   orderBy,
   query,
+  type QuerySnapshot,
   setDoc,
   updateDoc,
   writeBatch,
@@ -80,10 +83,7 @@ function isWeakSearchDisplayName(value: string | undefined): boolean {
   );
 }
 
-function chooseSearchDisplayName(
-  incoming: ProfileViewerSearchInput,
-  existing?: ProfileViewerSearch
-): string {
+function chooseSearchDisplayName(incoming: ProfileViewerSearchInput, existing?: ProfileViewerSearch): string {
   const incomingName = incoming.displayName.trim();
   const existingName = existing?.displayName?.trim() || '';
 
@@ -128,6 +128,7 @@ export async function upsertProfileViewers(
     }))
     .filter(
       (entry) =>
+        entry.viewer.identityUncertain !== true &&
         isValidLinkedInProfileUsername(entry.linkedinUsername) &&
         Boolean(entry.viewer.linkedinUrl) &&
         Boolean(entry.viewer.displayName.trim())
@@ -142,17 +143,23 @@ export async function upsertProfileViewers(
   for (const { viewer, lastSeenPosition, linkedinUsername } of validViewers) {
     const viewerRef = doc(profileViewersCollection(userId), linkedinUsername);
     const existingViewer: Partial<ProfileViewer> = existingByUsername.get(linkedinUsername) || {};
-    const existingProfileImageUrl = ambiguousExistingImages.has(existingViewer.profileImageUrl?.trim() || '')
-      ? ''
-      : existingViewer.profileImageUrl;
+    const existingProfileImageUrl =
+      viewer.discardExistingProfileImage === true ||
+      ambiguousExistingImages.has(existingViewer.profileImageUrl?.trim() || '')
+        ? ''
+        : existingViewer.profileImageUrl;
     const firstSeenAt = existingByUsername.has(linkedinUsername) ? existingViewer.firstSeenAt || now : now;
     const preservedRelationshipUpdates: Partial<ProfileViewer> = {};
     if (existingViewer.profileUrn) preservedRelationshipUpdates.profileUrn = existingViewer.profileUrn;
     if (existingViewer.memberNumericId) preservedRelationshipUpdates.memberNumericId = existingViewer.memberNumericId;
-    if (typeof existingViewer.canMessage === 'boolean') preservedRelationshipUpdates.canMessage = existingViewer.canMessage;
-    if (typeof existingViewer.canFollow === 'boolean') preservedRelationshipUpdates.canFollow = existingViewer.canFollow;
-    if (typeof existingViewer.canConnect === 'boolean') preservedRelationshipUpdates.canConnect = existingViewer.canConnect;
-    if (typeof existingViewer.isFollowing === 'boolean') preservedRelationshipUpdates.isFollowing = existingViewer.isFollowing;
+    if (typeof existingViewer.canMessage === 'boolean')
+      preservedRelationshipUpdates.canMessage = existingViewer.canMessage;
+    if (typeof existingViewer.canFollow === 'boolean')
+      preservedRelationshipUpdates.canFollow = existingViewer.canFollow;
+    if (typeof existingViewer.canConnect === 'boolean')
+      preservedRelationshipUpdates.canConnect = existingViewer.canConnect;
+    if (typeof existingViewer.isFollowing === 'boolean')
+      preservedRelationshipUpdates.isFollowing = existingViewer.isFollowing;
     if (typeof viewer.isPremium === 'boolean') {
       preservedRelationshipUpdates.isPremium = viewer.isPremium;
     } else if (typeof existingViewer.isPremium === 'boolean') {
@@ -222,9 +229,40 @@ export async function getProfileViewers(userId: string): Promise<ProfileViewer[]
   }
 
   return sortProfileViewersByRecency(
-    viewers.filter((viewer) =>
-      isValidLinkedInProfileUsername(viewer.linkedinUsername || viewer.id)
-    )
+    viewers.filter((viewer) => isValidLinkedInProfileUsername(viewer.linkedinUsername || viewer.id))
+  );
+}
+
+function getChronologicalProfileViewersQuery(userId: string) {
+  return query(profileViewersCollection(userId), orderBy('firstSeenAt', 'asc'));
+}
+
+function getValidProfileViewersFromSnapshot(
+  snapshot: QuerySnapshot<DocumentData>
+): ProfileViewer[] {
+  return snapshot.docs
+    .map(docToProfileViewer)
+    .filter((viewer) => isValidLinkedInProfileUsername(viewer.linkedinUsername || viewer.id));
+}
+
+/**
+ * Read-only chronological data source for dashboard analytics. Unlike the
+ * sidebar loader, it never performs cleanup writes from the dashboard.
+ */
+export async function getChronologicalProfileViewers(userId: string): Promise<ProfileViewer[]> {
+  const snapshot = await getDocs(getChronologicalProfileViewersQuery(userId));
+  return getValidProfileViewersFromSnapshot(snapshot);
+}
+
+export function subscribeToChronologicalProfileViewers(
+  userId: string,
+  onValue: (viewers: ProfileViewer[], metadata?: { fromCache: boolean }) => void,
+  onError?: (error: Error) => void
+): () => void {
+  return onSnapshot(
+    getChronologicalProfileViewersQuery(userId),
+    (snapshot) => onValue(getValidProfileViewersFromSnapshot(snapshot), snapshot.metadata),
+    (error) => onError?.(error)
   );
 }
 
@@ -239,9 +277,7 @@ export async function upsertProfileViewerSearches(
 ): Promise<{ savedCount: number; newCount: number }> {
   const now = options.seenAt || Date.now();
   const positionOffset = options.positionOffset || 0;
-  const existingByKey = new Map(
-    existingSearches.map((search) => [search.searchKey, search])
-  );
+  const existingByKey = new Map(existingSearches.map((search) => [search.searchKey, search]));
   const uniqueSearches = new Map<string, ProfileViewerSearchInput>();
 
   searches.forEach((search) => {
@@ -252,9 +288,7 @@ export async function upsertProfileViewerSearches(
   });
 
   if (uniqueSearches.size > 500) {
-    throw new Error(
-      'A single profile visitors sync cannot persist more than 500 search segments.'
-    );
+    throw new Error('A single profile visitors sync cannot persist more than 500 search segments.');
   }
 
   const batch = writeBatch(getFirebaseDb());
@@ -264,8 +298,7 @@ export async function upsertProfileViewerSearches(
   for (const [searchKey, search] of uniqueSearches) {
     const existing = existingByKey.get(searchKey);
     const documentId = encodeURIComponent(searchKey);
-    const lastSeenPosition =
-      positionOffset + (search.listPosition ?? savedCount);
+    const lastSeenPosition = positionOffset + (search.listPosition ?? savedCount);
 
     batch.set(
       doc(profileViewerSearchesCollection(userId), documentId),
@@ -276,10 +309,7 @@ export async function upsertProfileViewerSearches(
         displayName: chooseSearchDisplayName(search, existing),
         keywords: search.keywords,
         currentCompany: search.currentCompany || '',
-        viewedAgoText: keepExistingIfIncomingEmpty(
-          search.viewedAgoText,
-          existing?.viewedAgoText
-        ),
+        viewedAgoText: keepExistingIfIncomingEmpty(search.viewedAgoText, existing?.viewedAgoText),
         firstSeenAt: existing?.firstSeenAt || now,
         lastSeenAt: now,
         lastSeenPosition,
@@ -301,20 +331,13 @@ export async function upsertProfileViewerSearches(
   return { savedCount, newCount };
 }
 
-export async function getProfileViewerSearches(
-  userId: string
-): Promise<ProfileViewerSearch[]> {
-  const q = query(
-    profileViewerSearchesCollection(userId),
-    orderBy('lastSeenAt', 'desc')
-  );
+export async function getProfileViewerSearches(userId: string): Promise<ProfileViewerSearch[]> {
+  const q = query(profileViewerSearchesCollection(userId), orderBy('lastSeenAt', 'desc'));
   const snapshot = await getDocs(q);
   return sortProfileViewersByRecency(snapshot.docs.map(docToProfileViewerSearch));
 }
 
-export async function getProfileViewerItems(
-  userId: string
-): Promise<ProfileViewerListItem[]> {
+export async function getProfileViewerItems(userId: string): Promise<ProfileViewerListItem[]> {
   return getProfileViewers(userId);
 }
 
@@ -349,17 +372,14 @@ export async function updateProfileViewerSummary(
   };
 }
 
-export async function getProfileViewerSummary(
-  userId: string
-): Promise<ProfileViewerSummary | null> {
+export async function getProfileViewerSummary(userId: string): Promise<ProfileViewerSummary | null> {
   const snapshot = await getDoc(profileViewerSummaryDoc(userId));
   if (!snapshot.exists()) {
     return null;
   }
 
   const data = snapshot.data() as Partial<ProfileViewerSummary>;
-  const hasPrivateViewerCount =
-    Number.isSafeInteger(data.privateViewerCount) && (data.privateViewerCount || 0) >= 0;
+  const hasPrivateViewerCount = Number.isSafeInteger(data.privateViewerCount) && (data.privateViewerCount || 0) >= 0;
   const hasRecruiterViewerCount =
     Number.isSafeInteger(data.recruiterViewerCount) && (data.recruiterViewerCount || 0) >= 0;
 
@@ -378,12 +398,67 @@ export async function getProfileViewerSummary(
   };
 }
 
+export function subscribeToProfileViewerSummary(
+  userId: string,
+  onValue: (summary: ProfileViewerSummary | null, metadata?: { fromCache: boolean }) => void,
+  onError?: (error: Error) => void
+): () => void {
+  return onSnapshot(
+    profileViewerSummaryDoc(userId),
+    (snapshot) => {
+      if (!snapshot.exists()) {
+        onValue(null, snapshot.metadata);
+        return;
+      }
+
+      const data = snapshot.data() as Partial<ProfileViewerSummary>;
+      const hasPrivateViewerCount =
+        Number.isSafeInteger(data.privateViewerCount) && (data.privateViewerCount || 0) >= 0;
+      const hasRecruiterViewerCount =
+        Number.isSafeInteger(data.recruiterViewerCount) && (data.recruiterViewerCount || 0) >= 0;
+      onValue(
+        hasPrivateViewerCount || hasRecruiterViewerCount
+          ? {
+              privateViewerCount: hasPrivateViewerCount ? data.privateViewerCount || 0 : 0,
+              recruiterViewerCount: hasRecruiterViewerCount ? data.recruiterViewerCount : undefined,
+              recruiterViewerUrl:
+                typeof data.recruiterViewerUrl === 'string' && data.recruiterViewerUrl.trim()
+                  ? data.recruiterViewerUrl.trim()
+                  : undefined,
+              updatedAt: typeof data.updatedAt === 'number' ? data.updatedAt : 0,
+            }
+          : null,
+        snapshot.metadata
+      );
+    },
+    (error) => onError?.(error)
+  );
+}
+
 export async function updateProfileViewer(
   userId: string,
   viewerId: string,
-  updates: Partial<ProfileViewerInput & Pick<ProfileViewer, 'profileUrn' | 'memberNumericId' | 'canMessage' | 'canFollow' | 'canConnect' | 'isFollowing' | 'isPremium' | 'status' | 'statusResolvedAt' | 'statusCheckFailedAt' | 'statusCheckError'>>
+  updates: Partial<
+    ProfileViewerInput &
+      Pick<
+        ProfileViewer,
+        | 'profileUrn'
+        | 'memberNumericId'
+        | 'canMessage'
+        | 'canFollow'
+        | 'canConnect'
+        | 'isFollowing'
+        | 'isPremium'
+        | 'status'
+        | 'statusResolvedAt'
+        | 'statusCheckFailedAt'
+        | 'statusCheckError'
+      >
+  >
 ): Promise<void> {
-  const linkedinUsername = normalizeLinkedInUsername(viewerId || updates.linkedinUsername || getUsernameFromLinkedInUrl(updates.linkedinUrl || ''));
+  const linkedinUsername = normalizeLinkedInUsername(
+    viewerId || updates.linkedinUsername || getUsernameFromLinkedInUrl(updates.linkedinUrl || '')
+  );
   if (!linkedinUsername) {
     throw new Error('Invalid profile viewer id');
   }
@@ -399,10 +474,9 @@ export async function updateProfileViewer(
 
   const viewerRef = doc(profileViewersCollection(userId), linkedinUsername);
   const existingSnapshot = await getDoc(viewerRef);
-  const existing = existingSnapshot.exists() ? existingSnapshot.data() as Partial<ProfileViewer> : null;
+  const existing = existingSnapshot.exists() ? (existingSnapshot.data() as Partial<ProfileViewer>) : null;
   const shouldPreserveWithdrawn =
-    existing?.status === 'withdrawn' &&
-    (updates.status === 'connect' || updates.status === 'following');
+    existing?.status === 'withdrawn' && (updates.status === 'connect' || updates.status === 'following');
   const shouldPreserveUnavailable =
     existing?.status === 'unavailable' &&
     (updates.status === 'connect' || updates.status === 'following' || updates.status === 'pending');
@@ -431,9 +505,7 @@ export async function removeProfileViewer(userId: string, viewerId: string): Pro
   await deleteDoc(doc(profileViewersCollection(userId), linkedinUsername));
 }
 
-async function deleteCollectionDocuments(
-  collectionRef: ReturnType<typeof profileViewersCollection>
-): Promise<number> {
+async function deleteCollectionDocuments(collectionRef: ReturnType<typeof profileViewersCollection>): Promise<number> {
   const snapshot = await getDocs(collectionRef);
   if (snapshot.empty) {
     return 0;
@@ -457,9 +529,7 @@ async function deleteCollectionDocumentsNotSeenAt(
   seenAt: number
 ): Promise<number> {
   const snapshot = await getDocs(collectionRef);
-  const staleDocuments = snapshot.docs.filter(
-    (documentSnapshot) => documentSnapshot.data().lastSeenAt !== seenAt
-  );
+  const staleDocuments = snapshot.docs.filter((documentSnapshot) => documentSnapshot.data().lastSeenAt !== seenAt);
   if (staleDocuments.length === 0) {
     return 0;
   }

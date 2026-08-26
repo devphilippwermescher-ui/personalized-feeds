@@ -22,6 +22,15 @@ export function extractProfileViewerImageUrls(payload: string): Map<string, stri
       return;
     }
 
+    // A streamed RSC response may place another profile card between an
+    // avatar's a11y label and a later renderPayload. Never let that later
+    // profile image inherit the earlier display name.
+    const renderPayloadIndex = componentPayload.indexOf(renderPayloadMatch[0]);
+    const componentPrefix = componentPayload.slice(0, renderPayloadIndex);
+    if (/(?:https:\/\/www\.linkedin\.com)?\/in\/[\p{L}\p{N}%_.~-]+/iu.test(componentPrefix)) {
+      return;
+    }
+
     const displayName = parseJsonString(component[1]).trim().toLowerCase();
     const rootUrl = parseJsonString(renderPayloadMatch[1]);
     const renditions = renderPayloadMatch[2];

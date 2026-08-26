@@ -184,6 +184,7 @@ function shouldSkipConnectRequest(
 
 export function bindMemberActionButtons(root: ParentNode, deps: MemberActionDeps): void {
   const {
+    sendMsg,
     openLinkedInMessage,
     openLinkedInProfile,
     fetchLinkedInRelationshipStatus,
@@ -277,6 +278,16 @@ export function bindMemberActionButtons(root: ParentNode, deps: MemberActionDeps
         }
 
         await sendLinkedInConnectRequest(member.profileUrn, member.linkedinUrl);
+        void sendMsg({
+          type: 'LINKEDIN_CONNECTION_INVITE_TRACK_SENT',
+          invite: {
+            linkedinUsername: member.linkedinUsername,
+            linkedinUrl: member.linkedinUrl,
+            displayName: member.displayName,
+            profileUrn: member.profileUrn,
+            memberNumericId: member.memberNumericId,
+          },
+        }).catch(() => undefined);
         invalidateCacheForUser(member.linkedinUsername);
         member.transientAction = 'connect';
         member.canConnect = false;

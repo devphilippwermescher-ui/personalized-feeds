@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react';
 import { getUserFeatureSettings, updateUserFeatureSettings } from 'shared/firestore-service';
 import type { UserFeatureSettings } from 'shared/types';
-
-const EXTENSION_ID = 'opgnfeilbmdpojamipidejalbiddapla';
+import { sendMessageToExtension } from '../utils/extensionMessaging';
 
 const DEFAULT_SETTINGS: UserFeatureSettings = {
   messagingButtons: true,
@@ -12,15 +11,10 @@ const DEFAULT_SETTINGS: UserFeatureSettings = {
 };
 
 function syncSettingsToExtension(settings: Partial<UserFeatureSettings>): void {
-  const runtime = window.chrome?.runtime;
-  if (!runtime?.sendMessage) {
-    return;
-  }
-
-  runtime.sendMessage(EXTENSION_ID, {
+  void sendMessageToExtension({
     type: 'DASHBOARD_SYNC_SETTINGS',
     settings,
-  }, () => undefined);
+  });
 }
 
 export function useUserSettings(userId: string) {

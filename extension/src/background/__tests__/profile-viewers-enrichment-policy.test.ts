@@ -29,8 +29,12 @@ function existing(overrides: Partial<ProfileViewer> = {}): ProfileViewer {
 }
 
 describe('profile viewer enrichment policy', () => {
-  it('skips network enrichment for an existing complete profile', () => {
-    expect(profileViewerNeedsEnrichment(input(), existing(), false)).toBe(false);
+  it('revalidates an existing avatar when the current response does not confirm it', () => {
+    expect(profileViewerNeedsEnrichment(input(), existing(), false)).toBe(true);
+  });
+
+  it('skips enrichment when the current response confirms the complete identity', () => {
+    expect(profileViewerNeedsEnrichment(input({ profileImageUrl: validImage }), existing(), false)).toBe(false);
   });
 
   it('skips network enrichment for a new complete RSC profile', () => {
@@ -47,6 +51,13 @@ describe('profile viewer enrichment policy', () => {
       )
     ).toBe(true);
     expect(profileViewerNeedsEnrichment(input(), existing(), true)).toBe(true);
+    expect(
+      profileViewerNeedsEnrichment(
+        input({ identityUncertain: true, profileImageUrl: validImage }),
+        existing(),
+        false
+      )
+    ).toBe(true);
   });
 
   it('recognizes when People Search data is sufficient without a profile-page request', () => {

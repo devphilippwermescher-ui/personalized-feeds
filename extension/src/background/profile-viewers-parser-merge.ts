@@ -10,11 +10,28 @@ const ENRICHABLE_FIELDS = [
 ] as const satisfies ReadonlyArray<keyof ProfileViewerInput>;
 
 function mergeProfileViewer(existing: ProfileViewerInput, incoming: ProfileViewerInput): ProfileViewerInput {
+  const preserveVerifiedExistingIdentity =
+    existing.identityUncertain === false && incoming.identityUncertain === true;
+  const identityUncertain =
+    existing.identityUncertain === false || incoming.identityUncertain === false
+      ? false
+      : existing.identityUncertain === true || incoming.identityUncertain === true
+        ? true
+        : undefined;
   const merged = {
     ...existing,
-    displayName: chooseProfileViewerDisplayName(incoming.displayName, existing.displayName, existing.linkedinUsername),
-    profileImageUrl: chooseProfileViewerImageUrl(incoming.profileImageUrl, existing.profileImageUrl),
+    displayName: preserveVerifiedExistingIdentity
+      ? existing.displayName
+      : chooseProfileViewerDisplayName(incoming.displayName, existing.displayName, existing.linkedinUsername),
+    profileImageUrl: preserveVerifiedExistingIdentity
+      ? existing.profileImageUrl
+      : chooseProfileViewerImageUrl(incoming.profileImageUrl, existing.profileImageUrl),
     isPremium: incoming.isPremium === true ? true : existing.isPremium,
+    identityUncertain,
+    discardExistingProfileImage:
+      existing.discardExistingProfileImage === true ||
+      incoming.discardExistingProfileImage === true ||
+      undefined,
     sourceIndex:
       existing.sourceIndex === undefined
         ? incoming.sourceIndex

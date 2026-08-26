@@ -2,7 +2,6 @@ import type { ProfileViewerInput } from 'shared/types';
 
 export const PROFILE_VIEWERS_PAGER_ID = 'com.linkedin.sdui.premium.wvmp.entityList';
 export const PROFILE_VIEWERS_PAGINATION_PAGE_SIZE = 10;
-export const PROFILE_VIEWERS_MAX_PAGES_PER_SYNC = 40;
 export const PROFILE_VIEWERS_RECENT_SNAPSHOT_LIMIT = 50;
 export const PROFILE_VIEWERS_STABLE_OVERLAP_SIZE = 5;
 
@@ -21,10 +20,8 @@ const FILTER_TYPES = [
 
 const FILTER_STATE_KEYS = {
   WvmpSearchFilterType_DATE_RANGE: 'entityListQueryFilterPrefixWvmpSearchFilterType_DATE_RANGE',
-  WvmpSearchFilterType_INTERESTING_VIEWER:
-    'entityListQueryFilterPrefixWvmpSearchFilterType_INTERESTING_VIEWER',
-  WvmpSearchFilterType_ORGANIZATION:
-    'entityListQueryFilterPrefixWvmpSearchFilterType_ORGANIZATION',
+  WvmpSearchFilterType_INTERESTING_VIEWER: 'entityListQueryFilterPrefixWvmpSearchFilterType_INTERESTING_VIEWER',
+  WvmpSearchFilterType_ORGANIZATION: 'entityListQueryFilterPrefixWvmpSearchFilterType_ORGANIZATION',
   WvmpSearchFilterType_INDUSTRY: 'entityListQueryFilterPrefixWvmpSearchFilterType_INDUSTRY',
   WvmpSearchFilterType_LOCATION: 'entityListQueryFilterPrefixWvmpSearchFilterType_LOCATION',
 } as const;
@@ -44,10 +41,7 @@ function createFilterStates() {
   return FILTER_TYPES.map((filterType) => ({
     key: FILTER_STATE_KEYS[filterType],
     namespace: 'MemoryNamespace',
-    value:
-      filterType === 'WvmpSearchFilterType_DATE_RANGE'
-        ? ['WvmpSearchFilterTimeRange_LAST_90_DAYS']
-        : [],
+    value: filterType === 'WvmpSearchFilterType_DATE_RANGE' ? ['WvmpSearchFilterTimeRange_LAST_90_DAYS'] : [],
     originalProtoCase: 'stringListValue',
   }));
 }
@@ -120,18 +114,13 @@ export function createProfileViewersPaginationBody(cursor: ProfileViewersPaginat
   });
 }
 
-export function extractNextProfileViewersPaginationCursor(
-  payload: string
-): ProfileViewersPaginationCursor | null {
+export function extractNextProfileViewersPaginationCursor(payload: string): ProfileViewersPaginationCursor | null {
   const pagerIndex = payload.indexOf(`"pagerId":"${PROFILE_VIEWERS_PAGER_ID}"`);
   if (pagerIndex < 0) {
     return null;
   }
 
-  const paginationContext = payload.slice(
-    pagerIndex,
-    Math.min(payload.length, pagerIndex + 20_000)
-  );
+  const paginationContext = payload.slice(pagerIndex, Math.min(payload.length, pagerIndex + 20_000));
   const cursorMatch = paginationContext.match(
     /"payload":\{"start":(\d+),"count":(\d+),"sortType":"ProfileViewSortType_TIME_DESCENDING"/
   );
@@ -146,6 +135,12 @@ export function extractNextProfileViewersPaginationCursor(
   }
 
   return { start, count };
+}
+
+export function extractProfileViewersPaginationNeeded(payload: string): boolean | null {
+  const matches = Array.from(payload.matchAll(/"paginationNeeded"\s*:\s*(true|false)/giu));
+  const value = matches[matches.length - 1]?.[1]?.toLowerCase();
+  return value === 'true' ? true : value === 'false' ? false : null;
 }
 
 export function hasStableProfileViewerOverlap(
@@ -180,30 +175,24 @@ export function hasStableProfileViewerOverlap(
 }
 
 export function shouldStopIncrementalProfileViewerPagination(
-  collectedViewers: ProfileViewerInput[],
+  _collectedViewers: ProfileViewerInput[],
   pageViewers: ProfileViewerInput[],
   existingUsernames: Set<string>,
-  previousSnapshot: string[],
+  _previousSnapshot: string[],
   consecutivePagesWithoutNewProfiles: number
 ): boolean {
-  const pageHasNewProfiles = pageViewers.some(
-    (viewer) => !existingUsernames.has(viewer.linkedinUsername.toLowerCase())
-  );
-  if (pageHasNewProfiles) {
-    return false;
-  }
-
-  const collectedUsernames = collectedViewers.map((viewer) => viewer.linkedinUsername);
+  // LinkedIn orders named viewers newest-first. Once a persisted identity is
+  // encountered, everything after it belongs to the already imported tail.
+  // Free accounts may expose only anonymous rows after the first named page;
+  // stop that visible scan on the first empty parsed page and jump directly to
+  // the persisted private-summary cursor instead of walking the hidden tail.
   return (
-    hasStableProfileViewerOverlap(collectedUsernames, previousSnapshot) ||
-    consecutivePagesWithoutNewProfiles >= 2
+    pageViewers.some((viewer) => existingUsernames.has(viewer.linkedinUsername.toLowerCase())) ||
+    (pageViewers.length === 0 && consecutivePagesWithoutNewProfiles >= 1)
   );
 }
 
-export function createRecentProfileViewerSnapshot(
-  collectedUsernames: string[],
-  previousSnapshot: string[]
-): string[] {
+export function createRecentProfileViewerSnapshot(collectedUsernames: string[], previousSnapshot: string[]): string[] {
   const result: string[] = [];
   const seen = new Set<string>();
 

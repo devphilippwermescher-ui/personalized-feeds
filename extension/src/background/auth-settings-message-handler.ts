@@ -1,5 +1,6 @@
 import { signInWithGoogleTokens, signOutUser } from '../services/auth';
 import { getUserFeatureSettings, updateUserFeatureSettings } from 'shared/firestore-service';
+import { DASHBOARD_ANALYTICS_SYNC_ENABLED } from 'shared/feature-flags';
 import type { UserFeatureSettings } from 'shared/types';
 import {
   clearStoredFeedsAuthTokens,
@@ -16,11 +17,10 @@ import {
   setStoredFeedsAuthTokens,
   startOffscreenAuth,
 } from './feeds-auth';
-import {
-  appendProfileViewersWakeEvent,
-  clearProfileViewersAlarm,
-} from './profile-viewers-coordinator-storage';
-import { queueProfileViewersSync } from './profile-viewers-coordinator';
+import { appendProfileViewersWakeEvent, clearProfileViewersAlarm } from './profile-viewers-coordinator-storage';
+import { queueProfileViewersFirstSurfaceSync } from './profile-viewers-coordinator';
+import { queueProfileViewersStatusSync } from './profile-viewers-status-sync';
+import { queueProfileAnalyticsSync } from './profile-analytics-sync-coordinator';
 import { normalizeFeedsError } from './feeds-errors';
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'OFFSCREEN_AUTH_RESULT') {
@@ -85,7 +85,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           event: 'sign_in',
           trigger: 'sign_in',
         });
-        void queueProfileViewersSync('sign_in');
+        // Prepare the first surface the user sees before Profile Analytics can
+        // acquire the one-time Connections-history lock. The forced viewer run
+        // still respects its cooldown and request-token budget.
+        void queueProfileViewersFirstSurfaceSync('sign_in').finally(() => {
+          void queueProfileViewersStatusSync({ trigger: 'sign_in', urgent: true });
+          // Signing in from the Sidebar is itself the first authenticated
+          // extension entry. The analytics coordinator records that fact but
+          // remains gated until Profile Visitors and its summary are complete.
+          if (DASHBOARD_ANALYTICS_SYNC_ENABLED) {
+            void queueProfileAnalyticsSync('first_extension_entry');
+          }
+        });
       })
       .catch((error) => {
         console.error('[feeds-auth] Sign-in error:', error);

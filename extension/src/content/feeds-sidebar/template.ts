@@ -1,5 +1,6 @@
 import type { UserInfo } from './types';
 import { CONTENT_COPY, getSidebarEmptyCopy } from '../shared/copy';
+import { DASHBOARD_ENABLED } from 'shared/feature-flags';
 import type { UserFeatureSettings } from 'shared/types';
 
 function escapeHtml(text: string): string {
@@ -87,8 +88,10 @@ export function renderSidebarHeader(params: {
     </div>
     <div class="lfa-header-right">
       ${planToggleHtml}
-      <!-- <button class="lfa-header-control lfa-header-dashboard-btn lfa-header-dashboard-control" id="lfa-header-dashboard-btn" type="button">Dashboard</button> -->
-      ${currentUser && isPremium ? `
+      ${DASHBOARD_ENABLED ? '<button class="lfa-header-control lfa-header-dashboard-btn lfa-header-dashboard-control" id="lfa-header-dashboard-btn" type="button">Dashboard</button>' : ''}
+      ${
+        currentUser && isPremium
+          ? `
       <div class="lfa-settings-menu-wrap">
         <button class="lfa-header-control lfa-settings-btn lfa-header-settings-control" id="lfa-settings-btn" type="button" aria-label="Settings">
           <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
@@ -97,6 +100,9 @@ export function renderSidebarHeader(params: {
           </svg>
         </button>
         <div class="lfa-settings-menu" id="lfa-settings-menu">
+          ${
+            DASHBOARD_ENABLED
+              ? `
           <button class="lfa-settings-link" id="lfa-manage-account-btn" type="button">
             <span class="lfa-settings-link-icon lfa-settings-link-icon--primary">
               <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
@@ -107,26 +113,35 @@ export function renderSidebarHeader(params: {
             <span>${CONTENT_COPY.common.manageAccount}</span>
           </button>
           <div class="lfa-settings-divider"></div>
+          `
+              : ''
+          }
           <div class="lfa-settings-section-title">${CONTENT_COPY.common.features}</div>
           ${renderSettingsToggleRow('messagingButtons', 'Messaging buttons', featureSettings.messagingButtons, 'Show MyFeedIn buttons inside LinkedIn messaging conversations')}
           ${renderSettingsToggleRow('postButtons', 'Post buttons', featureSettings.postButtons, 'Show MyFeedIn buttons on LinkedIn feed posts')}
           <!-- ${renderSettingsToggleRow('speechToComment', 'Speech to comment', featureSettings.speechToComment, 'Show floating mic button on LinkedIn for voice comments')} -->
           ${renderSettingsToggleRow('hideProfileViewers', 'Hide Profile Visitors', featureSettings.hideProfileViewers, 'Hide the Profile Visitors list in the sidebar. Background collection will continue.')}
         </div>
-      </div>` : ''}
+      </div>`
+          : ''
+      }
       ${avatarHtml}
-      ${currentUser ? `
+      ${
+        currentUser
+          ? `
       <div class="lfa-account-menu-wrap">
         <div class="lfa-account-menu" id="lfa-account-menu">
           <div class="lfa-account-menu-profile">
             <div class="lfa-account-menu-avatar">
-              ${currentUser.photoURL
-                ? `<img src="${escapeHtml(currentUser.photoURL)}" alt="" />`
-                : `<div class="lfa-account-menu-avatar-fallback">
+              ${
+                currentUser.photoURL
+                  ? `<img src="${escapeHtml(currentUser.photoURL)}" alt="" />`
+                  : `<div class="lfa-account-menu-avatar-fallback">
                      <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
                        <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
                      </svg>
-                   </div>`}
+                   </div>`
+              }
             </div>
             <div class="lfa-account-menu-copy">
               <div class="lfa-account-menu-name">${escapeHtml(currentUser.displayName || 'User')}</div>
@@ -134,6 +149,9 @@ export function renderSidebarHeader(params: {
             </div>
           </div>
           <div class="lfa-account-menu-divider"></div>
+          ${
+            DASHBOARD_ENABLED
+              ? `
           <button class="lfa-account-menu-link" id="lfa-profile-settings-btn" type="button">
             <span class="lfa-account-menu-link-icon">
               <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
@@ -152,6 +170,9 @@ export function renderSidebarHeader(params: {
             </span>
             <span>${CONTENT_COPY.common.subscription}</span>
           </button>
+          `
+              : ''
+          }
           <button class="lfa-account-menu-link lfa-account-menu-link--danger" id="lfa-account-signout-btn" type="button">
             <span class="lfa-account-menu-link-icon">
               <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
@@ -163,7 +184,9 @@ export function renderSidebarHeader(params: {
             <span>${CONTENT_COPY.common.signOut}</span>
           </button>
         </div>
-      </div>` : ''}
+      </div>`
+          : ''
+      }
     </div>
   `;
 }
@@ -224,6 +247,9 @@ export function renderSidebarBody(params: SidebarBodyParams): string {
         </div>
         <h2 class="lfa-unauth-title">${CONTENT_COPY.sidebar.premiumTitle}</h2>
         <p class="lfa-unauth-desc">${CONTENT_COPY.sidebar.premiumDescription}</p>
+        ${
+          DASHBOARD_ENABLED
+            ? `
         <div class="lfa-sidebar-pro-promo">
           <button class="lfa-sidebar-pro-btn" id="lfa-open-subscription-btn">Get Pro</button>
           <p class="lfa-sidebar-pro-activate">
@@ -231,6 +257,9 @@ export function renderSidebarBody(params: SidebarBodyParams): string {
             <span class="lfa-sidebar-pro-link" id="lfa-open-subscription-activate">Activate here →</span>
           </p>
         </div>
+        `
+            : ''
+        }
       </div>
     `;
   }
@@ -247,7 +276,7 @@ export function renderSidebarBody(params: SidebarBodyParams): string {
         <p class="lfa-unauth-desc">${CONTENT_COPY.sidebar.signInDescription}</p>
         <button class="lfa-signin-btn" id="lfa-signin-btn">${CONTENT_COPY.sidebar.signInButton}</button>
         <p class="lfa-unauth-hint">${CONTENT_COPY.sidebar.signInHint}</p>
-        <a class="lfa-open-dashboard-link" id="lfa-open-dashboard-btn">${CONTENT_COPY.common.openDashboard}</a>
+        ${DASHBOARD_ENABLED ? `<a class="lfa-open-dashboard-link" id="lfa-open-dashboard-btn">${CONTENT_COPY.common.openDashboard}</a>` : ''}
         ${authErrorMessage ? `<p class="lfa-auth-error">${escapeHtml(authErrorMessage)}</p>` : ''}
       </div>
     `;
@@ -261,7 +290,9 @@ export function renderSidebarBody(params: SidebarBodyParams): string {
       </div>
       <div class="lfa-toolbar">
         <input type="text" class="lfa-search" placeholder="${activeFeedTab === 'owned' ? CONTENT_COPY.sidebar.searchFeedsPlaceholder : CONTENT_COPY.sidebar.searchSharedFeedsPlaceholder}" id="lfa-search" value="${escapeHtml(sidebarSearchQuery)}" />
-        ${activeFeedTab === 'owned' ? `
+        ${
+          activeFeedTab === 'owned'
+            ? `
           <!-- <button class="lfa-toolbar-dashboard-btn" id="lfa-toolbar-dashboard-btn" type="button" aria-label="${CONTENT_COPY.common.openDashboard}" title="${CONTENT_COPY.common.openDashboard}">
             <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
               <rect x="3" y="3" width="7" height="7" rx="1.5"></rect>
@@ -271,7 +302,9 @@ export function renderSidebarBody(params: SidebarBodyParams): string {
             </svg>
           </button> -->
           <button class="lfa-add-feed-btn" id="lfa-add-feed-btn">+ Feed</button>
-        ` : ''}
+        `
+            : ''
+        }
       </div>
       <div id="lfa-create-form-slot"></div>
       <div class="lfa-feed-list" id="lfa-feed-list">

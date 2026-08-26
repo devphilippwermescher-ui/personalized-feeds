@@ -29,7 +29,7 @@ interface FeedOptionRenderOptions {
 interface CreateFeedModalElements {
   overlay: HTMLDivElement;
   nameInput: HTMLInputElement;
-  descriptionInput: HTMLInputElement;
+  descriptionInput: HTMLInputElement | null;
   submitButton: HTMLButtonElement;
 }
 
@@ -111,12 +111,16 @@ function renderCreateFeedModal(): string {
           id="pf-create-feed-name"
           placeholder="${CONTENT_COPY.profile.createFeedNamePlaceholder}"
         />
-        <input
-          type="text"
-          class="pf-create-feed-input"
-          id="pf-create-feed-desc"
-          placeholder="${CONTENT_COPY.profile.createFeedDescriptionPlaceholder}"
-        />
+        <!--
+          Description is intentionally hidden for now. Keep this field in the
+          template so it can be restored without rebuilding the modal flow.
+          <input
+            type="text"
+            class="pf-create-feed-input"
+            id="pf-create-feed-desc"
+            placeholder="${CONTENT_COPY.profile.createFeedDescriptionPlaceholder}"
+          />
+        -->
         <div class="pf-create-feed-colors" id="pf-create-feed-colors">
           ${PROFILE_FEED_MODAL_COLORS.map((color, index) => `
             <span
@@ -182,7 +186,7 @@ export function getCreateFeedModalElements(): CreateFeedModalElements | null {
   const descriptionInput = document.getElementById('pf-create-feed-desc') as HTMLInputElement | null;
   const submitButton = document.getElementById('pf-create-feed-submit') as HTMLButtonElement | null;
 
-  if (!overlay || !nameInput || !descriptionInput || !submitButton) {
+  if (!overlay || !nameInput || !submitButton) {
     return null;
   }
 
@@ -258,8 +262,10 @@ export function resetCreateFeedModalFields(overlay: HTMLElement): void {
 
   elements.nameInput.value = '';
   elements.nameInput.disabled = false;
-  elements.descriptionInput.value = '';
-  elements.descriptionInput.disabled = false;
+  if (elements.descriptionInput) {
+    elements.descriptionInput.value = '';
+    elements.descriptionInput.disabled = false;
+  }
   elements.submitButton.disabled = false;
   elements.submitButton.textContent = CONTENT_COPY.profile.createFeedSubmit;
 

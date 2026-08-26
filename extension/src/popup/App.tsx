@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { reportExtensionUiEntered } from '../runtime/extension-entry';
 
 const LINKEDIN_ORIGIN = 'https://www.linkedin.com';
 
@@ -50,6 +51,8 @@ export default function App() {
   const [isOnLinkedIn, setIsOnLinkedIn] = useState<boolean | null>(null);
 
   useEffect(() => {
+    // Opening the popup is a real extension entry.
+    reportExtensionUiEntered();
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       const url = tabs[0]?.url ?? '';
       setIsOnLinkedIn(url.startsWith(LINKEDIN_ORIGIN));

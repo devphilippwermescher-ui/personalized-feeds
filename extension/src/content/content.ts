@@ -12,6 +12,9 @@ import '../runtime/set-public-path';
  */
 
 import { loadFeatureSettings, onFeatureSettingsChange } from './feature-settings';
+import { DASHBOARD_ANALYTICS_SYNC_ENABLED } from 'shared/feature-flags';
+import { initNativeInviteTracking } from './native-invite-tracking';
+import { initLinkedInAnalyticsPassiveCapture } from './linkedin-analytics-passive-capture';
 import { destroyPostButtons, initPostButtons } from './post-buttons';
 import { destroySpeechToCommentButton } from './speech-to-comment';
 import type { UserFeatureSettings } from 'shared/types';
@@ -49,12 +52,16 @@ function applyFeatureSettings(nextSettings: UserFeatureSettings): void {
 
 void loadFeatureSettings().then(applyFeatureSettings);
 onFeatureSettingsChange(applyFeatureSettings);
+if (DASHBOARD_ANALYTICS_SYNC_ENABLED) {
+  initNativeInviteTracking();
+  initLinkedInAnalyticsPassiveCapture();
+}
 
 // ── Bootstrap ────────────────────────────────────────────────────────
 
 let linkedinActivityTimer: number | undefined;
 
-function notifyProfileViewersLinkedInActivity(): void {
+function notifyLinkedInActivity(): void {
   window.clearTimeout(linkedinActivityTimer);
   linkedinActivityTimer = window.setTimeout(() => {
     chrome.runtime.sendMessage({ type: 'PROFILE_VIEWERS_LINKEDIN_ACTIVITY' }).catch(() => {
@@ -66,7 +73,7 @@ function notifyProfileViewersLinkedInActivity(): void {
 function onPageReady(): void {
   domReady = true;
   applyFeatureUI();
-  notifyProfileViewersLinkedInActivity();
+  notifyLinkedInActivity();
 }
 
 if (document.readyState === 'complete') {
@@ -88,7 +95,7 @@ function onRouteChange(): void {
 
   if (domReady) {
     window.setTimeout(applyFeatureUI, 300);
-    notifyProfileViewersLinkedInActivity();
+    notifyLinkedInActivity();
   }
 }
 

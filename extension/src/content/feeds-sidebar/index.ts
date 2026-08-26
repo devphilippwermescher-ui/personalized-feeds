@@ -306,7 +306,6 @@ async function refreshProfileViewersNow(): Promise<void> {
   try {
     const response = await sendMsg({
       type: 'PROFILE_VIEWERS_SYNC_API_NOW',
-      resetProfileViewers: true,
     });
     if (!response?.success) {
       showToast(

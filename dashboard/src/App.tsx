@@ -1,13 +1,16 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { CONTENT_ANALYTICS_ENABLED, DASHBOARD_ENABLED } from 'shared/feature-flags';
 import { useAuth } from './hooks/useAuth';
 import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
 import FeedDetailPage from './pages/FeedDetailPage';
-import SettingsPage from './pages/SettingsPage';
-import SubscriptionPage from './pages/SubscriptionPage';
+import BlankDashboardPage from './pages/BlankDashboardPage';
+import DashboardDisabledPage from './pages/DashboardDisabledPage';
+import ProfileAnalyticsPage from './pages/ProfileAnalyticsPage';
+import ContentAnalyticsPage from './pages/ContentAnalyticsPage';
 import Sidebar from './components/Sidebar';
 
-function App() {
+function EnabledDashboardApp() {
   const {
     user,
     loading,
@@ -62,14 +65,35 @@ function App() {
           <Routes>
             <Route path="/" element={<DashboardPage userId={user.uid} />} />
             <Route path="/feed/:feedId" element={<FeedDetailPage userId={user.uid} />} />
-            <Route path="/settings/profile" element={<SettingsPage userId={user.uid} />} />
-            <Route path="/subscription" element={<SubscriptionPage />} />
+            <Route path="/analytics/profile" element={<ProfileAnalyticsPage userId={user.uid} />} />
+            <Route
+              path="/analytics/content"
+              element={
+                CONTENT_ANALYTICS_ENABLED ? (
+                  <ContentAnalyticsPage userId={user.uid} />
+                ) : (
+                  <BlankDashboardPage title="Content Analytics" />
+                )
+              }
+            />
+            <Route path="/analytics/comments" element={<BlankDashboardPage title="Comment Analytics" />} />
+            <Route path="/settings/profile" element={<BlankDashboardPage title="Manage account" />} />
+            <Route path="/settings/api-extension" element={<BlankDashboardPage title="API & Extension" />} />
+            <Route path="/subscription" element={<BlankDashboardPage title="Subscription" />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </main>
       </div>
     </BrowserRouter>
   );
+}
+
+function App() {
+  if (!DASHBOARD_ENABLED) {
+    return <DashboardDisabledPage />;
+  }
+
+  return <EnabledDashboardApp />;
 }
 
 export default App;

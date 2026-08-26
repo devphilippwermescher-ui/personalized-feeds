@@ -2,16 +2,10 @@ import { normalizeLinkedInUsername } from 'shared/linkedin-identity';
 import type { ProfileViewer } from 'shared/types';
 
 export const PROFILE_VIEWERS_STATUS_STALE_MS = 60 * 60 * 1000;
-export const PROFILE_VIEWERS_STATUS_BATCH_LIMIT = 5;
+export const PROFILE_VIEWERS_STATUS_BATCH_LIMIT = 20;
 
 function normalizePriorityUsernames(usernames: string[] = []): string[] {
-  return Array.from(
-    new Set(
-      usernames
-        .map((username) => normalizeLinkedInUsername(username))
-        .filter(Boolean)
-    )
-  );
+  return Array.from(new Set(usernames.map((username) => normalizeLinkedInUsername(username)).filter(Boolean)));
 }
 
 function isStatusStale(viewer: ProfileViewer, now: number): boolean {
@@ -47,10 +41,10 @@ export function selectProfileViewersForStatusSync(
       const leftUsername = normalizeLinkedInUsername(left.linkedinUsername || left.id);
       const rightUsername = normalizeLinkedInUsername(right.linkedinUsername || right.id);
       const leftPriority = priorityIndex.has(leftUsername)
-        ? priorityIndex.get(leftUsername) ?? Number.MAX_SAFE_INTEGER
+        ? (priorityIndex.get(leftUsername) ?? Number.MAX_SAFE_INTEGER)
         : Number.MAX_SAFE_INTEGER;
       const rightPriority = priorityIndex.has(rightUsername)
-        ? priorityIndex.get(rightUsername) ?? Number.MAX_SAFE_INTEGER
+        ? (priorityIndex.get(rightUsername) ?? Number.MAX_SAFE_INTEGER)
         : Number.MAX_SAFE_INTEGER;
 
       if (leftPriority !== rightPriority) {

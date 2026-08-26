@@ -9,9 +9,9 @@ import {
 } from 'firebase/auth';
 import { getFirebaseAuth } from 'shared/firebase-config';
 import { createUserProfile } from 'shared/firestore-service';
+import { sendMessageToExtension } from '../utils/extensionMessaging';
 
 const AUTH_READY_TIMEOUT_MS = 5000;
-const EXTENSION_ID = 'opgnfeilbmdpojamipidejalbiddapla';
 
 type ExtensionSyncResponse =
   | {
@@ -28,29 +28,6 @@ type ExtensionSyncResponse =
       success: false;
       error: string;
     };
-
-function sendMessageToExtension(message: Record<string, unknown>): Promise<ExtensionSyncResponse> {
-  return new Promise((resolve) => {
-    const runtime = window.chrome?.runtime;
-    if (!runtime?.sendMessage) {
-      resolve({ success: false, error: 'Chrome extension messaging is unavailable in this browser.' });
-      return;
-    }
-
-    runtime.sendMessage(
-      EXTENSION_ID,
-      message,
-      (response?: unknown) => {
-        if (window.chrome?.runtime?.lastError) {
-          resolve({ success: false, error: window.chrome.runtime.lastError.message });
-          return;
-        }
-
-        resolve((response as ExtensionSyncResponse | undefined) || { success: false, error: 'No response from extension.' });
-      }
-    );
-  });
-}
 
 export function useAuth() {
   const [user, setUser] = useState<User | null>(null);
@@ -103,7 +80,7 @@ export function useAuth() {
   useEffect(() => {
     let cancelled = false;
 
-    void sendMessageToExtension({ type: 'DASHBOARD_GET_EXTENSION_AUTH_STATE' }).then((response) => {
+    void sendMessageToExtension<ExtensionSyncResponse>({ type: 'DASHBOARD_GET_EXTENSION_AUTH_STATE' }).then((response) => {
       if (cancelled) {
         return;
       }
@@ -149,7 +126,7 @@ export function useAuth() {
     setExtensionAuthLoading(true);
 
     try {
-      const response = await sendMessageToExtension({ type: 'DASHBOARD_SYNC_AUTH' });
+      const response = await sendMessageToExtension<ExtensionSyncResponse>({ type: 'DASHBOARD_SYNC_AUTH' });
 
       if (!response.success) {
         throw new Error(response.error);

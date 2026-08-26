@@ -14,6 +14,21 @@ function scoreProfileSlugMatch(value: string, linkedinUsername: string): number 
     .reduce((score, part) => score + (normalizedValue.includes(part.toLowerCase()) ? 1 : 0), 0);
 }
 
+export function profileViewerDisplayNameConflictsWithUsername(
+  displayName: string | undefined,
+  linkedinUsername: string
+): boolean {
+  const meaningfulSlugParts = linkedinUsername
+    .split(/[-_]+/)
+    .filter((part) => part.length > 2 && !/^\d+$/.test(part));
+
+  return (
+    meaningfulSlugParts.length >= 2 &&
+    !isWeakProfileViewerDisplayName(displayName, linkedinUsername) &&
+    scoreProfileSlugMatch(displayName || '', linkedinUsername) === 0
+  );
+}
+
 export function humanizeLinkedInUsername(linkedinUsername: string): string {
   return linkedinUsername
     .split(/[-_]+/)

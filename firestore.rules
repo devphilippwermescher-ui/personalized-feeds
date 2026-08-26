@@ -69,6 +69,50 @@ service cloud.firestore {
         allow read, write: if isOwner(userId);
       }
 
+      match /profileAnalytics/{documentId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      match /profileAnalyticsDaily/{snapshotId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      match /profileAnalyticsSamples/{sampleId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      match /contentAnalytics/{documentId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      match /contentAnalyticsRanges/{rangeId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      match /contentAnalyticsDaily/{snapshotId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      match /contentAnalyticsPosts/{postId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      match /dashboardAnalyticsSync/{documentId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      match /profileAnalyticsJobs/{jobId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      match /profileAnalyticsHistoryChunks/{chunkId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      match /connectionInvites/{inviteId} {
+        allow read, write: if isOwner(userId);
+      }
+
       match /settings/{settingId} {
         allow read, write: if isOwner(userId);
       }

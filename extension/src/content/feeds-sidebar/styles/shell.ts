@@ -1,37 +1,46 @@
 export const SHELL_CSS = `
   .lfa-trigger-btn {
+    appearance: none;
+    -webkit-appearance: none;
     position: fixed;
-    right: 0;
+    right: 8px;
     top: 50%;
     transform: translateY(-50%);
     width: 48px;
     height: 48px;
-    background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
-    border: 1.5px solid rgba(97, 93, 236, 0.32);
-    border-right: none;
-    border-radius: 14px 0 0 14px;
+    min-width: 48px;
+    min-height: 48px;
+    margin: 0;
+    padding: 0;
+    background: transparent;
+    border: none;
+    border-radius: 14px;
     display: flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
     z-index: 99998;
-    box-shadow:
-      -8px 10px 22px rgba(15, 23, 42, 0.10),
-      inset 0 1px 0 rgba(255, 255, 255, 0.95);
-    transition: transform 0.2s, opacity 0.2s, box-shadow 0.2s, border-color 0.2s, background 0.2s;
+    box-shadow: none;
+    transition: transform 0.2s ease, opacity 0.2s ease;
   }
   .lfa-trigger-btn:hover {
-    border-color: rgba(97, 93, 236, 0.5);
-    background: linear-gradient(180deg, #ffffff 0%, #f3f6ff 100%);
-    box-shadow:
-      -10px 14px 26px rgba(97, 93, 236, 0.14),
-      inset 0 1px 0 rgba(255, 255, 255, 0.98);
+    background: transparent;
   }
   .lfa-trigger-btn img {
     width: 28px;
-    height: 28px;
+    height: 21px;
     object-fit: contain;
     display: block;
+    filter: drop-shadow(0 8px 12px rgba(46, 69, 145, 0.22));
+    transition: transform 0.18s ease, filter 0.18s ease;
+  }
+  .lfa-trigger-btn:hover img {
+    transform: translateY(-2px) scale(1.04);
+    filter: drop-shadow(0 11px 16px rgba(46, 69, 145, 0.28));
+  }
+  .lfa-trigger-btn:focus-visible {
+    outline: 3px solid rgba(97, 93, 236, 0.3);
+    outline-offset: 3px;
   }
   .lfa-trigger-hidden {
     opacity: 0;
