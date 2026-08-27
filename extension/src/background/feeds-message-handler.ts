@@ -1,9 +1,5 @@
 import {
-  addMemberToFeed,
-  createFeed,
   deleteFeed,
-  getFeedMembers,
-  getFeeds,
   getProfileFeedMemberships,
   removeMemberFromFeed,
   reorderFeeds,
@@ -13,6 +9,34 @@ import {
 import type { LinkedInProfileData } from 'shared/types';
 import { getAuthenticatedFeedsUser } from './feeds-auth';
 import { getFeedsAuthErrorResponse, normalizeFeedsError } from './feeds-errors';
+import {
+  getPlanLimitErrorResponse,
+  PlanLimitError,
+} from './subscription/plan-limit-error';
+import {
+  addFeedMemberForPlan,
+  createOwnedFeedForPlan,
+  getFeedMembersForPlan,
+  getOwnedFeedsForPlan,
+} from './subscription/plan-enforcement-service';
+
+function sendFeedsError(
+  sendResponse: (response?: unknown) => void,
+  error: unknown,
+  fallback: string,
+  extra: Record<string, unknown> = {}
+): void {
+  if (error instanceof PlanLimitError) {
+    sendResponse({ ...getPlanLimitErrorResponse(error), ...extra });
+    return;
+  }
+
+  sendResponse({
+    success: false,
+    error: normalizeFeedsError(error, fallback),
+    ...extra,
+  });
+}
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'FEEDS_GET_ALL') {
     getAuthenticatedFeedsUser()
@@ -24,7 +48,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
 
         console.log('[feeds] FEEDS_GET_ALL: fetching feeds for uid:', user.uid);
-        return getFeeds(user.uid).then((feeds) => {
+        return getOwnedFeedsForPlan(user.uid).then((feeds) => {
           console.log('[feeds] FEEDS_GET_ALL: got', feeds.length, 'feeds');
           sendResponse({
             success: true,
@@ -41,11 +65,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       })
       .catch((error) => {
         console.error('[feeds] FEEDS_GET_ALL error:', error);
-        sendResponse({
-          success: false,
-          error: normalizeFeedsError(error, 'Failed to load feeds'),
-          feeds: null,
-        });
+        sendFeedsError(sendResponse, error, 'Failed to load feeds', { feeds: null });
       });
     return true;
   }
@@ -58,7 +78,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           return;
         }
 
-        return createFeed(user.uid, message.name, message.description, message.color).then((feed) => {
+        return createOwnedFeedForPlan(user.uid, {
+          name: message.name,
+          description: message.description,
+          color: message.color,
+        }).then((feed) => {
           sendResponse({
             success: true,
             feed: {
@@ -72,7 +96,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         });
       })
       .catch((error) => {
-        sendResponse({ success: false, error: normalizeFeedsError(error, 'Failed to create feed') });
+        sendFeedsError(sendResponse, error, 'Failed to create feed');
       });
     return true;
   }
@@ -86,14 +110,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
 
         const profileData: LinkedInProfileData = message.profileData;
-        return addMemberToFeed((message.ownerId as string) || user.uid, message.feedId, profileData).then(
+        const ownerId = (message.ownerId as string) || user.uid;
+        return addFeedMemberForPlan(user.uid, ownerId, message.feedId, profileData).then(
           ({ member, alreadyExists }) => {
             sendResponse({ success: true, member, alreadyExists });
           }
         );
       })
       .catch((error) => {
-        sendResponse({ success: false, error: normalizeFeedsError(error, 'Failed to add member') });
+        sendFeedsError(sendResponse, error, 'Failed to add member');
       });
     return true;
   }
@@ -149,16 +174,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           return;
         }
 
-        return getFeedMembers((message.ownerId as string) || user.uid, message.feedId).then((members) => {
+        const ownerId = (message.ownerId as string) || user.uid;
+        return getFeedMembersForPlan(user.uid, ownerId, message.feedId).then((members) => {
           sendResponse({ success: true, members });
         });
       })
       .catch((error) => {
-        sendResponse({
-          success: false,
-          error: normalizeFeedsError(error, 'Failed to load members'),
-          members: [],
-        });
+        sendFeedsError(sendResponse, error, 'Failed to load members', { members: [] });
       });
     return true;
   }

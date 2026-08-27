@@ -207,7 +207,7 @@ export async function getMemberByUsername(
   }) || null;
 }
 
-async function findExistingMemberInFeed(
+export async function findExistingMemberInFeed(
   userId: string,
   feedId: string,
   profileData: LinkedInProfileData

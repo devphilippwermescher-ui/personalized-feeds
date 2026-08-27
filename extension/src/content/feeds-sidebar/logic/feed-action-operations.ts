@@ -26,7 +26,7 @@ import type { FeedActionDeps } from './feed-action-types';
 
 export async function createNewFeed(
   name: string,
-  deps: Pick<FeedActionDeps, 'getFeeds' | 'setFeeds' | 'sendMsg' | 'showToast' | 'loadFeeds' | 'renderSidebarContent'>
+  deps: Pick<FeedActionDeps, 'getFeeds' | 'setFeeds' | 'sendMsg' | 'showToast' | 'showPlanModal' | 'loadFeeds' | 'renderSidebarContent'>
 ): Promise<boolean> {
   const { getFeeds, setFeeds, sendMsg, showToast, loadFeeds, renderSidebarContent } = deps;
   const colors = ['#615DEC', '#E74C3C', '#27AE60', '#F39C12', '#3498DB', '#9B59B6'];
@@ -48,6 +48,10 @@ export async function createNewFeed(
   const response = await sendMsg({ type: 'FEEDS_CREATE', name: normalizedName, description: '', color });
 
   if (!response?.success) {
+    if (response?.code === 'PLAN_LIMIT_REACHED') {
+      deps.showPlanModal('feeds');
+      return false;
+    }
     showToast((response?.error as string) || 'Failed to create feed', 'error');
     return false;
   }
@@ -241,7 +245,13 @@ export function showAddPeopleModal(feed: FeedInfo, deps: FeedActionDeps): void {
             ownerId: feed.ownerId,
             feedId: feed.id,
             profileData: enrichedProfileData,
-          })) as { success?: boolean; member?: FeedMemberInfo; alreadyExists?: boolean; error?: string };
+          })) as { success?: boolean; member?: FeedMemberInfo; alreadyExists?: boolean; error?: string; code?: string };
+
+          if (result?.code === 'PLAN_LIMIT_REACHED') {
+            closeFeedActionModal(deps);
+            deps.showPlanModal('members');
+            return { success: false };
+          }
 
           if (result?.success && result.alreadyExists) {
             duplicateCount += 1;
@@ -372,6 +382,11 @@ export function showDuplicateSharedFeedModal(feed: FeedInfo, deps: FeedActionDep
         });
 
         if (!response?.success) {
+          if (response?.code === 'PLAN_LIMIT_REACHED') {
+            closeFeedActionModal(deps);
+            deps.showPlanModal(response.limitKind === 'members' ? 'members' : 'feeds');
+            return;
+          }
           deps.showToast((response?.error as string) || 'Failed to duplicate shared feed', 'error');
           return;
         }

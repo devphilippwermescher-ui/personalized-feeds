@@ -26,6 +26,7 @@ import {
 interface SidebarMemberControllerDeps {
   sendMsg: (message: Record<string, unknown>) => Promise<Record<string, unknown>>;
   showToast: (message: string, type?: 'success' | 'error') => void;
+  showPlanModal: () => void;
   renderSidebarContent: () => void;
   loadFeeds: () => Promise<void>;
   getFeeds: () => FeedInfo[];
@@ -92,6 +93,7 @@ export function createSidebarMemberController(deps: SidebarMemberControllerDeps)
   const getMemberActionDeps = (): MemberActionDeps => ({
     sendMsg: deps.sendMsg,
     showToast: deps.showToast,
+    showPlanModal: deps.showPlanModal,
     renderSidebarContent: deps.renderSidebarContent,
     openLinkedInMessage,
     openLinkedInProfile,

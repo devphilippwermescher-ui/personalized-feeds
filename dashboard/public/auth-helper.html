@@ -54,9 +54,7 @@
       const statusEl = document.getElementById('status');
       const params = new URLSearchParams(window.location.search);
       const extensionId = params.get('extensionId');
-      const extensionOrigin = extensionId?.match(/^[a-p]{32}$/)
-        ? `chrome-extension://${extensionId}`
-        : null;
+      const extensionOrigin = extensionId?.match(/^[a-p]{32}$/) ? `chrome-extension://${extensionId}` : null;
 
       const firebaseConfigs = {
         development: {
@@ -101,6 +99,10 @@
       const auth = getAuth(app);
       const provider = new GoogleAuthProvider();
       let authStarted = false;
+
+      if (extensionOrigin) {
+        window.parent.postMessage({ type: 'LFA_AUTH_READY' }, extensionOrigin);
+      }
 
       function postResult(payload) {
         if (!extensionOrigin) {

@@ -24,6 +24,7 @@ import {
   getProfileViewersScheduledIntervalMs,
   getProfileViewersSummaryMigrationDueAt,
   isProfileViewersFirstSurfaceReady,
+  prepareProfileViewersStateForPlan,
   recordProfileViewersRequest,
   scheduleProfileViewersPrivateSummaryCollection,
   startProfileViewersSyncAttempt,
@@ -61,6 +62,60 @@ describe('profile viewers sync state', () => {
         privateSummaryStatus: 'ready',
       })
     ).toBe(true);
+  });
+
+  it('treats private and recruiter collection as not applicable on Free', () => {
+    const now = 2_000;
+    const state = prepareProfileViewersStateForPlan(
+      createProfileViewersSyncState('user-1', 1_000),
+      'free',
+      now
+    );
+
+    expect(state).toMatchObject({
+      collectionPlan: 'free',
+      backfillStatus: 'not_started',
+      nextCollectionTask: 'visible',
+      privateSummaryStatus: 'ready',
+      nextDueAt: now,
+    });
+  });
+
+  it('starts a complete visible and private backfill after upgrading to Pro', () => {
+    const freeState = {
+      ...prepareProfileViewersStateForPlan(
+        createProfileViewersSyncState('user-1', 1_000),
+        'free' as const,
+        2_000
+      ),
+      backfillStatus: 'complete' as const,
+      backfillProfilesSaved: 10,
+    };
+    const upgradedAt = 3_000;
+    const proState = prepareProfileViewersStateForPlan(freeState, 'pro', upgradedAt);
+
+    expect(proState).toMatchObject({
+      collectionPlan: 'pro',
+      backfillStatus: 'not_started',
+      backfillProfilesSaved: 0,
+      nextCollectionTask: 'visible',
+      privateSummaryStatus: 'not_started',
+      nextDueAt: upgradedAt,
+    });
+  });
+
+  it('does not reset an import while the plan remains unchanged', () => {
+    const state = {
+      ...prepareProfileViewersStateForPlan(
+        createProfileViewersSyncState('user-1', 1_000),
+        'free' as const,
+        2_000
+      ),
+      backfillStatus: 'in_progress' as const,
+      backfillProfilesSaved: 6,
+    };
+
+    expect(prepareProfileViewersStateForPlan(state, 'free', 3_000)).toBe(state);
   });
 
   it('makes an idle legacy state due once for private viewer summary collection', () => {

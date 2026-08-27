@@ -12,6 +12,7 @@ interface SidebarDomBindingsDeps {
   selectFeedTab: (tab: 'owned' | 'shared') => void;
   openProfileSettings: () => void;
   openSubscription: () => void;
+  openManagePlan: () => void;
   updateFeatureSetting: (key: keyof UserFeatureSettings, value: boolean) => Promise<void>;
   renderSidebarContent: () => void;
   handleMemberSave: () => void;
@@ -38,11 +39,9 @@ interface SidebarDomBindingsDeps {
   setSettingsMenuOpen: (value: boolean) => void;
   setAccountMenuOpen: (value: boolean) => void;
   memberActionDeps: Parameters<typeof bindMemberActionButtons>[1];
-  togglePlan: () => void;
 }
 
 export function bindSidebarDom(container: HTMLElement, deps: SidebarDomBindingsDeps): void {
-  container.querySelector('#lfa-plan-toggle-btn')?.addEventListener('click', deps.togglePlan);
   container.querySelector('#lfa-open-popup-hint')?.addEventListener('click', (e) => e.preventDefault());
   container.querySelector('#lfa-open-dashboard-btn')?.addEventListener('click', deps.openDashboard);
   container.querySelector('#lfa-header-dashboard-btn')?.addEventListener('click', deps.openDashboard);
@@ -51,6 +50,11 @@ export function bindSidebarDom(container: HTMLElement, deps: SidebarDomBindingsD
   container.querySelector('#lfa-open-subscription-activate')?.addEventListener('click', deps.openSubscription);
   container.querySelector('#lfa-signin-btn')?.addEventListener('click', deps.handleSignIn);
   container.querySelector('#lfa-account-signout-btn')?.addEventListener('click', deps.handleSignOut);
+  container.querySelector('#lfa-manage-plan-btn')?.addEventListener('click', () => {
+    container.querySelector('#lfa-account-menu')?.classList.remove('lfa-account-menu--open');
+    deps.setAccountMenuOpen(false);
+    deps.openManagePlan();
+  });
   container.querySelector('#lfa-add-feed-btn')?.addEventListener('click', deps.showCreateFeedForm);
   container.querySelector('#lfa-profile-settings-btn')?.addEventListener('click', deps.openProfileSettings);
   container.querySelector('#lfa-manage-account-btn')?.addEventListener('click', () => {

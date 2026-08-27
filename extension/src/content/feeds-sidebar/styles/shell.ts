@@ -137,7 +137,10 @@ export const SHELL_CSS = `
     outline: 3px solid rgba(255, 138, 33, 0.26);
     outline-offset: 3px;
   }
-  .lfa-plan-toggle-btn {
+  .lfa-plan-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     border-radius: 8px;
     padding: 0 10px;
     height: 28px;
@@ -145,25 +148,17 @@ export const SHELL_CSS = `
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
     font-size: 11px !important;
     font-weight: 700 !important;
-    cursor: pointer;
-    transition: filter 0.15s ease;
   }
-  .lfa-plan-toggle-btn--free {
+  .lfa-plan-badge--free {
     border: 1.5px solid #d1d5db;
     background: #f9fafb;
     color: #6b7280;
   }
-  .lfa-plan-toggle-btn--free:hover {
-    filter: brightness(0.96);
-  }
-  .lfa-plan-toggle-btn--pro {
+  .lfa-plan-badge--pro {
     border: none;
     background: linear-gradient(135deg, #615DEC 0%, #8b5cf6 100%);
     color: #ffffff;
     box-shadow: 0 4px 10px rgba(97, 93, 236, 0.35);
-  }
-  .lfa-plan-toggle-btn--pro:hover {
-    filter: brightness(1.08);
   }
   .lfa-account-menu-wrap,
   .lfa-settings-menu-wrap {
@@ -314,6 +309,16 @@ export const SHELL_CSS = `
   .lfa-account-menu-link--danger {
     color: #ef4444;
   }
+  .lfa-account-menu-link--plan {
+    border: none;
+    color: #a96f00;
+    background: transparent;
+  }
+  .lfa-account-menu-link--plan:hover,
+  .lfa-account-menu-link--plan:focus-visible {
+    color: #855700;
+    background: #fff7d6;
+  }
   .lfa-account-menu-link--danger:hover,
   .lfa-account-menu-link--danger:focus-visible {
     background: #fef2f2;
@@ -338,6 +343,10 @@ export const SHELL_CSS = `
   .lfa-account-menu-link--danger .lfa-account-menu-link-icon {
     background: #fef2f2;
     color: inherit;
+  }
+  .lfa-account-menu-link-icon--plan {
+    color: #a96f00;
+    background: #fff7d6;
   }
   .lfa-settings-link {
     width: 100%;

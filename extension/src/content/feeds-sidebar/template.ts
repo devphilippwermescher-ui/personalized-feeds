@@ -47,15 +47,9 @@ export function renderSidebarHeader(params: {
 }): string {
   const { logoUrl, currentUser, isPremium, featureSettings } = params;
 
-  const planToggleHtml = `
-    <button
-      class="lfa-header-control lfa-plan-toggle-btn${isPremium ? ' lfa-plan-toggle-btn--pro' : ' lfa-plan-toggle-btn--free'}"
-      id="lfa-plan-toggle-btn"
-      type="button"
-      title="${isPremium ? 'Switch to Free plan' : 'Switch to Pro plan'}"
-      aria-label="${isPremium ? 'Pro plan active — click to switch to Free' : 'Free plan active — click to switch to Pro'}"
-    >${isPremium ? 'Pro' : 'Free'}</button>
-  `;
+  const planBadgeHtml = currentUser
+    ? `<span class="lfa-header-control lfa-plan-badge${isPremium ? ' lfa-plan-badge--pro' : ' lfa-plan-badge--free'}" aria-label="Current plan: ${isPremium ? 'Pro' : 'Free'}">${isPremium ? 'Pro' : 'Free'}</span>`
+    : '';
 
   const avatarHtml = currentUser
     ? currentUser.photoURL
@@ -87,10 +81,10 @@ export function renderSidebarHeader(params: {
       <span class="lfa-header-title">myFeedPilot</span>
     </div>
     <div class="lfa-header-right">
-      ${planToggleHtml}
+      ${planBadgeHtml}
       ${DASHBOARD_ENABLED ? '<button class="lfa-header-control lfa-header-dashboard-btn lfa-header-dashboard-control" id="lfa-header-dashboard-btn" type="button">Dashboard</button>' : ''}
       ${
-        currentUser && isPremium
+        currentUser
           ? `
       <div class="lfa-settings-menu-wrap">
         <button class="lfa-header-control lfa-settings-btn lfa-header-settings-control" id="lfa-settings-btn" type="button" aria-label="Settings">
@@ -149,6 +143,24 @@ export function renderSidebarHeader(params: {
             </div>
           </div>
           <div class="lfa-account-menu-divider"></div>
+          <button class="lfa-account-menu-link lfa-account-menu-link--plan" id="lfa-manage-plan-btn" type="button">
+            <span class="lfa-account-menu-link-icon lfa-account-menu-link-icon--plan">
+              <svg viewBox="0 0 32 32" width="24" height="24" fill="none" aria-hidden="true">
+                <defs>
+                  <linearGradient id="mfp-manage-plan-star-gradient" x1="4" y1="3" x2="28" y2="29" gradientUnits="userSpaceOnUse">
+                    <stop stop-color="#ffd95a"></stop>
+                    <stop offset="1" stop-color="#ffcf3f"></stop>
+                  </linearGradient>
+                </defs>
+                <path
+                  d="m16 2.6 3.8 8 8.7 1.1-6.4 6 1.7 8.6-7.8-4.2-7.8 4.2 1.7-8.6-6.4-6 8.7-1.1Z"
+                  fill="url(#mfp-manage-plan-star-gradient)"
+                  transform="rotate(-8 16 16)"
+                ></path>
+              </svg>
+            </span>
+            <span>Manage plan</span>
+          </button>
           ${
             DASHBOARD_ENABLED
               ? `
@@ -208,7 +220,6 @@ export function renderSidebarBody(params: SidebarBodyParams): string {
   const {
     isLoading,
     isInitializing,
-    isPremium,
     currentUser,
     authErrorMessage,
     sidebarSearchQuery,
@@ -233,33 +244,6 @@ export function renderSidebarBody(params: SidebarBodyParams): string {
       <div class="lfa-loading">
         <div class="lfa-spinner"></div>
         <p>${CONTENT_COPY.common.loadingFeeds}</p>
-      </div>
-    `;
-  }
-
-  if (!isPremium) {
-    return `
-      <div class="lfa-unauth">
-        <div class="lfa-unauth-icon">
-          <svg viewBox="0 0 24 24" width="56" height="56" fill="#d1d5db">
-            <path d="M12 2L15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2z"/>
-          </svg>
-        </div>
-        <h2 class="lfa-unauth-title">${CONTENT_COPY.sidebar.premiumTitle}</h2>
-        <p class="lfa-unauth-desc">${CONTENT_COPY.sidebar.premiumDescription}</p>
-        ${
-          DASHBOARD_ENABLED
-            ? `
-        <div class="lfa-sidebar-pro-promo">
-          <button class="lfa-sidebar-pro-btn" id="lfa-open-subscription-btn">Get Pro</button>
-          <p class="lfa-sidebar-pro-activate">
-            Already bought Pro?
-            <span class="lfa-sidebar-pro-link" id="lfa-open-subscription-activate">Activate here →</span>
-          </p>
-        </div>
-        `
-            : ''
-        }
       </div>
     `;
   }

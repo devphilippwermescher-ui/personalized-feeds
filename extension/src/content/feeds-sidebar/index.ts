@@ -49,6 +49,11 @@ import { createSharedFeedLinkController } from './logic/shared-feed-link-control
 import { createSidebarMemberController } from './logic/sidebar-member-controller';
 import { createSidebarUiController } from './logic/sidebar-ui-controller';
 import { getDashboardOrigin } from 'shared/app-environment';
+import {
+  getPlanEntitlements,
+  type AppPlan,
+} from 'shared/plans';
+import { openPlanModal, type PlanModalContext } from '../shared/plan-modal';
 
 const DASHBOARD_URL = getDashboardOrigin();
 
@@ -60,7 +65,7 @@ let profileViewerPrivateCount: number | undefined;
 let isRefreshingProfileViewers = false;
 let isLoading = false;
 let isInitializing = false;
-let isPremium = false;
+let currentPlan: AppPlan = 'free';
 let authErrorMessage = '';
 let featureSettings: UserFeatureSettings = DEFAULT_FEATURE_SETTINGS;
 let activeFeedTab: 'owned' | 'shared' = 'owned';
@@ -211,6 +216,11 @@ function resetSignedOutSidebarState(): void {
   activeFeedTab = 'owned';
 }
 
+async function loadCurrentPlan(force = false): Promise<void> {
+  const response = await sendMsg({ type: 'PLAN_GET', force });
+  currentPlan = response?.success === true && response.plan === 'pro' ? 'pro' : 'free';
+}
+
 const { sendMsg, checkAuth, handleSignIn, handleSignOut } =
   createSidebarAuthController({
     closeModal: () => {
@@ -243,6 +253,10 @@ const { sendMsg, checkAuth, handleSignIn, handleSignOut } =
     },
     renderSidebarContent,
     loadFeeds,
+    loadPlan: loadCurrentPlan,
+    setIsPremium: (value) => {
+      currentPlan = value ? 'pro' : 'free';
+    },
   });
 
 const { handlePendingSharedFeedLink, schedulePendingShareRetries } =
@@ -399,6 +413,9 @@ function getFeedActionDeps() {
       feedActionModalEl = state.el;
       feedActionModalRoot = state.root;
     },
+    showPlanModal: (context: PlanModalContext) => {
+      openPlanModal({ plan: currentPlan, context });
+    },
   };
 }
 
@@ -493,6 +510,7 @@ const {
 } = createSidebarMemberController({
   sendMsg,
   showToast,
+  showPlanModal: () => openPlanModal({ plan: currentPlan, context: 'members' }),
   renderSidebarContent,
   loadFeeds,
   getFeeds: () => [...feedsList, ...sharedFeedsList],
@@ -546,10 +564,7 @@ sidebarUiController = createSidebarUiController({
   setIsInitializing: (value) => {
     isInitializing = value;
   },
-  getIsPremium: () => isPremium,
-  setIsPremium: (value) => {
-    isPremium = value;
-  },
+  getIsPremium: () => currentPlan === 'pro',
   getAuthErrorMessage: () => authErrorMessage,
   setAuthErrorMessage: (message) => {
     authErrorMessage = message;
@@ -560,17 +575,26 @@ sidebarUiController = createSidebarUiController({
   handleSignIn,
   handleSignOut,
   checkAuth,
+  loadPlan: loadCurrentPlan,
   schedulePendingShareRetries,
   renderFeedPreview: (feedId) =>
     renderFeedPreviewMarkup(feedId, feedMembersById),
   renderMembersList,
   getFeedActionDeps,
   getMemberActionDeps,
-  showCreateFeedForm: () =>
+  showCreateFeedForm: () => {
+    const customFeeds = feedsList.filter((feed) => !feed.isSystem && !feed.isShared);
+    const feedLimit = getPlanEntitlements(currentPlan).maxCustomFeeds;
+    if (feedLimit !== null && customFeeds.length >= feedLimit) {
+      openPlanModal({ plan: currentPlan, context: 'feeds' });
+      return;
+    }
+
     showCreateFeedFormLogic({
       createNewFeed: (name) => createNewFeed(name, getFeedActionDeps()),
       getFeeds: () => feedsList,
-    }),
+    });
+  },
   toggleFeedExpansion,
   openFeedPosts,
   requestProfileViewersRefreshConfirmation: () =>

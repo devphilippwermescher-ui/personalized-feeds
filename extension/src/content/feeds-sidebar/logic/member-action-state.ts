@@ -239,7 +239,7 @@ export async function handleMemberDelete(
 }
 
 export async function handleMemberSave(
-  deps: Pick<MemberActionDeps, 'sendMsg' | 'showToast' | 'getActiveMemberEditor' | 'setActiveMemberEditor' | 'getFeedMembersById' | 'setFeedMembersById' | 'loadFeeds' | 'renderSidebarContent' | 'setExpandedFeedId' | 'loadFeedMembers' | 'getFeeds'>
+  deps: Pick<MemberActionDeps, 'sendMsg' | 'showToast' | 'showPlanModal' | 'getActiveMemberEditor' | 'setActiveMemberEditor' | 'getFeedMembersById' | 'setFeedMembersById' | 'loadFeeds' | 'renderSidebarContent' | 'setExpandedFeedId' | 'loadFeedMembers' | 'getFeeds'>
 ): Promise<void> {
   const editorState = deps.getActiveMemberEditor();
   if (!editorState) {
@@ -282,6 +282,10 @@ export async function handleMemberSave(
     });
 
     if (!addResult?.success || !addResult.member) {
+      if (addResult?.code === 'PLAN_LIMIT_REACHED') {
+        deps.showPlanModal?.();
+        return;
+      }
       deps.showToast((addResult?.error as string) || 'Failed to move profile to another feed', 'error');
       return;
     }

@@ -17,6 +17,7 @@ import { getAuthenticatedFeedsUser } from './feeds-auth';
 import { getFeedsAuthErrorResponse, normalizeFeedsError } from './feeds-errors';
 import { findProfileViewerUpdateTargets } from './profile-viewers-update-targets';
 import { queueProfileAnalyticsForLinkedInActivity } from './profile-analytics-sync-coordinator';
+import { getUserPlanSnapshot } from './subscription/plan-service';
 
 async function notifyLinkedInTabsAboutProfileViewerUpdate(): Promise<void> {
   const tabs = await chrome.tabs.query({ url: 'https://www.linkedin.com/*' });
@@ -104,11 +105,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           getProfileViewerItems(user.uid),
           getProfileViewerSummary(user.uid),
           getProfileViewersSyncState(user.uid),
-        ]).then(([viewers, summary, syncState]) => {
+          getUserPlanSnapshot(user.uid),
+        ]).then(([viewers, summary, syncState, planSnapshot]) => {
+          const visibleViewerLimit = planSnapshot.entitlements.maxVisibleProfileViewers;
+          const projectedViewers =
+            visibleViewerLimit === null ? viewers : viewers.slice(0, visibleViewerLimit);
+          const projectedSummary = planSnapshot.entitlements.collectPrivateProfileViewers
+            ? summary || getProfileViewerSummaryFromSyncState(syncState)
+            : null;
+
           sendResponse({
             success: true,
-            viewers,
-            summary: summary || getProfileViewerSummaryFromSyncState(syncState),
+            viewers: projectedViewers,
+            summary: projectedSummary,
+            plan: planSnapshot.plan,
+            entitlements: planSnapshot.entitlements,
           });
         });
       })

@@ -125,6 +125,7 @@ void migrateToIndependentLinkedInSync()
 
 import './external-message-handler';
 import './auth-settings-message-handler';
+import './subscription/plan-message-handler';
 import './linkedin-relationship-status-message-handler';
 import './profile-viewers-message-handler';
 import './profile-analytics-message-handler';

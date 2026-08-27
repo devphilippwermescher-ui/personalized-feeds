@@ -4,6 +4,7 @@ import { normalizeLinkedInUsername } from 'shared/linkedin-identity';
 import type { ProfileViewer } from 'shared/types';
 import type { RelationshipResolution } from '../content/linkedin-relationship-status/types';
 import { getAuthenticatedFeedsUser } from './feeds-auth';
+import { getUserPlanSnapshot } from './subscription/plan-service';
 import { resolveLinkedInRelationshipStatusInBackground } from './linkedin-relationship-status-resolver';
 import { markTrackedConnectionAccepted } from './connection-invite-lifecycle';
 import {
@@ -290,9 +291,19 @@ export async function runProfileViewersStatusSync(
   await setStoredStatusSyncState(state);
 
   try {
-    const viewers = await getProfileViewers(user.uid);
+    const [viewers, planSnapshot] = await Promise.all([
+      getProfileViewers(user.uid),
+      getUserPlanSnapshot(user.uid),
+    ]);
+    const visibleViewerLimit = planSnapshot.entitlements.maxVisibleProfileViewers;
+    const eligibleViewers =
+      visibleViewerLimit === null ? viewers : viewers.slice(0, visibleViewerLimit);
     const selectionNow = options.forceStale ? Number.POSITIVE_INFINITY : startedAt;
-    const candidates = selectProfileViewersForStatusSync(viewers, state.priorityUsernames, selectionNow);
+    const candidates = selectProfileViewersForStatusSync(
+      eligibleViewers,
+      state.priorityUsernames,
+      selectionNow
+    );
 
     if (candidates.length === 0) {
       const nextDueAt = startedAt + PROFILE_VIEWERS_STATUS_STALE_MS;
@@ -356,7 +367,12 @@ export async function runProfileViewersStatusSync(
 
     const remainingCount = Math.max(
       0,
-      selectProfileViewersForStatusSync(viewers, state.priorityUsernames, selectionNow, Number.MAX_SAFE_INTEGER)
+      selectProfileViewersForStatusSync(
+        eligibleViewers,
+        state.priorityUsernames,
+        selectionNow,
+        Number.MAX_SAFE_INTEGER
+      )
         .length - candidates.length
     );
     const nextDueAt =

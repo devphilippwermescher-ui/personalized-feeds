@@ -11,6 +11,7 @@ import {
   getProfileViewersScheduledIntervalMs,
   isProfileViewersFirstSurfaceReady,
   PROFILE_VIEWERS_BACKGROUND_RESERVE,
+  prepareProfileViewersStateForPlan,
   recordProfileViewersRequest,
   startProfileViewersSyncAttempt,
   type ProfileViewersSyncErrorCode,
@@ -41,6 +42,7 @@ import {
   getActiveLinkedInHeavySyncLock,
   releaseConnectionHistorySyncLock,
 } from './linkedin-heavy-sync-lock';
+import { getUserPlanSnapshot } from './subscription/plan-service';
 
 const PROFILE_VIEWERS_SYNC_LOG_LIMIT = 50;
 const PROFILE_VIEWERS_SYNC_LOG_USERNAME_LIMIT = 50;
@@ -227,7 +229,13 @@ async function runProfileViewersSyncCoordinator(
     };
   }
 
-  let state = await getProfileViewersSyncState(user.uid);
+  const planSnapshot = await getUserPlanSnapshot(user.uid);
+  let state = prepareProfileViewersStateForPlan(
+    await getProfileViewersSyncState(user.uid),
+    planSnapshot.plan,
+    Date.now()
+  );
+  await setProfileViewersSyncState(state);
   const hadAuthRecoveryState = state.authRecoveryAttempts > 0 || Boolean(state.authRecoveryAt);
   if (hadAuthRecoveryState) {
     state = {
@@ -301,6 +309,7 @@ async function runProfileViewersSyncCoordinator(
   });
 
   const collectionTask =
+    planSnapshot.entitlements.collectPrivateProfileViewers &&
     state.backfillStatus === 'complete' && state.nextCollectionTask === 'private_summary'
       ? 'private_summary'
       : 'visible';
@@ -334,6 +343,9 @@ async function runProfileViewersSyncCoordinator(
         requestBudgetReserve,
         pruneStaleAfterComplete: false,
         repairStoredIdentityMismatches: force && trigger === 'manual',
+        collectionPlan: planSnapshot.plan,
+        visibleViewerLimit: planSnapshot.entitlements.maxVisibleProfileViewers ?? undefined,
+        collectPrivateSummary: planSnapshot.entitlements.collectPrivateProfileViewers,
       });
 
       // Every completed routine cycle refreshes both surfaces: first the
@@ -341,6 +353,7 @@ async function runProfileViewersSyncCoordinator(
       // persisted known position. The initial backfill uses the same hand-off
       // as soon as it reaches LinkedIn's end.
       if (
+        planSnapshot.entitlements.collectPrivateProfileViewers &&
         state.backfillStatus === 'complete' &&
         state.nextCollectionTask === 'private_summary' &&
         canMakeProfileViewersRequest(state, Date.now(), requestBudgetReserve)

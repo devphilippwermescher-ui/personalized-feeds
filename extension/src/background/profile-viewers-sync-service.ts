@@ -2,10 +2,12 @@ import type { User } from 'firebase/auth';
 import {
   deleteStaleProfileViewerCache,
   getProfileViewers,
+  pruneFreeCollectedProfileViewers,
   updateProfileViewerSummary,
   upsertProfileViewers,
 } from 'shared/firestore-service';
 import type { ProfileViewerInput } from 'shared/types';
+import type { AppPlan } from 'shared/plans';
 import { mergeProfileViewerCandidates } from './profile-viewers-parser-merge';
 import {
   createRecentProfileViewerSnapshot,
@@ -39,6 +41,9 @@ export async function syncProfileViewersViaApi(
     requestBudgetReserve?: number;
     pruneStaleAfterComplete?: boolean;
     repairStoredIdentityMismatches?: boolean;
+    collectionPlan?: AppPlan;
+    visibleViewerLimit?: number;
+    collectPrivateSummary?: boolean;
   } = {}
 ): Promise<ProfileViewersSyncResult> {
   const user = authenticatedUser;
@@ -98,6 +103,8 @@ export async function syncProfileViewersViaApi(
   let paginationComplete = false;
   let reachedLinkedInEnd = false;
   let privateSummaryContinuationCursor: ProfileViewersPaginationCursor | null = null;
+  const collectPrivateSummary = options.collectPrivateSummary !== false;
+  const visibleViewerLimit = options.visibleViewerLimit;
 
   while (true) {
     requestCount += 1;
@@ -119,7 +126,15 @@ export async function syncProfileViewersViaApi(
     }
 
     const existingSnapshot = Array.from(existingByUsername.values());
-    const enrichment = await enrichVisibleProfileViewers(page.viewers, existingSnapshot);
+    const remainingVisibleSlots =
+      typeof visibleViewerLimit === 'number'
+        ? Math.max(0, visibleViewerLimit - collectedViewers.length)
+        : undefined;
+    const pageViewerCandidates =
+      remainingVisibleSlots === undefined
+        ? page.viewers
+        : page.viewers.slice(0, remainingVisibleSlots);
+    const enrichment = await enrichVisibleProfileViewers(pageViewerCandidates, existingSnapshot);
     const pageViewers = enrichment.viewers;
     const unresolvedIdentities = pageViewers
       .filter((viewer) => viewer.identityUncertain === true)
@@ -155,18 +170,19 @@ export async function syncProfileViewersViaApi(
     const writeResult = await upsertProfileViewers(user.uid, pageViewers, existingSnapshot, {
       seenAt: syncSeenAt,
       positionOffset,
+      collectionPlan: options.collectionPlan,
     });
     savedCount += writeResult.savedCount;
     newCount += writeResult.newCount;
     newProfileUsernames.push(...writeResult.newProfileUsernames);
-    if (page.privateViewerCount !== null) {
+    if (collectPrivateSummary && page.privateViewerCount !== null) {
       privateViewerCount = page.privateViewerCount;
       privateViewerCountStart = positionOffset;
     }
-    if (page.recruiterViewerCount !== null) {
+    if (collectPrivateSummary && page.recruiterViewerCount !== null) {
       recruiterViewerCount = page.recruiterViewerCount;
     }
-    if (page.recruiterViewerUrl) {
+    if (collectPrivateSummary && page.recruiterViewerUrl) {
       recruiterViewerUrl = page.recruiterViewerUrl;
     }
     updateExistingProfileViewerSnapshot(existingByUsername, pageViewers, syncSeenAt, positionOffset);
@@ -178,8 +194,11 @@ export async function syncProfileViewersViaApi(
 
     const nextCursor = page.nextCursor;
     privateSummaryContinuationCursor = nextCursor;
+    const reachedVisibleLimit =
+      typeof visibleViewerLimit === 'number' &&
+      collectedViewers.length >= visibleViewerLimit;
     if (paginationMode === 'backfill') {
-      const completedBackfill = !nextCursor;
+      const completedBackfill = !nextCursor || reachedVisibleLimit;
       syncState = {
         ...syncState,
         backfillStatus: completedBackfill ? 'complete' : 'in_progress',
@@ -202,6 +221,11 @@ export async function syncProfileViewersViaApi(
     if (!nextCursor) {
       paginationComplete = true;
       reachedLinkedInEnd = true;
+      break;
+    }
+
+    if (reachedVisibleLimit) {
+      paginationComplete = true;
       break;
     }
 
@@ -269,7 +293,22 @@ export async function syncProfileViewersViaApi(
   }
 
   const summaryUpdatedAt = Date.now();
-  if (privateViewerCount !== undefined) {
+  if (!collectPrivateSummary) {
+    syncState = {
+      ...syncState,
+      backfillStatus: 'complete',
+      backfillNextStart: undefined,
+      backfillPageSize: undefined,
+      nextCollectionTask: 'visible',
+      // Ready means there is no blocking first-surface task for the active
+      // plan. No private/recruiter request is made for Free.
+      privateSummaryStatus: 'ready',
+      privateSummaryNextStart: undefined,
+      privateSummaryScanOrigin: undefined,
+      updatedAt: summaryUpdatedAt,
+    };
+    await persistSyncProgress(syncState);
+  } else if (privateViewerCount !== undefined) {
     syncState = {
       ...syncState,
       nextCollectionTask: privateViewerCountStart === 0 ? 'visible' : 'private_summary',
@@ -320,6 +359,10 @@ export async function syncProfileViewersViaApi(
     await deleteStaleProfileViewerCache(user.uid, syncSeenAt);
   }
 
+  if (options.collectionPlan === 'free' && typeof visibleViewerLimit === 'number') {
+    await pruneFreeCollectedProfileViewers(user.uid, visibleViewerLimit);
+  }
+
   if (options.repairStoredIdentityMismatches) {
     const repairResults = await repairStoredProfileViewerIdentityMismatches(user.uid, existingViewers);
     if (repairResults.length > 0) {
@@ -338,7 +381,10 @@ export async function syncProfileViewersViaApi(
     // existingByUsername starts with the complete persisted collection and is
     // updated after every page, so this is the exact stored visible total. It
     // avoids Firestore aggregation queries that are unavailable in MV3 workers.
-    visibleCount: existingByUsername.size,
+    visibleCount:
+      typeof visibleViewerLimit === 'number'
+        ? Math.min(existingByUsername.size, visibleViewerLimit)
+        : existingByUsername.size,
     visibleSearchCount: 0,
     privateViewerCount,
     recruiterViewerCount,

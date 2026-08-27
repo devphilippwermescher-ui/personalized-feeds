@@ -1,3 +1,5 @@
+import type { AppPlan } from './plans';
+
 export interface UserProfile {
   uid: string;
   email: string;
@@ -51,6 +53,8 @@ export interface ProfileViewer {
   lastSeenAt: number;
   lastSeenPosition?: number;
   source: 'linkedin_profile_views';
+  /** Plan active when this document was first collected. Missing means legacy/grandfathered data. */
+  collectedPlan?: AppPlan;
 }
 
 export type ProfileViewerInput = Omit<

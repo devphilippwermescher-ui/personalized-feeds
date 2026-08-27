@@ -1,5 +1,4 @@
 import {
-  duplicateSharedFeed,
   ensureFeedShareLink,
   followFeedByShareToken,
   getFeedShares,
@@ -12,6 +11,21 @@ import {
 } from 'shared/firestore-service';
 import { getAuthenticatedFeedsUser } from './feeds-auth';
 import { getFeedsAuthErrorResponse, normalizeFeedsError } from './feeds-errors';
+import { getPlanLimitErrorResponse, PlanLimitError } from './subscription/plan-limit-error';
+import { duplicateSharedFeedForPlan } from './subscription/plan-enforcement-service';
+
+function sendSharingError(
+  sendResponse: (response?: unknown) => void,
+  error: unknown,
+  fallback: string
+): void {
+  if (error instanceof PlanLimitError) {
+    sendResponse(getPlanLimitErrorResponse(error));
+    return;
+  }
+
+  sendResponse({ success: false, error: normalizeFeedsError(error, fallback) });
+}
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'FEEDS_GET_SHARED_ALL') {
     getAuthenticatedFeedsUser()
@@ -182,7 +196,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           sendResponse(getFeedsAuthErrorResponse());
           return;
         }
-        return duplicateSharedFeed(user.uid, message.ownerId, message.feedId).then((feed) => {
+        return duplicateSharedFeedForPlan(user.uid, message.ownerId, message.feedId).then((feed) => {
           sendResponse({
             success: true,
             feed: {
@@ -197,7 +211,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         });
       })
       .catch((error) => {
-        sendResponse({ success: false, error: normalizeFeedsError(error, 'Failed to duplicate shared feed') });
+        sendSharingError(sendResponse, error, 'Failed to duplicate shared feed');
       });
     return true;
   }

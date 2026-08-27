@@ -1,4 +1,5 @@
 import { PROFILE_VIEWERS_PAGINATION_PAGE_SIZE } from './profile-viewers-pagination';
+import type { AppPlan } from 'shared/plans';
 
 export const PROFILE_VIEWERS_SYNC_INTERVAL_MS = 30 * 60 * 1000;
 export const PROFILE_VIEWERS_MIN_SYNC_INTERVAL_MS = 25 * 60 * 1000;
@@ -101,6 +102,7 @@ export interface ProfileViewersSyncState {
   schedulePolicyVersion: 2 | 3;
   summaryCollectionVersion: 2 | 3 | 4;
   userId: string;
+  collectionPlan?: AppPlan;
   lastSuccessAt?: number;
   lastAttemptAt?: number;
   nextDueAt?: number;
@@ -138,6 +140,40 @@ export interface ProfileViewersSyncState {
   lastError?: ProfileViewersSyncErrorInfo;
   logs: ProfileViewersSyncLog[];
   updatedAt: number;
+}
+
+export function prepareProfileViewersStateForPlan(
+  state: ProfileViewersSyncState,
+  plan: AppPlan,
+  now: number
+): ProfileViewersSyncState {
+  if (state.collectionPlan === plan) {
+    return state;
+  }
+
+  return {
+    ...state,
+    collectionPlan: plan,
+    backfillStatus: 'not_started',
+    backfillNextStart: undefined,
+    backfillPageSize: undefined,
+    backfillStartedAt: undefined,
+    backfillCompletedAt: undefined,
+    backfillPagesFetched: 0,
+    backfillProfilesSaved: 0,
+    recentProfileViewerUsernames: [],
+    nextCollectionTask: 'visible',
+    privateSummaryStatus: plan === 'pro' ? 'not_started' : 'ready',
+    privateSummaryNextStart: undefined,
+    privateSummaryPageSize: undefined,
+    privateSummaryKnownStart: undefined,
+    privateSummaryScanOrigin: undefined,
+    privateSummaryLastAttemptAt: undefined,
+    privateSummaryLastSuccessAt: undefined,
+    nextDueAt: now,
+    retryAt: undefined,
+    updatedAt: now,
+  };
 }
 
 export interface ProfileViewersSyncDecision {
