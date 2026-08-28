@@ -62,6 +62,8 @@ export type ProfileViewerInput = Omit<
   'id' | 'firstSeenAt' | 'lastSeenAt' | 'lastSeenPosition' | 'source'
 > & {
   sourceIndex?: number;
+  /** Parser-only LinkedIn card position. It is intentionally not persisted to Firestore. */
+  renderPosition?: number;
   listPosition?: number;
   /** Parser-only signal. It is intentionally not persisted to Firestore. */
   identityUncertain?: boolean;

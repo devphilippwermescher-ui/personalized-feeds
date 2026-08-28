@@ -38,6 +38,12 @@ function mergeProfileViewer(existing: ProfileViewerInput, incoming: ProfileViewe
         : incoming.sourceIndex === undefined
           ? existing.sourceIndex
           : Math.min(existing.sourceIndex, incoming.sourceIndex),
+    renderPosition:
+      existing.renderPosition === undefined
+        ? incoming.renderPosition
+        : incoming.renderPosition === undefined
+          ? existing.renderPosition
+          : Math.min(existing.renderPosition, incoming.renderPosition),
   };
 
   ENRICHABLE_FIELDS.forEach((field) => {

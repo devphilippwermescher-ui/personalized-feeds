@@ -5,6 +5,7 @@ import {
   PROFILE_VIEWERS_BUDGET_CAPACITY,
   PROFILE_VIEWERS_SCHEDULE_POLICY_VERSION,
   PROFILE_VIEWERS_SUMMARY_COLLECTION_VERSION,
+  PROFILE_VIEWERS_VISIBLE_COLLECTION_VERSION,
   type ProfileViewersSyncState,
   type ProfileViewersSyncTrigger,
 } from './profile-viewers-sync-state';
@@ -117,6 +118,8 @@ export async function getProfileViewersSyncState(userId: string): Promise<Profil
     state.schedulePolicyVersion === PROFILE_VIEWERS_SCHEDULE_POLICY_VERSION;
   const isCurrentSummaryCollection =
     state.summaryCollectionVersion === PROFILE_VIEWERS_SUMMARY_COLLECTION_VERSION;
+  const isCurrentVisibleCollection =
+    state.visibleCollectionVersion === PROFILE_VIEWERS_VISIBLE_COLLECTION_VERSION;
   const needsPrivateSummaryRescan =
     !isCurrentSummaryCollection && state.backfillStatus === 'complete';
   const migrationDueAt = getProfileViewersSummaryMigrationDueAt(state, now);
@@ -126,9 +129,19 @@ export async function getProfileViewersSyncState(userId: string): Promise<Profil
     ...state,
     schedulePolicyVersion: PROFILE_VIEWERS_SCHEDULE_POLICY_VERSION,
     summaryCollectionVersion: PROFILE_VIEWERS_SUMMARY_COLLECTION_VERSION,
-    nextDueAt: isCurrentSchedulePolicy ? migrationDueAt : now,
-    retryAt: isCurrentSchedulePolicy ? state.retryAt : undefined,
-    cooldownUntil: isCurrentSchedulePolicy ? state.cooldownUntil : undefined,
+    visibleCollectionVersion: PROFILE_VIEWERS_VISIBLE_COLLECTION_VERSION,
+    nextDueAt:
+      isCurrentSchedulePolicy && isCurrentVisibleCollection
+        ? migrationDueAt
+        : now,
+    retryAt:
+      isCurrentSchedulePolicy && isCurrentVisibleCollection
+        ? state.retryAt
+        : undefined,
+    cooldownUntil:
+      isCurrentSchedulePolicy && isCurrentVisibleCollection
+        ? state.cooldownUntil
+        : undefined,
     cycleStartedAt: isCurrentSchedulePolicy ? state.cycleStartedAt : undefined,
     attemptStartedAt: isCurrentSchedulePolicy ? state.attemptStartedAt : undefined,
     attemptExpiresAt: isCurrentSchedulePolicy ? state.attemptExpiresAt : undefined,
@@ -183,7 +196,7 @@ export async function getProfileViewersSyncState(userId: string): Promise<Profil
       : [],
     // Run the newest visible page first so the same migration repairs both
     // rendered order and the private aggregate in one coordinator cycle.
-    nextCollectionTask: needsPrivateSummaryRescan
+    nextCollectionTask: needsPrivateSummaryRescan || !isCurrentVisibleCollection
       ? 'visible'
       : state.nextCollectionTask === 'private_summary'
         ? 'private_summary'

@@ -13,6 +13,7 @@ import {
   PROFILE_VIEWERS_RETRY_DELAY_MS,
   PROFILE_VIEWERS_SUMMARY_COLLECTION_VERSION,
   PROFILE_VIEWERS_SYNC_INTERVAL_MS,
+  PROFILE_VIEWERS_VISIBLE_COLLECTION_VERSION,
   completeProfileViewersSyncFailure,
   completeProfileViewersSyncSuccess,
   createProfileViewersSyncState,
@@ -36,6 +37,9 @@ describe('profile viewers sync state', () => {
     const state = createProfileViewersSyncState('user-1', 1_000);
 
     expect(state.summaryCollectionVersion).toBe(PROFILE_VIEWERS_SUMMARY_COLLECTION_VERSION);
+    expect(state.visibleCollectionVersion).toBe(
+      PROFILE_VIEWERS_VISIBLE_COLLECTION_VERSION
+    );
     expect(state.backfillStatus).toBe('not_started');
     expect(state.backfillPagesFetched).toBe(0);
     expect(state.backfillProfilesSaved).toBe(0);

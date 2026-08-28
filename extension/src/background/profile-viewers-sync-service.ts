@@ -32,6 +32,29 @@ import { waitForProfileViewersPaginationPace } from './profile-viewers-request-p
 import { enrichVisibleProfileViewers, updateExistingProfileViewerSnapshot } from './profile-viewers-enrichment-service';
 import type { ProfileViewersSyncResult } from './profile-viewers-sync-result';
 import { repairStoredProfileViewerIdentityMismatches } from './profile-viewers-stored-identity-repair';
+import { selectProfileViewerCollectionWindow } from './features/profile-viewers/utils/collection-window';
+
+const PROFILE_VIEWERS_DEBUG_DIAGNOSTICS = false;
+
+function debugProfileViewerCards(
+  stage: 'parsed' | 'verified',
+  cursor: number,
+  viewers: ProfileViewerInput[]
+): void {
+  if (!PROFILE_VIEWERS_DEBUG_DIAGNOSTICS) return;
+  console.debug(
+    `[profile-viewers-sync] ${stage} cards ${JSON.stringify({
+      cursor,
+      cards: viewers.map((viewer) => ({
+        username: viewer.linkedinUsername,
+        displayName: viewer.displayName,
+        verticalPosition: viewer.renderPosition,
+        viewedAgoText: viewer.viewedAgoText,
+        identityUncertain: viewer.identityUncertain === true,
+      })),
+    })}`
+  );
+}
 
 export async function syncProfileViewersViaApi(
   authenticatedUser: User | undefined,
@@ -69,6 +92,7 @@ export async function syncProfileViewersViaApi(
   const paginationMode = syncState.backfillStatus === 'complete' ? 'incremental' : 'backfill';
   const syncSeenAt = paginationMode === 'backfill' ? syncState.backfillStartedAt || Date.now() : Date.now();
   const collectedViewers: ProfileViewerInput[] = [];
+  const rankedViewerCandidates: ProfileViewerInput[] = [];
   const newProfileUsernames: string[] = [];
   const visitedCursors = new Set<number>();
   let requestCount = 0;
@@ -82,8 +106,10 @@ export async function syncProfileViewersViaApi(
   let responseLength = 0;
   let httpStatus = 200;
   let hadUnresolvedIdentities = false;
+  const visibleViewerLimit = options.visibleViewerLimit;
   let cursor: ProfileViewersPaginationCursor | null =
     paginationMode === 'backfill' &&
+    typeof visibleViewerLimit !== 'number' &&
     syncState.backfillStatus === 'in_progress' &&
     typeof syncState.backfillNextStart === 'number'
       ? {
@@ -104,39 +130,28 @@ export async function syncProfileViewersViaApi(
   let reachedLinkedInEnd = false;
   let privateSummaryContinuationCursor: ProfileViewersPaginationCursor | null = null;
   const collectPrivateSummary = options.collectPrivateSummary !== false;
-  const visibleViewerLimit = options.visibleViewerLimit;
 
   while (true) {
     requestCount += 1;
     pagesFetched += 1;
     responseLength += page.responseLength;
     httpStatus = page.httpStatus;
-
-    const untrustedRscIdentities = page.viewers
-      .filter((viewer) => viewer.identityUncertain === true)
-      .map((viewer) => ({
-        linkedinUsername: viewer.linkedinUsername,
-        linkedinUrl: viewer.linkedinUrl,
-        parsedDisplayName: viewer.displayName,
-      }));
-    if (untrustedRscIdentities.length > 0) {
-      console.warn('[profile-viewers-sync] untrusted identities parsed from WvmpEntityList', {
-        identities: untrustedRscIdentities,
-      });
-    }
+    debugProfileViewerCards('parsed', positionOffset, page.viewers);
 
     const existingSnapshot = Array.from(existingByUsername.values());
-    const remainingVisibleSlots =
-      typeof visibleViewerLimit === 'number'
-        ? Math.max(0, visibleViewerLimit - collectedViewers.length)
-        : undefined;
-    const pageViewerCandidates =
-      remainingVisibleSlots === undefined
-        ? page.viewers
-        : page.viewers.slice(0, remainingVisibleSlots);
-    const enrichment = await enrichVisibleProfileViewers(pageViewerCandidates, existingSnapshot);
-    const pageViewers = enrichment.viewers;
-    const unresolvedIdentities = pageViewers
+    const pageViewerCandidates = page.viewers;
+    const enrichment = await enrichVisibleProfileViewers(
+      pageViewerCandidates,
+      existingSnapshot,
+      {
+        // The bounded Free window is small enough to verify every candidate.
+        // This prevents a plausible neighbour's name/avatar from being stored
+        // under an otherwise valid LinkedIn profile URL.
+        verifyEveryIdentity: typeof visibleViewerLimit === 'number',
+      }
+    );
+    const enrichedPageViewers = enrichment.viewers;
+    const unresolvedIdentities = enrichedPageViewers
       .filter((viewer) => viewer.identityUncertain === true)
       .map((viewer) => ({
         linkedinUsername: viewer.linkedinUsername,
@@ -145,23 +160,30 @@ export async function syncProfileViewersViaApi(
       }));
     if (unresolvedIdentities.length > 0) {
       hadUnresolvedIdentities = true;
-      console.warn('[profile-viewers-sync] identities still unresolved after exact-profile enrichment', {
-        identities: unresolvedIdentities,
-        action: 'Skipped Firestore identity update',
-      });
+      console.warn(
+        `[profile-viewers-sync] rejected unverified cards ${JSON.stringify({
+          cursor: positionOffset,
+          reason: 'exact_identity_verification_failed',
+          cards: unresolvedIdentities,
+          action: 'skipped_persistence',
+        })}`
+      );
     }
-    const identityRepairs = enrichment.diagnostics.filter(
-      (diagnostic) =>
-        diagnostic.parsedDisplayName !== diagnostic.finalDisplayName ||
-        diagnostic.ignoredDuplicateExistingImage ||
-        diagnostic.removedAmbiguousFinalImage ||
-        (diagnostic.hadExistingImage && !diagnostic.hadRscImage && !diagnostic.skippedEnrichment)
+    const collectionWindow = selectProfileViewerCollectionWindow(
+      rankedViewerCandidates,
+      enrichedPageViewers,
+      visibleViewerLimit
     );
-    if (identityRepairs.length > 0) {
-      console.info('[profile-viewers-sync] viewer identities revalidated', {
-        repairs: identityRepairs,
-      });
-    }
+    rankedViewerCandidates.splice(
+      0,
+      rankedViewerCandidates.length,
+      ...collectionWindow.rankedViewers
+    );
+    // The product limit is applied only after exact-username verification.
+    // An unresolved or duplicated card therefore cannot consume a Free slot
+    // or push the actual tenth LinkedIn viewer out of the collection window.
+    const pageViewers = collectionWindow.pageViewers;
+    debugProfileViewerCards('verified', positionOffset, pageViewers);
     const pageHasNewProfiles = pageViewers.some(
       (viewer) => !existingUsernames.has(viewer.linkedinUsername.toLowerCase())
     );
@@ -196,7 +218,7 @@ export async function syncProfileViewersViaApi(
     privateSummaryContinuationCursor = nextCursor;
     const reachedVisibleLimit =
       typeof visibleViewerLimit === 'number' &&
-      collectedViewers.length >= visibleViewerLimit;
+      rankedViewerCandidates.length >= visibleViewerLimit;
     if (paginationMode === 'backfill') {
       const completedBackfill = !nextCursor || reachedVisibleLimit;
       syncState = {
@@ -231,19 +253,10 @@ export async function syncProfileViewersViaApi(
 
     if (
       paginationMode === 'incremental' &&
-      positionOffset === 0 &&
-      page.freeViewerLimit === true &&
-      typeof syncState.privateSummaryKnownStart === 'number'
-    ) {
-      // Free accounts expose the newest three named viewers first and then a
-      // long anonymous tail. Once the initial import has stored the private
-      // aggregate position, routine runs can jump there directly.
-      paginationComplete = true;
-      break;
-    }
-
-    if (
-      paginationMode === 'incremental' &&
+      !(
+        typeof visibleViewerLimit === 'number' &&
+        rankedViewerCandidates.length < visibleViewerLimit
+      ) &&
       shouldStopIncrementalProfileViewerPagination(
         collectedViewers,
         pageViewers,
@@ -359,8 +372,18 @@ export async function syncProfileViewersViaApi(
     await deleteStaleProfileViewerCache(user.uid, syncSeenAt);
   }
 
-  if (options.collectionPlan === 'free' && typeof visibleViewerLimit === 'number') {
-    await pruneFreeCollectedProfileViewers(user.uid, visibleViewerLimit);
+  if (
+    options.collectionPlan === 'free' &&
+    typeof visibleViewerLimit === 'number' &&
+    paginationComplete &&
+    !hadUnresolvedIdentities &&
+    (rankedViewerCandidates.length >= visibleViewerLimit || reachedLinkedInEnd)
+  ) {
+    await pruneFreeCollectedProfileViewers(
+      user.uid,
+      visibleViewerLimit,
+      rankedViewerCandidates.map((viewer) => viewer.linkedinUsername)
+    );
   }
 
   if (options.repairStoredIdentityMismatches) {

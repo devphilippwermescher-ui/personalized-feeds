@@ -1,6 +1,68 @@
 import { describe, expect, it } from 'vitest';
 import { parseProfileViewersFromPayload } from '../profile-viewers-payload-parser';
 
+interface TestCard {
+  username: string;
+  displayName: string;
+  headline?: string;
+  viewedAgoText?: string;
+  connectionDegree?: string;
+  verticalPosition?: number;
+  mutualConnectionsText?: string;
+  premium?: boolean;
+  endpointPremiumMetadata?: boolean;
+  imageRootUrl?: string;
+  imageSuffixUrl?: string;
+}
+
+function createRscPayload(cards: TestCard[]): string {
+  const records = cards.map((card, index) => {
+    const id = (index + 1).toString(16);
+    const children: unknown[] = [
+      { navigationUrl: `https://www.linkedin.com/in/${card.username}/` },
+      { children: [null, card.displayName] },
+      { children: [card.connectionDegree ? `• ${card.connectionDegree}` : '', card.headline || ''] },
+      { children: [card.viewedAgoText || 'Viewed 1h ago', card.mutualConnectionsText || ''] },
+    ];
+    if (card.verticalPosition !== undefined) {
+      children.push({
+        $type: 'proto.sdui.common.SemanticPosition',
+        verticalPosition: card.verticalPosition,
+      });
+    }
+    if (card.imageRootUrl && card.imageSuffixUrl) {
+      children.push({
+        a11yText: card.displayName,
+        shape: 'circle',
+        renderPayload: {
+          rootUrl: card.imageRootUrl,
+          imageRenditions: [{ width: 100, height: 100, suffixUrl: card.imageSuffixUrl }],
+          assetUrn: `urn:li:digitalmediaAsset:${id}`,
+        },
+      });
+    }
+    if (card.premium) {
+      children.push({ premiumFeatures: [{ featureType: 'SUBSCRIBER', hasAccess: true }] });
+    }
+    if (card.endpointPremiumMetadata) {
+      children.push({
+        pagerId: 'com.linkedin.sdui.premium.wvmp.entityList',
+        requestId: 'WvmpEntityList',
+      });
+    }
+    return `${id}:${JSON.stringify(['$', 'div', null, { children }])}`;
+  });
+  records.push(
+    `0:${JSON.stringify([
+      '$',
+      'main',
+      null,
+      { children: cards.map((_card, index) => `$L${(index + 1).toString(16)}`) },
+    ])}`
+  );
+  return records.join('\n');
+}
+
 describe('parseProfileViewersFromPayload', () => {
   it('returns blank-time viewers in React render order instead of definition order', () => {
     const payload = [
@@ -11,204 +73,228 @@ describe('parseProfileViewersFromPayload', () => {
 
     const viewers = parseProfileViewersFromPayload(payload);
 
-    expect(viewers.map((viewer) => viewer.linkedinUsername)).toEqual(['oleksandr-alieksandrov', 'yurii-klymchuk-it']);
+    expect(viewers.map((viewer) => viewer.linkedinUsername)).toEqual([
+      'oleksandr-alieksandrov',
+      'yurii-klymchuk-it',
+    ]);
     expect(viewers.map((viewer) => viewer.sourceIndex)).toEqual([0, 1]);
+    expect(viewers.every((viewer) => viewer.identityUncertain)).toBe(true);
   });
 
-  it('extracts named viewers from a partial pagination payload', () => {
-    const payload = [
-      '"url":"https://www.linkedin.com/in/mariia-recruitment/"',
-      '"children":[[null,"Mariia Zaichuk"',
-      '"children":["IT Recruiter at Talentin"]',
-      '"children":["Viewed 1w ago"]',
-      '"a11yText":"Mariia Zaichuk","shape":"circle"',
-    ].join(',');
+  it('extracts named viewers from a partial pagination RSC graph', () => {
+    const viewers = parseProfileViewersFromPayload(
+      createRscPayload([
+        {
+          username: 'mariia-recruitment',
+          displayName: 'Mariia Zaichuk',
+          headline: 'IT Recruiter at Talentin',
+          viewedAgoText: 'Viewed 1w ago',
+        },
+      ])
+    );
 
-    expect(parseProfileViewersFromPayload(payload)).toEqual([
+    expect(viewers).toEqual([
       expect.objectContaining({
         linkedinUsername: 'mariia-recruitment',
         linkedinUrl: 'https://www.linkedin.com/in/mariia-recruitment/',
         displayName: 'Mariia Zaichuk',
         headline: 'IT Recruiter at Talentin',
         viewedAgoText: 'Viewed 1w ago',
+        identityUncertain: false,
       }),
     ]);
   });
 
-  it('keeps the display name scoped to the current LinkedIn profile reference', () => {
-    const payload = [
-      '"children":["Dima Lavrov"]',
-      '"url":"https://www.linkedin.com/in/dima-lavrov/"',
-      '"children":["Viewed 1h ago"]',
-      '"url":"https://www.linkedin.com/in/alia-waleczek-806248315/"',
-      '"children":[[null,"Alia Waleczek"',
-      '"children":["Student at Davenport University"]',
-      '"children":["Viewed 3h ago"]',
-      '"a11yText":"Alia Waleczek","shape":"circle"',
-    ].join(',');
+  it('extracts LinkedIn semantic positions from each rendered card context', () => {
+    const viewers = parseProfileViewersFromPayload(
+      createRscPayload([
+        {
+          username: 'nadira-sultankulova',
+          displayName: 'Nadira Sultankulova',
+          viewedAgoText: 'Viewed 1mo ago',
+          verticalPosition: 26,
+        },
+        {
+          username: 'kamalakar-vatala',
+          displayName: 'Kamalakar Vatala',
+          viewedAgoText: 'Viewed 1mo ago',
+          verticalPosition: 25,
+        },
+      ])
+    );
 
-    const viewers = parseProfileViewersFromPayload(payload);
+    expect(
+      viewers.map((viewer) => ({
+        username: viewer.linkedinUsername,
+        renderPosition: viewer.renderPosition,
+      }))
+    ).toEqual([
+      { username: 'nadira-sultankulova', renderPosition: 26 },
+      { username: 'kamalakar-vatala', renderPosition: 25 },
+    ]);
+  });
 
-    expect(viewers).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          linkedinUsername: 'alia-waleczek-806248315',
-          linkedinUrl: 'https://www.linkedin.com/in/alia-waleczek-806248315/',
+  it('keeps the display name scoped to the current LinkedIn card', () => {
+    const viewers = parseProfileViewersFromPayload(
+      createRscPayload([
+        {
+          username: 'dima-lavrov',
+          displayName: 'Dima Lavrov',
+          viewedAgoText: 'Viewed 1h ago',
+        },
+        {
+          username: 'alia-waleczek-806248315',
           displayName: 'Alia Waleczek',
           headline: 'Student at Davenport University',
           viewedAgoText: 'Viewed 3h ago',
-        }),
+        },
       ])
     );
-    expect(viewers.find((viewer) => viewer.linkedinUsername === 'alia-waleczek-806248315')?.displayName).not.toBe(
-      'Dima Lavrov'
+
+    expect(viewers.find((viewer) => viewer.linkedinUsername === 'alia-waleczek-806248315')).toEqual(
+      expect.objectContaining({
+        displayName: 'Alia Waleczek',
+        headline: 'Student at Davenport University',
+        viewedAgoText: 'Viewed 3h ago',
+      })
     );
   });
 
-  it('uses the visible card name when the profile slug does not match it', () => {
-    const payload = [
-      '"url":"https://www.linkedin.com/in/alexandrushka/"',
-      '"children":[[null,"Alexandra Mitskevich"',
-      '"children":["• 2nd"]',
-      '"children":["IT Talent Scout / IT Recruiter at ZNOJDZIEM"]',
-      '"children":["Viewed 2d ago"]',
-      '"a11yText":"Alexandra Mitskevich","shape":"circle","renderPayload":{"rootUrl":"https://media.licdn.com/dms/image/v2/D4D03AQ/profile-displayphoto-","imageRenditions":[{"width":100,"height":100,"suffixUrl":"scale_100_100/test.jpg"}],"assetUrn":"urn:li:digitalmediaAsset:test"}',
-    ].join(',');
+  it('retains same-card data but requires exact verification for an opaque vanity slug', () => {
+    const viewers = parseProfileViewersFromPayload(
+      createRscPayload([
+        {
+          username: 'alexandrushka',
+          displayName: 'Alexandra Mitskevich',
+          headline: 'IT Talent Scout / IT Recruiter at ZNOJDZIEM',
+          connectionDegree: '2nd',
+          viewedAgoText: 'Viewed 2d ago',
+          imageRootUrl: 'https://media.licdn.com/dms/image/v2/D4D03AQ/profile-displayphoto-scale_',
+          imageSuffixUrl: '100_100/test.jpg',
+        },
+      ])
+    );
 
-    expect(parseProfileViewersFromPayload(payload)).toEqual([
+    expect(viewers).toEqual([
       expect.objectContaining({
         linkedinUsername: 'alexandrushka',
         displayName: 'Alexandra Mitskevich',
         headline: 'IT Talent Scout / IT Recruiter at ZNOJDZIEM',
         connectionDegree: '2nd',
         viewedAgoText: 'Viewed 2d ago',
-        profileImageUrl: 'https://media.licdn.com/dms/image/v2/D4D03AQ/profile-displayphoto-scale_100_100/test.jpg',
+        profileImageUrl: '',
+        identityUncertain: true,
       }),
     ]);
   });
 
   it('keeps short role headlines instead of RSC boolean fragments', () => {
-    const payload = [
-      '"url":"https://www.linkedin.com/in/maksym-krapivnoy-a50870164/"',
-      '"children":[[null,"Maksym Krapivnoy"',
-      '"children":["• 1st"]',
-      '"children":["Recruiter"]',
-      '":false,"',
-      '"children":["Viewed 2w ago"]',
-    ].join(',');
+    const viewers = parseProfileViewersFromPayload(
+      createRscPayload([
+        {
+          username: 'maksym-krapivnoy-a50870164',
+          displayName: 'Maksym Krapivnoy',
+          headline: 'Recruiter',
+          connectionDegree: '1st',
+          viewedAgoText: 'Viewed 2w ago',
+        },
+      ])
+    );
 
-    expect(parseProfileViewersFromPayload(payload)).toEqual([
-      expect.objectContaining({
-        linkedinUsername: 'maksym-krapivnoy-a50870164',
-        displayName: 'Maksym Krapivnoy',
-        headline: 'Recruiter',
-        connectionDegree: '1st',
-        viewedAgoText: 'Viewed 2w ago',
-      }),
-    ]);
+    expect(viewers[0]).toEqual(
+      expect.objectContaining({ headline: 'Recruiter', connectionDegree: '1st' })
+    );
   });
 
-  it('extracts a premium badge signal scoped to the current viewer', () => {
-    const payload = [
-      '"url":"https://www.linkedin.com/in/yevhen-romanenko/"',
-      '"children":[[null,"Yevhen Romanenko"',
-      '"children":["Senior/Lead Frontend Engineer"]',
-      '"premiumFeatures":[{"featureType":"SUBSCRIBER","hasAccess":true}]',
-      '"url":"https://www.linkedin.com/in/regular-viewer/"',
-      '"children":[[null,"Regular Viewer"',
-      '"children":["Product Manager"]',
-    ].join(',');
-
-    const viewers = parseProfileViewersFromPayload(payload);
-
-    expect(viewers.find((viewer) => viewer.linkedinUsername === 'yevhen-romanenko')).toEqual(
-      expect.objectContaining({
-        displayName: 'Yevhen Romanenko',
-        isPremium: true,
-      })
+  it('extracts only a card-local premium badge signal', () => {
+    const viewers = parseProfileViewersFromPayload(
+      createRscPayload([
+        {
+          username: 'yevhen-romanenko',
+          displayName: 'Yevhen Romanenko',
+          premium: true,
+        },
+        {
+          username: 'regular-viewer',
+          displayName: 'Regular Viewer',
+          endpointPremiumMetadata: true,
+        },
+      ])
     );
+
+    expect(viewers.find((viewer) => viewer.linkedinUsername === 'yevhen-romanenko')?.isPremium).toBe(true);
     expect(viewers.find((viewer) => viewer.linkedinUsername === 'regular-viewer')?.isPremium).toBeUndefined();
   });
 
-  it('does not treat Profile Visitors premium endpoint metadata as a profile premium badge', () => {
-    const payload = [
-      '"url":"https://www.linkedin.com/in/regular-viewer/"',
-      '"children":[[null,"Regular Viewer"',
-      '"children":["Product Manager"]',
-      '"pagerId":"com.linkedin.sdui.premium.wvmp.entityList"',
-      '"requestId":"WvmpEntityList"',
-    ].join(',');
+  it('does not attach a conflicting same-context name or fields to a vanity URL', () => {
+    const viewers = parseProfileViewersFromPayload(
+      createRscPayload([
+        {
+          username: 'carmen-linzner',
+          displayName: 'Niels Wennesheimer',
+          headline: 'Neighbour headline',
+          viewedAgoText: 'Viewed 1h ago',
+        },
+        {
+          username: 'niels-wennesheimer',
+          displayName: 'Niels Wennesheimer',
+          viewedAgoText: 'Viewed 2h ago',
+        },
+      ])
+    );
+    const carmen = viewers.find((viewer) => viewer.linkedinUsername === 'carmen-linzner');
 
-    expect(parseProfileViewersFromPayload(payload)).toEqual([
-      expect.objectContaining({
-        linkedinUsername: 'regular-viewer',
-        displayName: 'Regular Viewer',
-        isPremium: undefined,
-      }),
-    ]);
-  });
-
-  it('does not attach another viewer name to a name-like profile slug', () => {
-    const payload = [
-      '"url":"https://www.linkedin.com/in/carmen-linzner/"',
-      '"children":[[null,"Niels Wennesheimer"',
-      '"children":["Viewed 1h ago"]',
-      '"url":"https://www.linkedin.com/in/niels-wennesheimer/"',
-      '"children":[[null,"Niels Wennesheimer"',
-      '"children":["Viewed 2h ago"]',
-    ].join(',');
-
-    const viewers = parseProfileViewersFromPayload(payload);
-
-    expect(viewers.find((viewer) => viewer.linkedinUsername === 'carmen-linzner')).toEqual(
+    expect(carmen).toEqual(
       expect.objectContaining({
         displayName: 'Carmen Linzner',
-        linkedinUrl: 'https://www.linkedin.com/in/carmen-linzner/',
-      })
-    );
-    expect(viewers.find((viewer) => viewer.linkedinUsername === 'niels-wennesheimer')).toEqual(
-      expect.objectContaining({
-        displayName: 'Niels Wennesheimer',
-        linkedinUrl: 'https://www.linkedin.com/in/niels-wennesheimer/',
+        headline: '',
+        viewedAgoText: '',
+        identityUncertain: true,
       })
     );
   });
 
-  it('marks a cross-profile RSC context as uncertain and refuses its avatar', () => {
-    const payload = [
-      '"url":"https://www.linkedin.com/in/julia-mozharova/"',
-      '"children":[[null,"Adam Ivaniush"',
-      '"children":["Backend Developer"]',
-      '"a11yText":"Adam Ivaniush","shape":"circle","renderPayload":{"rootUrl":"https://media.licdn.com/dms/image/v2/adam/profile-displayphoto-shrink_",',
-      '"imageRenditions":[{"width":100,"height":100,"suffixUrl":"100_100/photo"}],"assetUrn":"urn:li:digitalmediaAsset:adam"}',
-    ].join(',');
+  it('refuses an avatar from a conflicting card identity', () => {
+    const viewers = parseProfileViewersFromPayload(
+      createRscPayload([
+        {
+          username: 'julia-mozharova',
+          displayName: 'Adam Ivaniush',
+          headline: 'Backend Developer',
+          imageRootUrl: 'https://media.licdn.com/dms/image/v2/adam/profile-displayphoto-shrink_',
+          imageSuffixUrl: '100_100/photo',
+        },
+      ])
+    );
 
-    expect(parseProfileViewersFromPayload(payload)).toEqual([
+    expect(viewers[0]).toEqual(
       expect.objectContaining({
         linkedinUsername: 'julia-mozharova',
         displayName: 'Julia Mozharova',
         profileImageUrl: '',
         identityUncertain: true,
-      }),
-    ]);
+      })
+    );
   });
 
-  it('never trusts a display name associated only by an opaque LinkedIn member token', () => {
-    const payload = [
-      '"url":"https://www.linkedin.com/in/ACoAAVeryOpaqueMemberToken123/"',
-      '"children":[[null,"Alina Diachenko"',
-      '"children":["Back-end Developer"]',
-      '"a11yText":"Alina Diachenko","shape":"circle","renderPayload":{"rootUrl":"https://media.licdn.com/dms/image/v2/alina/profile-displayphoto-shrink_",',
-      '"imageRenditions":[{"width":100,"height":100,"suffixUrl":"100_100/photo"}],"assetUrn":"urn:li:digitalmediaAsset:alina"}',
-    ].join(',');
+  it('requires exact verification for an opaque LinkedIn member token', () => {
+    const viewers = parseProfileViewersFromPayload(
+      createRscPayload([
+        {
+          username: 'ACoAAVeryOpaqueMemberToken123',
+          displayName: 'Alina Diachenko',
+          headline: 'Back-end Developer',
+        },
+      ])
+    );
 
-    expect(parseProfileViewersFromPayload(payload)).toEqual([
+    expect(viewers[0]).toEqual(
       expect.objectContaining({
         linkedinUsername: 'acoaaveryopaquemembertoken123',
         displayName: 'Alina Diachenko',
         profileImageUrl: '',
         identityUncertain: true,
-      }),
-    ]);
+      })
+    );
   });
 });

@@ -1,4 +1,5 @@
 import type { ProfileData } from '../types';
+import { findCurrentProfileRelationshipRoot } from '../../shared/current-profile-relationship-dom';
 
 export function extractUsernameFromUrl(): string | null {
   const match = window.location.pathname.match(/^\/in\/([^/]+)/);
@@ -40,16 +41,19 @@ function findModernTopCardByComponentKey(): HTMLElement | null {
 }
 
 export function findProfileTopCardRoot(username = extractUsernameFromUrl() || ''): HTMLElement | null {
-  const legacyRoot =
-    document.querySelector<HTMLElement>('section[data-member-id]') ||
-    document.querySelector<HTMLElement>('.pv-top-card');
-  if (legacyRoot) {
-    return legacyRoot;
+  const relationshipRoot = findCurrentProfileRelationshipRoot({ username });
+  if (relationshipRoot) {
+    return relationshipRoot;
   }
 
   const modernComponentRoot = findModernTopCardByComponentKey();
   if (modernComponentRoot) {
     return modernComponentRoot;
+  }
+
+  const legacyRoot = document.querySelector<HTMLElement>('.pv-top-card');
+  if (legacyRoot) {
+    return legacyRoot;
   }
 
   if (!username) {

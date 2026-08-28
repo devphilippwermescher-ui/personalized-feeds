@@ -52,6 +52,50 @@ describe('profile viewer page enrichment', () => {
     expect(result.displayName).toBe('Alia Waleczek');
   });
 
+  it('rejects profile metadata whose exact public identifier is different', () => {
+    const result = mergeProfileViewerWithPageMetadata(
+      {
+        linkedinUrl: 'https://www.linkedin.com/in/rossor/',
+        linkedinUsername: 'rossor',
+        displayName: 'Rostyslav Osinchuk',
+        profileImageUrl: '',
+        identityUncertain: true,
+      },
+      {
+        displayName: 'Volodymyr Korol',
+        profileImageUrl: '',
+        linkedinUsername: 'volodymyr-korol',
+      }
+    );
+
+    expect(result).toMatchObject({
+      linkedinUsername: 'rossor',
+      linkedinUrl: 'https://www.linkedin.com/in/rossor/',
+      displayName: 'Rostyslav Osinchuk',
+      identityUncertain: true,
+      discardExistingProfileImage: true,
+    });
+  });
+
+  it('replaces a neighbouring RSC name with metadata from the exact profile URL', () => {
+    const result = mergeProfileViewerWithPageMetadata(
+      {
+        linkedinUrl: 'https://www.linkedin.com/in/rostyslav-osinchuk/',
+        linkedinUsername: 'rostyslav-osinchuk',
+        displayName: 'Lilia Ustimova',
+        profileImageUrl: '',
+      },
+      { displayName: 'Rostyslav Osinchuk', profileImageUrl: '' },
+      undefined
+    );
+
+    expect(result).toMatchObject({
+      linkedinUsername: 'rostyslav-osinchuk',
+      displayName: 'Rostyslav Osinchuk',
+      identityUncertain: false,
+    });
+  });
+
   it('repairs an uncertain mixed identity with metadata from the exact profile URL', () => {
     const result = mergeProfileViewerWithPageMetadata(
       {

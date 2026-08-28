@@ -85,4 +85,90 @@ describe('profile viewer enrichment service', () => {
       discardExistingProfileImage: true,
     });
   });
+
+  it('revalidates a plausible neighbouring name even when RSC marked it as certain', async () => {
+    mocks.findLinkedInPeopleSearchResultByUsername.mockReturnValue(null);
+    mocks.fetchWithTimeout.mockImplementation(async (url: string) => {
+      if (url.includes('/voyager/api/graphql')) {
+        return {
+          ok: true,
+          json: async () => ({}),
+        };
+      }
+
+      return {
+        ok: true,
+        status: 200,
+        text: async () => `
+          <meta property="og:title" content="Rostyslav Osinchuk | LinkedIn">
+          <meta property="og:image" content="https://media.licdn.com/dms/image/v2/rostyslav/profile-displayphoto-shrink_100_100/photo?e=4102444800">
+        `,
+      };
+    });
+
+    const result = await enrichVisibleProfileViewers(
+      [
+        {
+          linkedinUrl: 'https://www.linkedin.com/in/rostyslav-osinchuk/',
+          linkedinUsername: 'rostyslav-osinchuk',
+          displayName: 'Lilia Ustimova',
+          profileImageUrl:
+            'https://media.licdn.com/dms/image/v2/rostyslav/profile-displayphoto-shrink_100_100/photo?e=4102444800',
+          identityUncertain: false,
+        },
+      ],
+      [],
+      { verifyEveryIdentity: true }
+    );
+
+    expect(String(mocks.fetchWithTimeout.mock.calls[0]?.[0])).toContain(
+      'variables=(keywords:rostyslav-osinchuk)'
+    );
+    expect(result.viewers[0]).toMatchObject({
+      linkedinUsername: 'rostyslav-osinchuk',
+      displayName: 'Rostyslav Osinchuk',
+      identityUncertain: false,
+    });
+  });
+
+  it('keeps an opaque username unresolved when the exact page redirects to another public identifier', async () => {
+    mocks.findLinkedInPeopleSearchResultByUsername.mockReturnValue(null);
+    mocks.fetchWithTimeout.mockImplementation(async (url: string) => {
+      if (url.includes('/voyager/api/graphql')) {
+        return { ok: true, json: async () => ({}) };
+      }
+      return {
+        ok: true,
+        status: 200,
+        url: 'https://www.linkedin.com/in/volodymyr-korol/',
+        text: async () => `
+          <meta property="og:url" content="https://www.linkedin.com/in/volodymyr-korol/">
+          <meta property="og:title" content="Volodymyr Korol | LinkedIn">
+        `,
+      };
+    });
+
+    const result = await enrichVisibleProfileViewers(
+      [
+        {
+          linkedinUrl: 'https://www.linkedin.com/in/rossor/',
+          linkedinUsername: 'rossor',
+          displayName: 'Rostyslav Osinchuk',
+          profileImageUrl: '',
+          identityUncertain: true,
+        },
+      ],
+      []
+    );
+
+    expect(result.viewers[0]).toMatchObject({
+      linkedinUsername: 'rossor',
+      linkedinUrl: 'https://www.linkedin.com/in/rossor/',
+      displayName: 'Rostyslav Osinchuk',
+      identityUncertain: true,
+    });
+    expect(result.diagnostics[0].rejectionReason).toBe(
+      'profile_page_identifier_mismatch'
+    );
+  });
 });

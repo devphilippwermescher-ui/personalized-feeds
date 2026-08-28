@@ -6,7 +6,10 @@ export interface RelationshipButtonSignal {
 export function getRelationshipButtonSignal(element: Element): RelationshipButtonSignal {
   return {
     text: element.textContent?.replace(/\s+/g, ' ').trim().toLowerCase() || '',
-    label: element.getAttribute('aria-label')?.replace(/\s+/g, ' ').trim().toLowerCase() || '',
+    label: (element.getAttribute('aria-label') || element.getAttribute('title') || '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .toLowerCase(),
   };
 }
 

@@ -13,13 +13,13 @@ function viewer(linkedinUsername: string, viewedAgoText: string, sourceIndex: nu
 }
 
 describe('orderProfileViewersPage', () => {
-  it('uses the rendered relative time when streamed references are out of order', () => {
+  it('does not reorder rendered cards by coarse relative time', () => {
     const result = orderProfileViewersPage([
       viewer('yurii-klymchuk-it', 'Viewed 2w ago', 10),
       viewer('oleksandr-alieksandrov', 'Viewed 1h ago', 20),
     ]);
 
-    expect(result.map((item) => item.linkedinUsername)).toEqual(['oleksandr-alieksandrov', 'yurii-klymchuk-it']);
+    expect(result.map((item) => item.linkedinUsername)).toEqual(['yurii-klymchuk-it', 'oleksandr-alieksandrov']);
     expect(result.map((item) => item.listPosition)).toEqual([0, 1]);
   });
 
@@ -30,5 +30,20 @@ describe('orderProfileViewersPage', () => {
     ]);
 
     expect(result.map((item) => item.linkedinUsername)).toEqual(['first', 'second']);
+  });
+
+  it('uses LinkedIn semantic card positions before streamed definition order', () => {
+    const nadira = viewer('nadira-sultankulova', 'Viewed 1mo ago', 10);
+    const kamalakar = viewer('kamalakar-vatala', 'Viewed 1mo ago', 20);
+
+    const result = orderProfileViewersPage([
+      { ...nadira, renderPosition: 26 },
+      { ...kamalakar, renderPosition: 25 },
+    ]);
+
+    expect(result.map((item) => item.linkedinUsername)).toEqual([
+      'kamalakar-vatala',
+      'nadira-sultankulova',
+    ]);
   });
 });

@@ -50,4 +50,32 @@ describe('Profile Visitors coordinator storage migration', () => {
     });
     expect(migrated.privateSummaryKnownStart).toBeUndefined();
   });
+
+  it('makes the canonical visible-window repair immediately due without restarting history', async () => {
+    const state = {
+      ...createProfileViewersSyncState('user-1', 1_000),
+      visibleCollectionVersion: 2 as const,
+      backfillStatus: 'complete' as const,
+      backfillCompletedAt: 2_000,
+      nextDueAt: 500_000,
+      retryAt: 400_000,
+      nextCollectionTask: 'private_summary' as const,
+      privateSummaryStatus: 'ready' as const,
+    };
+    mocks.getStorageValue.mockResolvedValue({
+      pf_profile_viewers_sync: state,
+    });
+
+    const migrated = await getProfileViewersSyncState('user-1');
+
+    expect(migrated).toMatchObject({
+      visibleCollectionVersion: 3,
+      nextDueAt: 50_000,
+      nextCollectionTask: 'visible',
+      backfillStatus: 'complete',
+      backfillCompletedAt: 2_000,
+      privateSummaryStatus: 'ready',
+    });
+    expect(migrated.retryAt).toBeUndefined();
+  });
 });

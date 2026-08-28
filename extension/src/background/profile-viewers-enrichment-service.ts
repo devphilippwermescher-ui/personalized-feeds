@@ -1,4 +1,5 @@
 import type { ProfileViewer, ProfileViewerInput } from 'shared/types';
+import { getUsernameFromLinkedInUrl } from 'shared/linkedin-identity';
 import { findLinkedInPeopleSearchResultByUsername, type LinkedInPeopleSearchResult } from 'shared/linkedin-people-search';
 import {
   getAmbiguousProfileViewerImageUrls,
@@ -27,6 +28,7 @@ interface ProfileViewerEnrichmentDiagnostic {
   hasFinalImage: boolean;
   skippedEnrichment: boolean;
   profilePageStatus?: number;
+  rejectionReason?: string;
 }
 
 async function fetchProfileViewerPeopleSearchMatch(
@@ -34,7 +36,9 @@ async function fetchProfileViewerPeopleSearchMatch(
   csrfToken: string
 ): Promise<LinkedInPeopleSearchResult | null> {
   const targetUsername = viewer.linkedinUsername.trim().toLowerCase();
-  const queries = Array.from(new Set([viewer.displayName.trim(), viewer.linkedinUsername.trim()].filter(Boolean)));
+  const queries = Array.from(
+    new Set([viewer.linkedinUsername.trim(), viewer.displayName.trim()].filter(Boolean))
+  );
 
   for (const query of queries) {
     const variables = `(keywords:${encodeURIComponent(query)})`;
@@ -76,7 +80,8 @@ async function enrichProfileViewerFromProfilePage(
   viewer: ProfileViewerInput,
   existingViewer: Partial<ProfileViewer> | undefined,
   csrfToken: string,
-  ignoredDuplicateExistingImage: boolean
+  ignoredDuplicateExistingImage: boolean,
+  verifyExactProfilePage: boolean
 ): Promise<{
   viewer: ProfileViewerInput;
   diagnostic: ProfileViewerEnrichmentDiagnostic;
@@ -135,7 +140,10 @@ async function enrichProfileViewerFromProfilePage(
     { displayName: '', profileImageUrl: '' },
     existingViewer
   );
-  if (hasCompleteProfileViewerIdentity(viewerAfterPeopleSearch)) {
+  if (
+    hasCompleteProfileViewerIdentity(viewerAfterPeopleSearch) &&
+    (!verifyExactProfilePage || Boolean(peopleSearchMatch))
+  ) {
     return createResult(viewerAfterPeopleSearch);
   }
 
@@ -164,6 +172,28 @@ async function enrichProfileViewerFromProfilePage(
     }
 
     const metadata = parseProfileViewerPageMetadata(await response.text());
+    const responseUsername = getUsernameFromLinkedInUrl(response.url);
+    if (
+      (responseUsername && responseUsername !== viewer.linkedinUsername.toLowerCase()) ||
+      (metadata.linkedinUsername &&
+        metadata.linkedinUsername.toLowerCase() !== viewer.linkedinUsername.toLowerCase())
+    ) {
+      const result = createResult(
+        mergeProfileViewerWithPageMetadata(
+          { ...viewerWithTrustedData, identityUncertain: true },
+          { displayName: '', profileImageUrl: '' },
+          existingViewer
+        ),
+        response.status
+      );
+      return {
+        ...result,
+        diagnostic: {
+          ...result.diagnostic,
+          rejectionReason: 'profile_page_identifier_mismatch',
+        },
+      };
+    }
     return createResult(
       mergeProfileViewerWithPageMetadata(viewerWithTrustedData, metadata, existingViewer),
       response.status,
@@ -183,7 +213,10 @@ async function enrichProfileViewerFromProfilePage(
 
 export async function enrichVisibleProfileViewers(
   viewers: ProfileViewerInput[],
-  existingViewers: ProfileViewer[]
+  existingViewers: ProfileViewer[],
+  options: {
+    verifyEveryIdentity?: boolean;
+  } = {}
 ): Promise<{
   viewers: ProfileViewerInput[];
   diagnostics: ProfileViewerEnrichmentDiagnostic[];
@@ -206,9 +239,18 @@ export async function enrichVisibleProfileViewers(
           viewer.linkedinUsername
         )
     );
+    const parsedIdentityConflicts = profileViewerDisplayNameConflictsWithUsername(
+      viewer.displayName,
+      viewer.linkedinUsername
+    );
     const viewerWithIdentitySafety =
-      storedIdentityConflicts || ignoredDuplicateExistingImage
-        ? { ...viewer, discardExistingProfileImage: true }
+      storedIdentityConflicts || parsedIdentityConflicts || ignoredDuplicateExistingImage
+        ? {
+            ...viewer,
+            identityUncertain:
+              parsedIdentityConflicts || viewer.identityUncertain === true,
+            discardExistingProfileImage: true,
+          }
         : viewer;
     const existingViewer = storedViewer
       ? {
@@ -220,7 +262,14 @@ export async function enrichVisibleProfileViewers(
         }
       : undefined;
 
-    if (!profileViewerNeedsEnrichment(viewerWithIdentitySafety, storedViewer, ignoredDuplicateExistingImage)) {
+    if (
+      !options.verifyEveryIdentity &&
+      !profileViewerNeedsEnrichment(
+        viewerWithIdentitySafety,
+        storedViewer,
+        ignoredDuplicateExistingImage
+      )
+    ) {
       const mergedViewer = mergeProfileViewerWithPageMetadata(
         viewerWithIdentitySafety,
         { displayName: '', profileImageUrl: '' },
@@ -248,7 +297,8 @@ export async function enrichVisibleProfileViewers(
       viewerWithIdentitySafety,
       existingViewer,
       csrfToken,
-      ignoredDuplicateExistingImage
+      ignoredDuplicateExistingImage,
+      options.verifyEveryIdentity === true
     );
   });
   const enrichedViewers = enrichments.map((enrichment) => enrichment.viewer);
@@ -299,7 +349,7 @@ export function updateExistingProfileViewerSnapshot(
       linkedinUsername: username,
       firstSeenAt: existing?.firstSeenAt || seenAt,
       lastSeenAt: seenAt,
-      lastSeenPosition: positionOffset + index,
+      lastSeenPosition: positionOffset + (viewer.listPosition ?? index),
       source: 'linkedin_profile_views',
     });
   });

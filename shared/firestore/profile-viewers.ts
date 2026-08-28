@@ -15,6 +15,7 @@ import {
 import { getFirebaseDb } from '../firebase-config';
 import {
   getUsernameFromLinkedInUrl,
+  isPersistableProfileViewerIdentity,
   isValidLinkedInProfileUsername,
   normalizeLinkedInUsername,
 } from '../linkedin-identity';
@@ -130,10 +131,8 @@ export async function upsertProfileViewers(
     }))
     .filter(
       (entry) =>
-        entry.viewer.identityUncertain !== true &&
-        isValidLinkedInProfileUsername(entry.linkedinUsername) &&
-        Boolean(entry.viewer.linkedinUrl) &&
-        Boolean(entry.viewer.displayName.trim())
+        isPersistableProfileViewerIdentity(entry.viewer) &&
+        isValidLinkedInProfileUsername(entry.linkedinUsername)
     );
 
   if (validViewers.length > 500) {
@@ -225,12 +224,19 @@ export async function upsertProfileViewers(
  */
 export async function pruneFreeCollectedProfileViewers(
   userId: string,
-  maxFreeProfiles: number
+  maxFreeProfiles: number,
+  allowedUsernames?: string[]
 ): Promise<number> {
   const viewers = await getProfileViewers(userId);
-  const staleFreeViewers = viewers
-    .filter((viewer) => viewer.collectedPlan === 'free')
-    .slice(Math.max(0, maxFreeProfiles));
+  const allowedUsernameSet = allowedUsernames
+    ? new Set(allowedUsernames.map(normalizeLinkedInUsername).filter(Boolean))
+    : null;
+  const freeViewers = viewers.filter((viewer) => viewer.collectedPlan === 'free');
+  const staleFreeViewers = allowedUsernameSet
+    ? freeViewers.filter(
+        (viewer) => !allowedUsernameSet.has(normalizeLinkedInUsername(viewer.linkedinUsername))
+      )
+    : freeViewers.slice(Math.max(0, maxFreeProfiles));
 
   if (staleFreeViewers.length === 0) {
     return 0;

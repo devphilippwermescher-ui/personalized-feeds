@@ -14,6 +14,7 @@ export const PROFILE_VIEWERS_BUDGET_REFILL_MS = 20 * 60 * 1000;
 export const PROFILE_VIEWERS_BACKGROUND_RESERVE = 8;
 export const PROFILE_VIEWERS_SCHEDULE_POLICY_VERSION = 3;
 export const PROFILE_VIEWERS_SUMMARY_COLLECTION_VERSION = 4;
+export const PROFILE_VIEWERS_VISIBLE_COLLECTION_VERSION = 3;
 export const PROFILE_VIEWERS_AUTH_RECOVERY_DELAYS_MS = [
   2 * 60 * 1000,
   5 * 60 * 1000,
@@ -101,6 +102,7 @@ export interface ProfileViewersSyncState {
   version: 1;
   schedulePolicyVersion: 2 | 3;
   summaryCollectionVersion: 2 | 3 | 4;
+  visibleCollectionVersion: 1 | 2 | 3;
   userId: string;
   collectionPlan?: AppPlan;
   lastSuccessAt?: number;
@@ -201,6 +203,7 @@ export function createProfileViewersSyncState(userId: string, now: number): Prof
     version: 1,
     schedulePolicyVersion: PROFILE_VIEWERS_SCHEDULE_POLICY_VERSION,
     summaryCollectionVersion: PROFILE_VIEWERS_SUMMARY_COLLECTION_VERSION,
+    visibleCollectionVersion: PROFILE_VIEWERS_VISIBLE_COLLECTION_VERSION,
     userId,
     requestBudgetTokens: PROFILE_VIEWERS_BUDGET_CAPACITY,
     requestBudgetUpdatedAt: now,

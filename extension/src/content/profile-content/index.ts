@@ -8,6 +8,7 @@ import { createFeedCard, unmountFeedCard } from './template';
 import type { ProfileData } from './types';
 import { sendMessageToBackground, showToast } from './utils';
 import { hasRelationshipSignal } from '../shared/relationship-dom-signals';
+import { getCurrentProfileRelationshipActions } from '../shared/current-profile-relationship-dom';
 import { ensureProfileFeedModals } from '../shared/profile-feed-modals';
 
 let feedCardInjected = false;
@@ -176,17 +177,13 @@ function removeExistingCard(): void {
 }
 
 function getRelationshipDomSignature(root: ParentNode): string {
-  const buttons = Array.from(new Set([
-    ...Array.from(root.querySelectorAll<HTMLButtonElement>('button')),
-    ...Array.from(
-      document.querySelectorAll<HTMLButtonElement>(
-        '[role="menu"] button, [role="menuitem"], .artdeco-dropdown__content button'
-      )
-    ),
-  ]))
-    .map((button) => {
-      const text = button.textContent?.replace(/\s+/g, ' ').trim().toLowerCase() || '';
-      const label = button.getAttribute('aria-label')?.replace(/\s+/g, ' ').trim().toLowerCase() || '';
+  const buttons = getCurrentProfileRelationshipActions(root)
+    .map((action) => {
+      const text = action.textContent?.replace(/\s+/g, ' ').trim().toLowerCase() || '';
+      const label = (action.getAttribute('aria-label') || action.getAttribute('title') || '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .toLowerCase();
       return `${text}|${label}`;
     })
     .filter((value) =>

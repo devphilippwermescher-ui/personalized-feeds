@@ -14,7 +14,7 @@ import {
 } from './profile-viewers-pagination';
 import { ProfileViewersSyncError } from './profile-viewers-error';
 import type { ProfileViewersSyncErrorCode } from './profile-viewers-sync-state';
-import { orderProfileViewersPage } from './profile-viewers-page-order';
+import { orderProfileViewersPage } from './features/profile-viewers/utils/page-order';
 
 const PROFILE_VIEWERS_RSC_TIMEOUT_MS = 20_000;
 const PROFILE_VIEWERS_RSC_URL =
@@ -82,22 +82,43 @@ export interface ProfileViewersRscPage {
   httpStatus: number;
   responseLength: number;
   nextCursor: ProfileViewersPaginationCursor | null;
-  /** LinkedIn explicitly says this account can browse only three named viewers. */
-  freeViewerLimit?: boolean;
 }
 
-export function hasFreeProfileViewerLimit(payload: string): boolean {
-  return (
-    /browse\s+up\s+to\s+3\s+viewers\s+for\s+free/iu.test(payload) ||
-    /unlock\s+the\s+full\s+list\s+with\s+premium/iu.test(payload)
-  );
+export function resolveNextProfileViewersPaginationCursor(options: {
+  parsedNextCursor: ProfileViewersPaginationCursor | null;
+  requestedCursor?: ProfileViewersPaginationCursor;
+  paginationNeeded: boolean | null;
+  allowInitialPaginationProbe: boolean;
+  hasVisibleViewers: boolean;
+}): ProfileViewersPaginationCursor | null {
+  if (options.parsedNextCursor) {
+    return options.parsedNextCursor;
+  }
+
+  if (options.paginationNeeded !== true) {
+    return null;
+  }
+
+  if (options.requestedCursor) {
+    return {
+      start: options.requestedCursor.start + options.requestedCursor.count,
+      count: options.requestedCursor.count,
+    };
+  }
+
+  return options.allowInitialPaginationProbe && options.hasVisibleViewers
+    ? {
+        start: PROFILE_VIEWERS_PAGINATION_PAGE_SIZE,
+        count: PROFILE_VIEWERS_PAGINATION_PAGE_SIZE,
+      }
+    : null;
 }
 
 async function fetchProfileViewersRscPage(
   url: string,
   body: string,
   csrfToken: string,
-  allowPremiumPaginationProbe = false,
+  allowInitialPaginationProbe = false,
   requestedCursor?: ProfileViewersPaginationCursor
 ): Promise<ProfileViewersRscPage> {
   let response: Response;
@@ -151,21 +172,14 @@ async function fetchProfileViewersRscPage(
     const recruiterViewerCount = extractRecruiterProfileViewerCount(payload);
     const recruiterViewerUrl = extractRecruiterProfileViewerUrl(payload);
     const paginationNeeded = extractProfileViewersPaginationNeeded(payload);
-    const freeViewerLimit = hasFreeProfileViewerLimit(payload);
     const parsedNextCursor = extractNextProfileViewersPaginationCursor(payload);
-    const probedNextCursor = requestedCursor
-      ? paginationNeeded === true
-        ? {
-            start: requestedCursor.start + requestedCursor.count,
-            count: requestedCursor.count,
-          }
-        : null
-      : allowPremiumPaginationProbe && privateViewerCount === null && viewers.length > 3
-        ? {
-            start: PROFILE_VIEWERS_PAGINATION_PAGE_SIZE,
-            count: PROFILE_VIEWERS_PAGINATION_PAGE_SIZE,
-          }
-        : null;
+    const nextCursor = resolveNextProfileViewersPaginationCursor({
+      parsedNextCursor,
+      requestedCursor,
+      paginationNeeded,
+      allowInitialPaginationProbe,
+      hasVisibleViewers: viewers.length > 0,
+    });
 
     return {
       viewers,
@@ -175,8 +189,7 @@ async function fetchProfileViewersRscPage(
       recruiterViewerUrl,
       httpStatus: response.status,
       responseLength: payload.length,
-      nextCursor: parsedNextCursor || probedNextCursor,
-      freeViewerLimit,
+      nextCursor,
     };
   } catch (error) {
     throw new ProfileViewersSyncError(

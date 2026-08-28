@@ -1,4 +1,5 @@
 import type { ProfileViewer, ProfileViewerInput } from 'shared/types';
+import { getUsernameFromLinkedInUrl } from 'shared/linkedin-identity';
 import {
   chooseProfileViewerDisplayName,
   chooseProfileViewerImageUrl,
@@ -12,6 +13,7 @@ export interface ProfileViewerPageMetadata {
   displayName: string;
   profileImageUrl: string;
   isPremium?: boolean;
+  linkedinUsername?: string;
 }
 
 function decodeHtml(value: string): string {
@@ -96,11 +98,14 @@ function extractProfileImageUrl(html: string): string {
 }
 
 export function parseProfileViewerPageMetadata(html: string): ProfileViewerPageMetadata {
-  return {
+  const metadata: ProfileViewerPageMetadata = {
     displayName: extractDisplayName(html),
     profileImageUrl: extractProfileImageUrl(html),
     isPremium: hasExplicitProfileViewerPremiumSignal(html) || undefined,
   };
+  const linkedinUsername = getUsernameFromLinkedInUrl(extractMetaContent(html, 'og:url'));
+  if (linkedinUsername) metadata.linkedinUsername = linkedinUsername;
+  return metadata;
 }
 
 export function mergeProfileViewerWithPageMetadata(
@@ -114,21 +119,23 @@ export function mergeProfileViewerWithPageMetadata(
     metadata.displayName,
     viewer.linkedinUsername
   );
-  const trustedMetadata = metadataIdentityConflicts
+  const metadataIdentifierConflicts = Boolean(
+    metadata.linkedinUsername &&
+      metadata.linkedinUsername.toLowerCase() !== viewer.linkedinUsername.toLowerCase()
+  );
+  const trustedMetadata = metadataIdentityConflicts || metadataIdentifierConflicts
     ? { ...metadata, displayName: '', profileImageUrl: '' }
     : metadata;
   const hasTrustedDisplayName =
     Boolean(trustedMetadata.displayName) ||
     namesLikelyReferToSameProfile(viewer.displayName, viewer.linkedinUsername);
   const ignoreUnverifiedExistingIdentity = viewer.identityUncertain === true;
-  const parsedOrMetadataDisplayName =
-    ignoreUnverifiedExistingIdentity && trustedMetadata.displayName
-      ? trustedMetadata.displayName
-      : chooseProfileViewerDisplayName(
-          viewer.displayName,
-          trustedMetadata.displayName,
-          viewer.linkedinUsername
-        );
+  // This metadata was fetched from the viewer's exact /in/<username>/ URL.
+  // Prefer it over an RSC display name, because LinkedIn may stream a profile
+  // URL beside the previous card's text and avatar.
+  const parsedOrMetadataDisplayName = trustedMetadata.displayName
+    ? trustedMetadata.displayName
+    : viewer.displayName;
 
   return {
     ...viewer,
@@ -144,6 +151,9 @@ export function mergeProfileViewerWithPageMetadata(
     isPremium: trustedMetadata.isPremium === true ? true : viewer.isPremium ?? existing?.isPremium,
     identityUncertain: ignoreUnverifiedExistingIdentity && !hasTrustedDisplayName,
     discardExistingProfileImage:
-      viewer.discardExistingProfileImage === true || metadataIdentityConflicts || undefined,
+      viewer.discardExistingProfileImage === true ||
+      metadataIdentityConflicts ||
+      metadataIdentifierConflicts ||
+      undefined,
   };
 }

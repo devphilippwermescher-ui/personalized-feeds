@@ -96,4 +96,13 @@ describe('mergeProfileViewerCandidates', () => {
       })
     );
   });
+
+  it('preserves the earliest semantic card position when candidates merge', () => {
+    const result = mergeProfileViewerCandidates([
+      [viewer('profile-viewer', { renderPosition: 26 })],
+      [viewer('profile-viewer', { renderPosition: 25 })],
+    ]);
+
+    expect(result[0].renderPosition).toBe(25);
+  });
 });
