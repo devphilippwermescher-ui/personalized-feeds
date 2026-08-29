@@ -16,8 +16,13 @@ export interface BillingSubscription {
   customerId?: string;
   subscriptionId?: string;
   variantId?: string;
+  billingInterval?: 'monthly' | 'annual';
+  renewsAt?: number;
+  endsAt?: number;
   currentPeriodEnd?: number;
   cancelAtPeriodEnd?: boolean;
+  testMode?: boolean;
+  providerUpdatedAt?: number;
   updatedAt?: number;
 }
 
@@ -46,10 +51,12 @@ export const PLAN_ENTITLEMENTS: Record<AppPlan, PlanEntitlements> = {
   },
 };
 
-const ACTIVE_SUBSCRIPTION_STATUSES = new Set(['active', 'on_trial', 'trialing']);
+export function resolveAppPlan(subscription: BillingSubscription | null | undefined, now = Date.now()): AppPlan {
+  if (subscription?.plan !== 'pro') return 'free';
+  if (subscription.status === 'active') return 'pro';
 
-export function resolveAppPlan(subscription: BillingSubscription | null | undefined): AppPlan {
-  return subscription?.plan === 'pro' && ACTIVE_SUBSCRIPTION_STATUSES.has(subscription.status || '') ? 'pro' : 'free';
+  const paidUntil = subscription.endsAt ?? subscription.currentPeriodEnd;
+  return subscription.status === 'cancelled' && typeof paidUntil === 'number' && paidUntil > now ? 'pro' : 'free';
 }
 
 export function getPlanEntitlements(plan: AppPlan): PlanEntitlements {

@@ -5,7 +5,9 @@
   "description": "Personalized Feeds Chrome extension",
   "scripts": {
     "build": "webpack --mode production",
+    "build:billing-local": "USE_FIREBASE_EMULATORS=true webpack --mode development",
     "dev": "webpack --mode development --watch",
+    "dev:billing-local": "USE_FIREBASE_EMULATORS=true webpack --mode development --watch",
     "lint": "eslint src/",
     "lint:fix": "eslint src/ --fix",
     "test": "vitest run",

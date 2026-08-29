@@ -9,10 +9,17 @@ describe('plan entitlements', () => {
     expect(resolveAppPlan({ plan: 'free', status: 'active' })).toBe('free');
   });
 
-  it('enables Pro only for active or trial subscriptions', () => {
+  it('enables Pro for active subscriptions without enabling an unconfigured trial', () => {
     expect(resolveAppPlan({ plan: 'pro', status: 'active' })).toBe('pro');
-    expect(resolveAppPlan({ plan: 'pro', status: 'on_trial' })).toBe('pro');
-    expect(resolveAppPlan({ plan: 'pro', status: 'trialing' })).toBe('pro');
+    expect(resolveAppPlan({ plan: 'pro', status: 'on_trial' })).toBe('free');
+    expect(resolveAppPlan({ plan: 'pro', status: 'trialing' })).toBe('free');
+  });
+
+  it('keeps Pro through a cancelled subscription paid period only', () => {
+    const now = Date.parse('2026-08-29T12:00:00.000Z');
+    expect(resolveAppPlan({ plan: 'pro', status: 'cancelled', endsAt: now + 1000 }, now)).toBe('pro');
+    expect(resolveAppPlan({ plan: 'pro', status: 'cancelled', endsAt: now - 1 }, now)).toBe('free');
+    expect(resolveAppPlan({ plan: 'pro', status: 'expired', endsAt: now + 1000 }, now)).toBe('free');
   });
 
   it('defines the complete Free limits and unrestricted Pro behavior', () => {

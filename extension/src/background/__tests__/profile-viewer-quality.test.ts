@@ -4,6 +4,7 @@ import {
   chooseProfileViewerImageUrl,
   getAmbiguousProfileViewerImageUrls,
   humanizeLinkedInUsername,
+  isWeakProfileViewerDisplayName,
   isUsableLinkedInProfileImageUrl,
   profileViewerDisplayNameConflictsWithUsername,
 } from 'shared/profile-viewer-quality';
@@ -28,6 +29,19 @@ describe('profile viewer data quality', () => {
         'alia-waleczek-806248315'
       )
     ).toBe('Alia Waleczek');
+  });
+
+  it('treats LinkedIn notification headings as polluted display names', () => {
+    expect(
+      isWeakProfileViewerDisplayName('0 notifications ✦', 'yuliia-biliavtseva')
+    ).toBe(true);
+    expect(
+      chooseProfileViewerDisplayName(
+        'Yuliia Biliavtseva',
+        '0 notifications ✦',
+        'yuliia-biliavtseva'
+      )
+    ).toBe('Yuliia Biliavtseva');
   });
 
   it('detects a stored display name copied from another vanity profile', () => {

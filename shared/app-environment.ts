@@ -1,6 +1,14 @@
 export type AppEnvironment = 'development' | 'staging' | 'production';
 
 declare const __APP_ENV__: AppEnvironment | 'auto' | undefined;
+declare const __USE_FIREBASE_EMULATORS__: boolean | undefined;
+
+export const FIREBASE_EMULATOR_HOST = '127.0.0.1';
+export const FIREBASE_EMULATOR_PORTS = {
+  auth: 9099,
+  firestore: 8080,
+  functions: 5001,
+} as const;
 
 const FIREBASE_HOST_MARKERS: Array<[string, AppEnvironment]> = [
   ['myfeedpilot-dev', 'development'],
@@ -23,6 +31,10 @@ export function getAppEnvironment(): AppEnvironment {
   const matchedEnvironment = FIREBASE_HOST_MARKERS.find(([marker]) => hostname.includes(marker));
 
   return matchedEnvironment?.[1] ?? 'production';
+}
+
+export function shouldUseFirebaseEmulators(): boolean {
+  return typeof __USE_FIREBASE_EMULATORS__ !== 'undefined' && __USE_FIREBASE_EMULATORS__;
 }
 
 export function getDashboardOrigin(environment = getAppEnvironment()): string {

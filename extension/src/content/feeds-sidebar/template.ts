@@ -2,6 +2,7 @@ import type { UserInfo } from './types';
 import { CONTENT_COPY, getSidebarEmptyCopy } from '../shared/copy';
 import { DASHBOARD_ENABLED } from 'shared/feature-flags';
 import type { UserFeatureSettings } from 'shared/types';
+import { renderPlanStarIcon } from '../shared/plan-star';
 
 function escapeHtml(text: string): string {
   const div = document.createElement('div');
@@ -145,19 +146,7 @@ export function renderSidebarHeader(params: {
           <div class="lfa-account-menu-divider"></div>
           <button class="lfa-account-menu-link lfa-account-menu-link--plan" id="lfa-manage-plan-btn" type="button">
             <span class="lfa-account-menu-link-icon lfa-account-menu-link-icon--plan">
-              <svg viewBox="0 0 32 32" width="24" height="24" fill="none" aria-hidden="true">
-                <defs>
-                  <linearGradient id="mfp-manage-plan-star-gradient" x1="4" y1="3" x2="28" y2="29" gradientUnits="userSpaceOnUse">
-                    <stop stop-color="#ffd95a"></stop>
-                    <stop offset="1" stop-color="#ffcf3f"></stop>
-                  </linearGradient>
-                </defs>
-                <path
-                  d="m16 2.6 3.8 8 8.7 1.1-6.4 6 1.7 8.6-7.8-4.2-7.8 4.2 1.7-8.6-6.4-6 8.7-1.1Z"
-                  fill="url(#mfp-manage-plan-star-gradient)"
-                  transform="rotate(-8 16 16)"
-                ></path>
-              </svg>
+              ${renderPlanStarIcon({ className: 'lfa-plan-star-glyph' })}
             </span>
             <span>Manage plan</span>
           </button>

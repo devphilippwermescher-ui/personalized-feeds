@@ -1,12 +1,19 @@
 import { initializeApp, type FirebaseApp, type FirebaseOptions } from 'firebase/app';
 import {
   browserPopupRedirectResolver,
+  connectAuthEmulator,
   indexedDBLocalPersistence,
   initializeAuth,
   type Auth,
 } from 'firebase/auth';
-import { getFirestore, type Firestore } from 'firebase/firestore';
-import { getAppEnvironment, type AppEnvironment } from './app-environment';
+import { connectFirestoreEmulator, getFirestore, type Firestore } from 'firebase/firestore';
+import {
+  FIREBASE_EMULATOR_HOST,
+  FIREBASE_EMULATOR_PORTS,
+  getAppEnvironment,
+  shouldUseFirebaseEmulators,
+  type AppEnvironment,
+} from './app-environment';
 
 const firebaseConfigs: Record<AppEnvironment, FirebaseOptions> = {
   development: {
@@ -41,9 +48,7 @@ const firebaseConfigs: Record<AppEnvironment, FirebaseOptions> = {
 const firebaseConfig = firebaseConfigs[getAppEnvironment()];
 const app: FirebaseApp = initializeApp(firebaseConfig);
 const isBrowserPopupEnvironment =
-  typeof window !== 'undefined' &&
-  typeof document !== 'undefined' &&
-  typeof navigator !== 'undefined';
+  typeof window !== 'undefined' && typeof document !== 'undefined' && typeof navigator !== 'undefined';
 
 const auth: Auth = initializeAuth(
   app,
@@ -57,6 +62,13 @@ const auth: Auth = initializeAuth(
       }
 );
 const db: Firestore = getFirestore(app);
+
+if (shouldUseFirebaseEmulators()) {
+  connectAuthEmulator(auth, `http://${FIREBASE_EMULATOR_HOST}:${FIREBASE_EMULATOR_PORTS.auth}`, {
+    disableWarnings: true,
+  });
+  connectFirestoreEmulator(db, FIREBASE_EMULATOR_HOST, FIREBASE_EMULATOR_PORTS.firestore);
+}
 
 export function getFirebaseApp(): FirebaseApp {
   return app;

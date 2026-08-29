@@ -259,15 +259,6 @@ export async function syncCurrentProfileViewerStatus(deps: RelationshipDeps): Pr
   if (relationship.status) {
     updates.statusResolvedAt = Date.now();
   }
-  updates.linkedinUsername = currentProfileData.linkedinUsername;
-  updates.linkedinUrl = currentProfileData.linkedinUrl;
-  updates.displayName = currentProfileData.displayName;
-  if (currentProfileData.profileUrn) {
-    updates.profileUrn = currentProfileData.profileUrn;
-  }
-  if (currentProfileData.memberNumericId || currentProfileData.memberId) {
-    updates.memberNumericId = currentProfileData.memberNumericId || currentProfileData.memberId;
-  }
 
   try {
     const response = (await deps.sendMessageToBackground({

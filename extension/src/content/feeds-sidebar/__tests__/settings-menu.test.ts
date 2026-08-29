@@ -103,6 +103,8 @@ describe('settings menu', () => {
     expect(signedInHeader).toContain('Current plan: Free');
     expect(signedInHeader).not.toContain('lfa-plan-toggle-btn');
     expect(signedInHeader).toContain('id="lfa-manage-plan-btn"');
+    expect(signedInHeader).toContain('class="lfa-plan-star-glyph"');
+    expect(signedInHeader).toContain('★');
     expect(signedInHeader.indexOf('id="lfa-manage-plan-btn"')).toBeLessThan(
       signedInHeader.indexOf('id="lfa-account-signout-btn"')
     );

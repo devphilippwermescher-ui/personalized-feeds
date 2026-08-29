@@ -155,10 +155,12 @@ export const SHELL_CSS = `
     color: #6b7280;
   }
   .lfa-plan-badge--pro {
-    border: none;
-    background: linear-gradient(135deg, #615DEC 0%, #8b5cf6 100%);
-    color: #ffffff;
-    box-shadow: 0 4px 10px rgba(97, 93, 236, 0.35);
+    border: 1px solid rgba(217, 154, 0, 0.24);
+    background: linear-gradient(100deg, #ffe77f 0%, #ffd95a 48%, #f4b91f 100%);
+    color: #3f2b00;
+    box-shadow:
+      0 4px 10px rgba(199, 137, 8, 0.28),
+      inset 0 1px 0 rgba(255, 255, 255, 0.38);
   }
   .lfa-account-menu-wrap,
   .lfa-settings-menu-wrap {
@@ -345,8 +347,14 @@ export const SHELL_CSS = `
     color: inherit;
   }
   .lfa-account-menu-link-icon--plan {
-    color: #a96f00;
-    background: #fff7d6;
+    color: #d99a00;
+    background: rgba(255, 217, 90, .18);
+  }
+  .lfa-plan-star-glyph {
+    display: block;
+    font-size: 23px;
+    line-height: 1;
+    transform: rotate(-7deg);
   }
   .lfa-settings-link {
     width: 100%;

@@ -1,6 +1,9 @@
 import { updateProfileViewer } from 'shared/firestore-service';
 import { normalizeLinkedInUsername } from 'shared/linkedin-identity';
-import { profileViewerDisplayNameConflictsWithUsername } from 'shared/profile-viewer-quality';
+import {
+  isWeakProfileViewerDisplayName,
+  profileViewerDisplayNameConflictsWithUsername,
+} from 'shared/profile-viewer-quality';
 import type { ProfileViewer } from 'shared/types';
 import { resolveLinkedInProfileIdentity } from './linkedin-profile-identity-resolver';
 import { mapWithConcurrency } from './profile-viewers-enrichment-policy';
@@ -23,7 +26,10 @@ export async function repairStoredProfileViewerIdentityMismatches(
   const candidates = existingViewers
     .filter((viewer) => {
       const username = normalizeLinkedInUsername(viewer.linkedinUsername);
-      return profileViewerDisplayNameConflictsWithUsername(viewer.displayName, username);
+      return (
+        isWeakProfileViewerDisplayName(viewer.displayName, username) ||
+        profileViewerDisplayNameConflictsWithUsername(viewer.displayName, username)
+      );
     })
     .slice(0, STORED_IDENTITY_REPAIR_LIMIT);
 
@@ -39,7 +45,7 @@ export async function repairStoredProfileViewerIdentityMismatches(
         if (
           !identity ||
           resolvedUsername !== linkedinUsername ||
-          !finalDisplayName ||
+          isWeakProfileViewerDisplayName(finalDisplayName, linkedinUsername) ||
           profileViewerDisplayNameConflictsWithUsername(finalDisplayName, linkedinUsername)
         ) {
           return {

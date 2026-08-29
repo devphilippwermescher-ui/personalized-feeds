@@ -62,4 +62,24 @@ describe('stored profile viewer identity repair', () => {
       }
     );
   });
+
+  it('repairs a stored LinkedIn notification heading used as a display name', async () => {
+    mocks.resolveLinkedInProfileIdentity.mockResolvedValue({
+      linkedinUsername: storedViewer.linkedinUsername,
+      displayName: 'Oleksii Vakhniuk',
+    });
+
+    await repairStoredProfileViewerIdentityMismatches('user-1', [
+      { ...storedViewer, displayName: '0 notifications ✦' },
+    ]);
+
+    expect(mocks.updateProfileViewer).toHaveBeenCalledWith(
+      'user-1',
+      storedViewer.linkedinUsername,
+      {
+        displayName: 'Oleksii Vakhniuk',
+        profileUrn: undefined,
+      }
+    );
+  });
 });

@@ -1,17 +1,21 @@
-import { getAppEnvironment, type AppEnvironment } from './app-environment';
+export type ProBillingInterval = 'monthly' | 'annual';
 
-/**
- * Lemon Squeezy checkout URLs are intentionally centralized here. The billing
- * webhook remains authoritative for activating Pro; opening checkout never
- * changes the local plan by itself.
- */
-export const LEMON_SQUEEZY_CHECKOUT_URLS: Record<AppEnvironment, string> = {
-  development: '',
-  staging: '',
-  production: '',
+export const PRO_PLAN_PRICING = {
+  monthly: {
+    price: 19,
+    chargeLabel: '$19/month',
+  },
+  annual: {
+    price: 156,
+    monthlyEquivalent: 13,
+    chargeLabel: '$156/year',
+    savingsPercent: 32,
+  },
+} as const;
+
+export const BILLING_FUNCTION_REGION = 'us-central1';
+
+export const BILLING_FUNCTION_NAMES = {
+  createCheckout: 'createBillingCheckout',
+  getPortal: 'getBillingPortal',
 };
-
-export function getLemonSqueezyCheckoutUrl(): string | null {
-  const url = LEMON_SQUEEZY_CHECKOUT_URLS[getAppEnvironment()]?.trim();
-  return url || null;
-}

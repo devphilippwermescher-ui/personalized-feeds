@@ -18,6 +18,7 @@ import {
   DASHBOARD_ANALYTICS_ALARM_NAME,
 } from './dashboard-analytics/dashboard-analytics-sync-runtime';
 import { migrateToIndependentLinkedInSync } from './linkedin-sync-state-migration';
+import { registerBillingMessageHandler } from './features/billing/public';
 
 function queueDashboardAnalyticsWhenEnabled(trigger: Parameters<typeof queueDashboardAnalyticsSync>[0]): void {
   if (DASHBOARD_ANALYTICS_SYNC_ENABLED) {
@@ -122,6 +123,8 @@ void migrateToIndependentLinkedInSync()
     void queueProfileViewersStatusSync({ trigger: 'service_worker' });
     queueDashboardAnalyticsWhenEnabled('service_worker');
   });
+
+registerBillingMessageHandler();
 
 import './external-message-handler';
 import './auth-settings-message-handler';

@@ -4,7 +4,12 @@
   "version": "0.1.5",
   "description": "Manage personalized LinkedIn feeds, profile lists, and sharing",
   "permissions": ["storage", "tabs", "scripting", "offscreen", "alarms", "cookies", "webRequest"],
-  "host_permissions": ["https://www.linkedin.com/*"],
+  "host_permissions": [
+    "https://www.linkedin.com/*",
+    "https://us-central1-myfeedpilot-dev.cloudfunctions.net/*",
+    "https://us-central1-myfeedpilot-staging.cloudfunctions.net/*",
+    "https://us-central1-myfeedpilot-production.cloudfunctions.net/*"
+  ],
   "externally_connectable": {
     "matches": [
       "https://myfeedpilot-dev.web.app/*",

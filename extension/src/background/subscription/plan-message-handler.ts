@@ -10,7 +10,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   getAuthenticatedFeedsUser()
     .then(async (user) => {
       if (!user) {
-        sendResponse(getFeedsAuthErrorResponse({ plan: null, entitlements: null }));
+        sendResponse(getFeedsAuthErrorResponse({ plan: null, entitlements: null, subscription: null }));
         return;
       }
 
@@ -19,6 +19,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         success: true,
         plan: snapshot.plan,
         entitlements: snapshot.entitlements,
+        subscription: snapshot.subscription,
       });
     })
     .catch((error) => {
@@ -26,6 +27,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         success: false,
         plan: null,
         entitlements: null,
+        subscription: null,
         error: error instanceof Error ? error.message : String(error),
       });
     });

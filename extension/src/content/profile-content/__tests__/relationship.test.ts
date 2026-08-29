@@ -207,6 +207,15 @@ describe('detectCurrentProfileRelationship', () => {
       }),
       notifyProfileViewersChanged: true,
     });
+
+    const message = sendMessageToBackground.mock.calls[0]?.[0] as {
+      updates?: Record<string, unknown>;
+    };
+    expect(message.updates).not.toHaveProperty('displayName');
+    expect(message.updates).not.toHaveProperty('linkedinUsername');
+    expect(message.updates).not.toHaveProperty('linkedinUrl');
+    expect(message.updates).not.toHaveProperty('profileUrn');
+    expect(message.updates).not.toHaveProperty('memberNumericId');
   });
 
   it('does not make an unresolved stored status fresh for another hour', async () => {
