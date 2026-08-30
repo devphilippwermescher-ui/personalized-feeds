@@ -71,6 +71,53 @@ export const FEEDS_CSS = `.lfa-feed-list {
   .lfa-feed-item--system.lfa-feed-item--expanded {
     background: #eef6ff;
   }
+  .lfa-profile-viewers-collection {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 0 16px 12px 42px;
+    background: #f8fbff;
+  }
+  .lfa-feed-item--expanded .lfa-profile-viewers-collection {
+    background: #eef6ff;
+  }
+  .lfa-profile-viewers-collection-label {
+    color: #475569;
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 1.25;
+  }
+  .lfa-profile-viewers-progress {
+    position: relative;
+    display: block;
+    width: 100%;
+    height: 4px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: rgba(97, 93, 236, 0.14);
+  }
+  .lfa-profile-viewers-progress-bar {
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 42%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, #643bee 0%, #1ea7e8 100%);
+    animation: lfa-profile-viewers-progress 1.15s ease-in-out infinite;
+  }
+  @keyframes lfa-profile-viewers-progress {
+    from {
+      transform: translateX(-120%);
+    }
+    to {
+      transform: translateX(340%);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .lfa-profile-viewers-progress-bar {
+      width: 100%;
+      animation: none;
+    }
+  }
   .lfa-feed-grip {
     width: 16px;
     height: 16px;

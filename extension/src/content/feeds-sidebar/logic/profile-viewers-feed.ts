@@ -1,5 +1,6 @@
 import type { FeedInfo, FeedMemberInfo, UserInfo } from '../types';
 import type { ProfileViewerListItem, ProfileViewerSummary } from 'shared/types';
+import type { ProfileViewersCollectionProgress } from '../../../shared/profile-viewers-progress';
 
 export const PROFILE_VIEWERS_FEED_ID = '__profile_viewers__';
 const DEFAULT_RECRUITER_VIEWERS_URL =
@@ -98,7 +99,8 @@ export function withProfileViewersFeed(
   members: FeedMemberInfo[],
   privateViewerCount: number | undefined,
   recruiterViewerCount: number | undefined,
-  currentUser: UserInfo | null
+  currentUser: UserInfo | null,
+  collectionProgress?: ProfileViewersCollectionProgress
 ): FeedInfo[] {
   if (!currentUser) {
     return feeds.filter((feed) => feed.id !== PROFILE_VIEWERS_FEED_ID);
@@ -113,6 +115,8 @@ export function withProfileViewersFeed(
     memberCount: members.length,
     privateViewerCount,
     recruiterViewerCount,
+    profileViewersCollectionProgress:
+      collectionProgress || existingProfileViewersFeed?.profileViewersCollectionProgress,
     sortOrder: -1,
     ownerId: currentUser.userId,
     isSystem: true,
@@ -134,6 +138,7 @@ export function buildProfileViewersState(params: {
   feeds: FeedInfo[];
   feedMembersById: Record<string, FeedMemberInfo[]>;
   currentUser: UserInfo | null;
+  collectionProgress?: ProfileViewersCollectionProgress;
 }): {
   members: FeedMemberInfo[];
   privateViewerCount: number | undefined;
@@ -169,7 +174,8 @@ export function buildProfileViewersState(params: {
       membersWithRecruiterAggregate,
       privateViewerCount,
       recruiterViewerCount,
-      params.currentUser
+      params.currentUser,
+      params.collectionProgress
     ),
     feedMembersById: {
       ...params.feedMembersById,

@@ -27,6 +27,8 @@ describe('plan modal', () => {
     expect(document.body.textContent).toContain('up to 10 visible profile visitors');
     expect(document.body.textContent).not.toContain('Full existing workspace');
     expect(document.querySelector('.mfp-plan-star')?.textContent).toBe('★');
+    expect(document.querySelector('.mfp-plan-header > .mfp-plan-close svg')).not.toBeNull();
+    expect(document.querySelector('.mfp-plan-scroll > .mfp-plan-hero')).not.toBeNull();
 
     openPlanModal({ plan: 'free', context: 'feeds' });
 

@@ -77,6 +77,8 @@ describe('settings menu', () => {
     expect(signedOutBodyHtml).not.toContain('id="lfa-open-dashboard-btn"');
     expect(freeUserBodyHtml).not.toContain('id="lfa-open-subscription-btn"');
     expect(freeUserBodyHtml).not.toContain('id="lfa-open-subscription-activate"');
+    expect(freeUserBodyHtml).toContain('id="lfa-footer-get-pro-btn"');
+    expect(freeUserBodyHtml).toContain('Get Pro');
   });
 
   it('hides plan state before authentication and renders a read-only Free badge after sign-in', () => {
@@ -104,7 +106,7 @@ describe('settings menu', () => {
     expect(signedInHeader).not.toContain('lfa-plan-toggle-btn');
     expect(signedInHeader).toContain('id="lfa-manage-plan-btn"');
     expect(signedInHeader).toContain('class="lfa-plan-star-glyph"');
-    expect(signedInHeader).toContain('★');
+    expect(signedInHeader).toContain('fill="none" stroke="currentColor"');
     expect(signedInHeader.indexOf('id="lfa-manage-plan-btn"')).toBeLessThan(
       signedInHeader.indexOf('id="lfa-account-signout-btn"')
     );
@@ -132,6 +134,31 @@ describe('settings menu', () => {
     expect(html).toContain('id="lfa-tab-owned"');
     expect(html).toContain('id="lfa-add-feed-btn"');
     expect(html).not.toContain('Unlock custom feeds with a paid subscription');
+    expect(html).toContain('Pro removes limits across Profile Visitors, feeds &amp; more');
+    expect(html).toContain('id="lfa-footer-get-pro-btn"');
+  });
+
+  it('does not show the footer upsell to authenticated Pro users', () => {
+    const html = renderSidebarBody({
+      isLoading: false,
+      isInitializing: false,
+      isPremium: true,
+      currentUser: {
+        userId: 'user-1',
+        displayName: 'Test User',
+        email: 'test@example.com',
+        photoURL: '',
+      },
+      authErrorMessage: '',
+      sidebarSearchQuery: '',
+      activeFeedTab: 'owned',
+      feedsListCount: 0,
+      feedsHtml: '',
+      editorOverlayHtml: '',
+    });
+
+    expect(html).not.toContain('id="lfa-footer-get-pro-btn"');
+    expect(html).toContain('Support &amp; Feedback');
   });
 
   it('invites signed-out users to start with the Free plan', () => {

@@ -2,7 +2,7 @@ import type { UserInfo } from './types';
 import { CONTENT_COPY, getSidebarEmptyCopy } from '../shared/copy';
 import { DASHBOARD_ENABLED } from 'shared/feature-flags';
 import type { UserFeatureSettings } from 'shared/types';
-import { renderPlanStarIcon } from '../shared/plan-star';
+import { renderPlanOutlineStarIcon } from '../shared/plan-star';
 
 function escapeHtml(text: string): string {
   const div = document.createElement('div');
@@ -10,8 +10,21 @@ function escapeHtml(text: string): string {
   return div.innerHTML;
 }
 
-function renderSupportFooter(): string {
+function renderSupportFooter(isPremium: boolean): string {
   return `
+    ${
+      isPremium
+        ? ''
+        : `
+          <div class="lfa-pro-footer">
+            <p class="lfa-pro-footer-copy">Pro removes limits across Profile Visitors, feeds &amp; more</p>
+            <button class="lfa-pro-footer-btn" id="lfa-footer-get-pro-btn" type="button">
+              ${renderPlanOutlineStarIcon()}
+              <span>Get Pro</span>
+            </button>
+          </div>
+        `
+    }
     <div class="lfa-support-footer">
       <span class="lfa-support-label">Support &amp; Feedback :</span>
       <a class="lfa-support-link" href="mailto:dev.philipp.wermescher@gmail.com">dev.philipp.wermescher@gmail.com</a>
@@ -146,7 +159,7 @@ export function renderSidebarHeader(params: {
           <div class="lfa-account-menu-divider"></div>
           <button class="lfa-account-menu-link lfa-account-menu-link--plan" id="lfa-manage-plan-btn" type="button">
             <span class="lfa-account-menu-link-icon lfa-account-menu-link-icon--plan">
-              ${renderPlanStarIcon({ className: 'lfa-plan-star-glyph' })}
+              ${renderPlanOutlineStarIcon({ className: 'lfa-plan-star-glyph' })}
             </span>
             <span>Manage plan</span>
           </button>
@@ -209,6 +222,7 @@ export function renderSidebarBody(params: SidebarBodyParams): string {
   const {
     isLoading,
     isInitializing,
+    isPremium,
     currentUser,
     authErrorMessage,
     sidebarSearchQuery,
@@ -289,7 +303,7 @@ export function renderSidebarBody(params: SidebarBodyParams): string {
           </div>`
         }
       </div>
-      ${renderSupportFooter()}
+      ${renderSupportFooter(isPremium)}
     </div>
     ${editorOverlayHtml}
   `;

@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import {
   getStaleFeedMemberCacheIds,
   loadFeedMembers,
+  renderMembersList,
   toggleFeedExpansion,
 } from '../logic/feed-members';
 import type { FeedInfo, FeedMemberInfo } from '../types';
@@ -67,6 +68,37 @@ function makeDeps(overrides: Partial<FeedMembersDeps> & {
     ...overrides,
   };
 }
+
+describe('renderMembersList expanded header', () => {
+  it('omits the header when the feed has no visible actions', () => {
+    const feed = makeFeed('profile-viewers', {
+      isSystem: true,
+      systemType: 'profileViewers',
+    });
+
+    const html = renderMembersList(feed, {
+      getLoadingMembersFeedId: () => null,
+      getFeedMembersById: () => ({ [feed.id]: [] }),
+      getMessagingButtonsEnabled: () => true,
+    });
+
+    expect(html).not.toContain('lfa-feed-expanded-header');
+    expect(html).toContain('lfa-feed-members-empty');
+  });
+
+  it('keeps the header when the feed has visible actions', () => {
+    const feed = makeFeed('regular-feed');
+
+    const html = renderMembersList(feed, {
+      getLoadingMembersFeedId: () => null,
+      getFeedMembersById: () => ({ [feed.id]: [] }),
+      getMessagingButtonsEnabled: () => true,
+    });
+
+    expect(html).toContain('lfa-feed-expanded-header');
+    expect(html).toContain('data-feed-action="edit"');
+  });
+});
 
 describe('toggleFeedExpansion status mutation wiring', () => {
   it('passes the freshly-created loading objects to fetchStatusesProgressively, not the old ones', async () => {

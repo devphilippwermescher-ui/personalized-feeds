@@ -230,6 +230,19 @@ export async function toggleFeedExpansion(feedId: string, deps: FeedMembersDeps)
   }
 }
 
+function renderFeedExpandedHeader(feed: FeedInfo): string {
+  const actionsHtml = renderFeedActions(feed);
+  if (!actionsHtml.trim()) {
+    return '';
+  }
+
+  return `
+    <div class="lfa-feed-expanded-header">
+      ${actionsHtml}
+    </div>
+  `;
+}
+
 export function renderMembersList(
   feed: FeedInfo,
   deps: Pick<FeedMembersDeps, 'getLoadingMembersFeedId' | 'getFeedMembersById'> & {
@@ -238,9 +251,7 @@ export function renderMembersList(
 ): string {
   if (deps.getLoadingMembersFeedId() === feed.id) {
     return `
-      <div class="lfa-feed-expanded-header">
-        ${renderFeedActions(feed)}
-      </div>
+      ${renderFeedExpandedHeader(feed)}
       <div class="lfa-feed-members-state">
         <div class="lfa-spinner lfa-spinner--small"></div>
         <p>${CONTENT_COPY.common.loadingProfiles}</p>
@@ -254,9 +265,7 @@ export function renderMembersList(
 
   if (members.length === 0) {
     return `
-      <div class="lfa-feed-expanded-header">
-        ${renderFeedActions(feed)}
-      </div>
+      ${renderFeedExpandedHeader(feed)}
       <div class="lfa-feed-members-empty">
         ${CONTENT_COPY.feedModals.emptyProfilesHint}
       </div>
@@ -264,9 +273,7 @@ export function renderMembersList(
   }
 
   return `
-    <div class="lfa-feed-expanded-header">
-      ${renderFeedActions(feed)}
-    </div>
+    ${renderFeedExpandedHeader(feed)}
     <div class="lfa-feed-members-list">
       ${members
         .map((member) => {

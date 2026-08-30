@@ -55,6 +55,7 @@ export function bindSidebarDom(container: HTMLElement, deps: SidebarDomBindingsD
     deps.setAccountMenuOpen(false);
     deps.openManagePlan();
   });
+  container.querySelector('#lfa-footer-get-pro-btn')?.addEventListener('click', deps.openManagePlan);
   container.querySelector('#lfa-add-feed-btn')?.addEventListener('click', deps.showCreateFeedForm);
   container.querySelector('#lfa-profile-settings-btn')?.addEventListener('click', deps.openProfileSettings);
   container.querySelector('#lfa-manage-account-btn')?.addEventListener('click', () => {

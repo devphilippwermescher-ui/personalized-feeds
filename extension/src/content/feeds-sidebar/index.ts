@@ -54,6 +54,7 @@ import {
   type AppPlan,
 } from 'shared/plans';
 import { openPlanModal, type PlanModalContext } from '../shared/plan-modal';
+import type { ProfileViewersCollectionProgress } from '../../shared/profile-viewers-progress';
 
 const DASHBOARD_URL = getDashboardOrigin();
 
@@ -62,6 +63,7 @@ let feedsList: FeedInfo[] = [];
 let sharedFeedsList: FeedInfo[] = [];
 let profileViewerMembers: FeedMemberInfo[] = [];
 let profileViewerPrivateCount: number | undefined;
+let profileViewersCollectionProgress: ProfileViewersCollectionProgress | undefined;
 let isRefreshingProfileViewers = false;
 let isLoading = false;
 let isInitializing = false;
@@ -209,6 +211,7 @@ function resetSignedOutSidebarState(): void {
   sharedFeedsList = [];
   profileViewerMembers = [];
   profileViewerPrivateCount = undefined;
+  profileViewersCollectionProgress = undefined;
   isRefreshingProfileViewers = false;
   const nextFeedMembersById = { ...feedMembersById };
   delete nextFeedMembersById[PROFILE_VIEWERS_FEED_ID];
@@ -284,19 +287,55 @@ const { handlePendingSharedFeedLink, schedulePendingShareRetries } =
 
 function updateProfileViewersState(
   viewers: ProfileViewerListItem[],
-  summary?: ProfileViewerSummary | null
+  summary?: ProfileViewerSummary | null,
+  collectionProgress?: ProfileViewersCollectionProgress
 ): void {
+  profileViewersCollectionProgress = collectionProgress;
   const nextState = buildProfileViewersState({
     viewers,
     summary,
     feeds: feedsList,
     feedMembersById,
     currentUser,
+    collectionProgress,
   });
   profileViewerMembers = nextState.members;
   profileViewerPrivateCount = nextState.privateViewerCount;
   feedMembersById = nextState.feedMembersById;
   feedsList = nextState.feeds;
+}
+
+function parseProfileViewersCollectionProgress(
+  value: unknown
+): ProfileViewersCollectionProgress | undefined {
+  if (!value || typeof value !== 'object') {
+    return undefined;
+  }
+
+  const progress = value as Partial<ProfileViewersCollectionProgress>;
+  if (
+    (progress.phase !== 'visible' && progress.phase !== 'private_summary') ||
+    !Number.isFinite(progress.startedAt)
+  ) {
+    return undefined;
+  }
+
+  return {
+    phase: progress.phase,
+    startedAt: progress.startedAt as number,
+  };
+}
+
+function setProfileViewersCollectionProgress(
+  progress: ProfileViewersCollectionProgress | undefined
+): void {
+  profileViewersCollectionProgress = progress;
+  feedsList = feedsList.map((feed) =>
+    feed.id === PROFILE_VIEWERS_FEED_ID
+      ? { ...feed, profileViewersCollectionProgress: progress }
+      : feed
+  );
+  renderSidebarContent();
 }
 
 async function refreshProfileViewersAfterBackgroundSync(): Promise<void> {
@@ -307,7 +346,8 @@ async function refreshProfileViewersAfterBackgroundSync(): Promise<void> {
 
   updateProfileViewersState(
     response.viewers as ProfileViewerListItem[],
-    (response.summary as ProfileViewerSummary | null | undefined) || null
+    (response.summary as ProfileViewerSummary | null | undefined) || null,
+    parseProfileViewersCollectionProgress(response.syncProgress)
   );
   renderSidebarContent();
 }
@@ -352,7 +392,18 @@ async function refreshProfileViewersNow(): Promise<void> {
 }
 
 chrome.runtime.onMessage.addListener((message) => {
+  if (message.type === 'PROFILE_VIEWERS_SYNC_STARTED') {
+    const progress = parseProfileViewersCollectionProgress(message.syncProgress);
+    if (progress) {
+      setProfileViewersCollectionProgress(progress);
+    }
+    return;
+  }
+
   if (message.type === 'PROFILE_VIEWERS_SYNC_COMPLETED') {
+    if (message.collectionFinished === true) {
+      setProfileViewersCollectionProgress(undefined);
+    }
     void refreshProfileViewersAfterBackgroundSync();
   }
 });
@@ -465,7 +516,8 @@ async function loadFeeds(): Promise<void> {
   if (Array.isArray(profileViewersResp?.viewers)) {
     updateProfileViewersState(
       profileViewersResp.viewers as ProfileViewerListItem[],
-      (profileViewersResp.summary as ProfileViewerSummary | null | undefined) || null
+      (profileViewersResp.summary as ProfileViewerSummary | null | undefined) || null,
+      parseProfileViewersCollectionProgress(profileViewersResp.syncProgress)
     );
   } else {
     feedsList = withProfileViewersFeed(
@@ -473,7 +525,8 @@ async function loadFeeds(): Promise<void> {
       profileViewerMembers,
       profileViewerPrivateCount,
       undefined,
-      currentUser
+      currentUser,
+      profileViewersCollectionProgress
     );
   }
 

@@ -195,5 +195,5 @@ export function getLogoUrl(): string {
 }
 
 export function getLauncherLogoUrl(): string {
-  return chrome.runtime.getURL('icons/logo-mark.svg');
+  return chrome.runtime.getURL('icons/launcher-logo.png');
 }

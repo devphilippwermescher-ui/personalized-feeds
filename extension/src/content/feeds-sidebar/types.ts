@@ -1,3 +1,5 @@
+import type { ProfileViewersCollectionProgress } from '../../shared/profile-viewers-progress';
+
 export interface UserInfo {
   userId: string;
   displayName: string;
@@ -26,6 +28,7 @@ export interface FeedInfo {
   systemType?: 'profileViewers';
   privateViewerCount?: number;
   recruiterViewerCount?: number;
+  profileViewersCollectionProgress?: ProfileViewersCollectionProgress;
   isRefreshingProfileViewers?: boolean;
   isConfirmingProfileViewersRefresh?: boolean;
 }

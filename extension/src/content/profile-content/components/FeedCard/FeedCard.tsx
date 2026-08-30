@@ -3,7 +3,7 @@ import type { ProfileData } from '../../types';
 export function FeedCard({ profile }: { profile: ProfileData }) {
   let logoUrl = '';
   try {
-    logoUrl = chrome.runtime.getURL('icons/icon48.png');
+    logoUrl = chrome.runtime.getURL('icons/launcher-logo.png');
   } catch {
     logoUrl = '';
   }

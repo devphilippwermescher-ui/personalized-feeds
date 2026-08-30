@@ -43,6 +43,7 @@ import {
   releaseConnectionHistorySyncLock,
 } from './linkedin-heavy-sync-lock';
 import { getUserPlanSnapshot } from './subscription/plan-service';
+import type { ProfileViewersCollectionProgress } from '../shared/profile-viewers-progress';
 
 const PROFILE_VIEWERS_SYNC_LOG_LIMIT = 50;
 const PROFILE_VIEWERS_SYNC_LOG_USERNAME_LIMIT = 50;
@@ -153,13 +154,22 @@ function getProfileViewersSyncSkipReason(
   return 'decision_blocked';
 }
 
-async function notifyLinkedInTabsAboutProfileViewersSync(): Promise<void> {
+type ProfileViewersSyncNotification =
+  | {
+      type: 'PROFILE_VIEWERS_SYNC_STARTED';
+      syncProgress: ProfileViewersCollectionProgress;
+    }
+  | { type: 'PROFILE_VIEWERS_SYNC_COMPLETED'; collectionFinished: true };
+
+async function notifyLinkedInTabsAboutProfileViewersSync(
+  message: ProfileViewersSyncNotification
+): Promise<void> {
   const tabs = await chrome.tabs.query({ url: 'https://www.linkedin.com/*' });
   await Promise.all(
     tabs
       .filter((tab): tab is chrome.tabs.Tab & { id: number } => typeof tab.id === 'number')
       .map((tab) =>
-        chrome.tabs.sendMessage(tab.id, { type: 'PROFILE_VIEWERS_SYNC_COMPLETED' }).catch(() => {
+        chrome.tabs.sendMessage(tab.id, message).catch(() => {
           /* the sidebar content script may not be ready in every LinkedIn tab */
         })
       )
@@ -320,6 +330,15 @@ async function runProfileViewersSyncCoordinator(
     privateSummaryNextStart: state.privateSummaryNextStart,
     privateSummaryKnownStart: state.privateSummaryKnownStart,
   });
+  await notifyLinkedInTabsAboutProfileViewersSync({
+    type: 'PROFILE_VIEWERS_SYNC_STARTED',
+    syncProgress: {
+      phase: collectionTask,
+      startedAt,
+    },
+  }).catch((error) => {
+    console.warn('[profile-viewers-sync] Failed to notify LinkedIn tabs about collection start:', error);
+  });
 
   try {
     const requestBudgetReserve =
@@ -442,7 +461,10 @@ async function runProfileViewersSyncCoordinator(
         console.warn('[profile-viewers-sync] Failed to queue profile viewer status sync:', error);
       });
     }
-    await notifyLinkedInTabsAboutProfileViewersSync().catch((error) => {
+    await notifyLinkedInTabsAboutProfileViewersSync({
+      type: 'PROFILE_VIEWERS_SYNC_COMPLETED',
+      collectionFinished: true,
+    }).catch((error) => {
       console.warn('[profile-viewers-sync] Failed to notify LinkedIn tabs:', error);
     });
     await appendProfileViewersWakeEvent({
@@ -489,6 +511,12 @@ async function runProfileViewersSyncCoordinator(
     state = appendProfileViewersSyncLog(state, log);
     await setProfileViewersSyncState(state);
     await scheduleNextProfileViewersAlarm(state);
+    await notifyLinkedInTabsAboutProfileViewersSync({
+      type: 'PROFILE_VIEWERS_SYNC_COMPLETED',
+      collectionFinished: true,
+    }).catch((notifyError) => {
+      console.warn('[profile-viewers-sync] Failed to notify LinkedIn tabs about collection failure:', notifyError);
+    });
     await appendProfileViewersWakeEvent({
       event: 'sync_failed',
       trigger,

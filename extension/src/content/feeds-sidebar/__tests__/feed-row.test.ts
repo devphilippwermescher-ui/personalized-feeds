@@ -64,4 +64,45 @@ describe('renderFeedRow', () => {
     expect(html).toContain('lfa-feed-owner-badge">by Owner</span>');
     expect(html).not.toContain('lfa-feed-grip--hidden');
   });
+
+  it('shows collection progress only while Profile Visitors is actively syncing', () => {
+    const collectingHtml = renderFeedRow({
+      feed: makeFeed({
+        isSystem: true,
+        systemType: 'profileViewers',
+        profileViewersCollectionProgress: {
+          phase: 'visible',
+          startedAt: 123,
+        },
+      }),
+      expanded: false,
+      previewHtml: '',
+    });
+    const idleHtml = renderFeedRow({
+      feed: makeFeed({ isSystem: true, systemType: 'profileViewers' }),
+      expanded: false,
+      previewHtml: '',
+    });
+
+    expect(collectingHtml).toContain('Collecting profile visitors…');
+    expect(collectingHtml).toContain('role="progressbar"');
+    expect(idleHtml).not.toContain('lfa-profile-viewers-collection');
+  });
+
+  it('labels the private summary collection phase', () => {
+    const html = renderFeedRow({
+      feed: makeFeed({
+        isSystem: true,
+        systemType: 'profileViewers',
+        profileViewersCollectionProgress: {
+          phase: 'private_summary',
+          startedAt: 123,
+        },
+      }),
+      expanded: false,
+      previewHtml: '',
+    });
+
+    expect(html).toContain('Checking private and recruiter views…');
+  });
 });

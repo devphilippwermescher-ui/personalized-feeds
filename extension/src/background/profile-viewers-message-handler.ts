@@ -18,6 +18,28 @@ import { getFeedsAuthErrorResponse, normalizeFeedsError } from './feeds-errors';
 import { findProfileViewerUpdateTargets } from './profile-viewers-update-targets';
 import { queueProfileAnalyticsForLinkedInActivity } from './profile-analytics-sync-coordinator';
 import { getUserPlanSnapshot } from './subscription/plan-service';
+import type { ProfileViewersCollectionProgress } from '../shared/profile-viewers-progress';
+
+function getProfileViewersCollectionProgress(
+  syncState: Awaited<ReturnType<typeof getProfileViewersSyncState>>,
+  now = Date.now()
+): ProfileViewersCollectionProgress | null {
+  if (!Number.isFinite(syncState.attemptStartedAt)) {
+    return null;
+  }
+
+  if (syncState.attemptExpiresAt && syncState.attemptExpiresAt <= now) {
+    return null;
+  }
+
+  return {
+    phase:
+      syncState.backfillStatus === 'complete' && syncState.nextCollectionTask === 'private_summary'
+        ? 'private_summary'
+        : 'visible',
+    startedAt: syncState.attemptStartedAt as number,
+  };
+}
 
 async function notifyLinkedInTabsAboutProfileViewerUpdate(): Promise<void> {
   const tabs = await chrome.tabs.query({ url: 'https://www.linkedin.com/*' });
@@ -118,6 +140,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             success: true,
             viewers: projectedViewers,
             summary: projectedSummary,
+            syncProgress: getProfileViewersCollectionProgress(syncState),
             plan: planSnapshot.plan,
             entitlements: planSnapshot.entitlements,
           });

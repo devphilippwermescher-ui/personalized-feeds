@@ -53,9 +53,9 @@ function injectPlanModalStyles(): void {
       position: relative;
       width: min(430px, calc(100vw - 32px));
       max-height: min(760px, calc(100vh - 32px));
-      overflow: auto;
-      scrollbar-width: none;
-      -ms-overflow-style: none;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
       border: 1px solid rgba(255, 214, 90, 0.28);
       border-radius: 24px;
       color: #fffaf0;
@@ -64,27 +64,46 @@ function injectPlanModalStyles(): void {
         linear-gradient(180deg, #282013 0%, #17140e 100%);
       box-shadow: 0 32px 90px rgba(35, 25, 7, 0.54), 0 0 0 1px rgba(255, 221, 112, 0.04) inset;
     }
-    #${MODAL_ID} .mfp-plan-modal::-webkit-scrollbar {
+    #${MODAL_ID} .mfp-plan-header {
+      position: relative;
+      z-index: 2;
+      flex: 0 0 54px;
+      height: 54px;
+    }
+    #${MODAL_ID} .mfp-plan-scroll {
+      min-height: 0;
+      overflow: auto;
+      scrollbar-width: none;
+      -ms-overflow-style: none;
+    }
+    #${MODAL_ID} .mfp-plan-scroll::-webkit-scrollbar {
       display: none;
       width: 0;
       height: 0;
     }
     #${MODAL_ID} .mfp-plan-close {
       position: absolute;
-      top: 14px;
+      top: 8px;
       left: 14px;
+      box-sizing: border-box;
       width: 38px;
       height: 38px;
+      padding: 0;
       border: 1px solid rgba(255, 220, 112, .2);
       border-radius: 50%;
       color: #fff8e7;
       background: rgba(39, 31, 17, .72);
-      font-size: 24px;
-      line-height: 1;
+      display: grid;
+      place-items: center;
       cursor: pointer;
     }
+    #${MODAL_ID} .mfp-plan-close svg {
+      width: 18px;
+      height: 18px;
+      display: block;
+    }
     #${MODAL_ID} .mfp-plan-hero {
-      padding: 54px 28px 24px;
+      padding: 24px 28px;
       text-align: center;
     }
     #${MODAL_ID} .mfp-plan-star-wrap {
@@ -412,29 +431,37 @@ export function openPlanModal(options: { plan: AppPlan; context: PlanModalContex
   overlay.id = MODAL_ID;
   overlay.innerHTML = `
     <section class="mfp-plan-modal" role="dialog" aria-modal="true" aria-labelledby="mfp-plan-title">
-      <button class="mfp-plan-close" type="button" aria-label="Close">×</button>
-      <div class="mfp-plan-hero">
-        <div class="mfp-plan-star-wrap">
-          ${renderPlanStarIcon({ className: 'mfp-plan-star' })}
+      <div class="mfp-plan-header">
+        <button class="mfp-plan-close" type="button" aria-label="Close">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true">
+            <path d="M6 6l12 12M18 6 6 18"></path>
+          </svg>
+        </button>
+      </div>
+      <div class="mfp-plan-scroll">
+        <div class="mfp-plan-hero">
+          <div class="mfp-plan-star-wrap">
+            ${renderPlanStarIcon({ className: 'mfp-plan-star' })}
+          </div>
+          <h2 id="mfp-plan-title">${copy.title}</h2>
+          <p class="mfp-plan-description">${copy.description}</p>
         </div>
-        <h2 id="mfp-plan-title">${copy.title}</h2>
-        <p class="mfp-plan-description">${copy.description}</p>
-      </div>
-      ${billingSelector}
-      ${options.plan === 'pro' ? '<div class="mfp-plan-current"><strong>Pro plan active</strong><span>Loading billing details…</span></div>' : ''}
-      <div class="mfp-plan-benefits">
-        <div class="mfp-plan-benefit"><div class="mfp-plan-benefit-icon">◎</div><div><strong>Complete Profile Visitors</strong><span>Collect all visible visitors, private-mode views, and recruiter insights available from LinkedIn.</span></div></div>
-        <div class="mfp-plan-benefit"><div class="mfp-plan-benefit-icon">≡</div><div><strong>Unlimited custom feeds</strong><span>Create as many focused feeds as you need for prospects, partners, and industry leaders.</span></div></div>
-        <div class="mfp-plan-benefit"><div class="mfp-plan-benefit-icon">＋</div><div><strong>Unlimited people per feed</strong><span>Build complete prospect and relationship lists with as many people in each feed as you need.</span></div></div>
-      </div>
-      <div class="mfp-plan-about-label">About myFeedPilot plans</div>
-      <div class="mfp-plan-about">
-        <p><strong>myFeedPilot Free</strong> lets you save and track up to 10 visible profile visitors—more identifiable visitor profiles than LinkedIn Free normally shows at once—and organize people in custom feeds.</p>
-        <p><strong>myFeedPilot Pro</strong> removes those limits and adds complete visitor collection, including private-mode views and recruiter insights, so your network tracking can grow with you.</p>
-      </div>
-      <div class="mfp-plan-actions">
-        <button class="mfp-plan-cta" type="button">${options.plan === 'pro' ? 'Manage billing' : getUpgradeLabel()}</button>
-        <div class="mfp-plan-note" aria-live="polite"></div>
+        ${billingSelector}
+        ${options.plan === 'pro' ? '<div class="mfp-plan-current"><strong>Pro plan active</strong><span>Loading billing details…</span></div>' : ''}
+        <div class="mfp-plan-benefits">
+          <div class="mfp-plan-benefit"><div class="mfp-plan-benefit-icon">◎</div><div><strong>Complete Profile Visitors</strong><span>Collect all visible visitors, private-mode views, and recruiter insights available from LinkedIn.</span></div></div>
+          <div class="mfp-plan-benefit"><div class="mfp-plan-benefit-icon">≡</div><div><strong>Unlimited custom feeds</strong><span>Create as many focused feeds as you need for prospects, partners, and industry leaders.</span></div></div>
+          <div class="mfp-plan-benefit"><div class="mfp-plan-benefit-icon">＋</div><div><strong>Unlimited people per feed</strong><span>Build complete prospect and relationship lists with as many people in each feed as you need.</span></div></div>
+        </div>
+        <div class="mfp-plan-about-label">About myFeedPilot plans</div>
+        <div class="mfp-plan-about">
+          <p><strong>myFeedPilot Free</strong> lets you save and track up to 10 visible profile visitors—more identifiable visitor profiles than LinkedIn Free normally shows at once—and organize people in custom feeds.</p>
+          <p><strong>myFeedPilot Pro</strong> removes those limits and adds complete visitor collection, including private-mode views and recruiter insights, so your network tracking can grow with you.</p>
+        </div>
+        <div class="mfp-plan-actions">
+          <button class="mfp-plan-cta" type="button">${options.plan === 'pro' ? 'Manage billing' : getUpgradeLabel()}</button>
+          <div class="mfp-plan-note" aria-live="polite"></div>
+        </div>
       </div>
     </section>
   `;

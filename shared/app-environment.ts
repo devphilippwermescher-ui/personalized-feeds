@@ -47,3 +47,8 @@ export function getDashboardOrigin(environment = getAppEnvironment()): string {
       return 'https://myfeedpilot-app.web.app';
   }
 }
+
+// The auth helper remains available when the dashboard UI is disabled.
+export function getAuthHelperOrigin(environment = getAppEnvironment()): string {
+  return getDashboardOrigin(environment);
+}

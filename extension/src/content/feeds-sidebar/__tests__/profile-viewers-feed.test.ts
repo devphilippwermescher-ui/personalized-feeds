@@ -21,6 +21,10 @@ describe('buildProfileViewersState', () => {
         email: 'user@example.com',
         photoURL: '',
       },
+      collectionProgress: {
+        phase: 'private_summary',
+        startedAt: 123,
+      },
     });
 
     expect(state.members).toEqual([
@@ -38,6 +42,10 @@ describe('buildProfileViewersState', () => {
         id: PROFILE_VIEWERS_FEED_ID,
         memberCount: 1,
         recruiterViewerCount: 32,
+        profileViewersCollectionProgress: {
+          phase: 'private_summary',
+          startedAt: 123,
+        },
       })
     );
   });
