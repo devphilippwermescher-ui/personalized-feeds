@@ -1,14 +1,21 @@
+import { createElement } from 'react';
+import { flushSync } from 'react-dom';
+import { createRoot, type Root } from 'react-dom/client';
 import type { AppPlan, BillingSubscription } from 'shared/plans';
 import type { ProBillingInterval } from 'shared/subscription-config';
+import { Modal } from 'shared/ui/modal';
 import { getPlanSnapshot, openCheckout, openCustomerPortal } from '../subscription/services/billing-service';
 import { renderPlanStarIcon } from './plan-star';
 
 export type PlanModalContext = 'manage' | 'feeds' | 'members';
 
 const MODAL_ID = 'mfp-plan-modal-overlay';
+const MODAL_HOST_ID = 'mfp-plan-modal-react-root';
 const STYLE_ID = 'mfp-plan-modal-styles';
 const ACTIVATION_POLL_INTERVAL_MS = 5000;
 const ACTIVATION_POLL_ATTEMPTS = 24;
+let planModalRoot: Root | null = null;
+let planModalHost: HTMLElement | null = null;
 
 function getContextCopy(context: PlanModalContext): { title: string; description: string } {
   if (context === 'feeds') {
@@ -332,7 +339,12 @@ function injectPlanModalStyles(): void {
 }
 
 export function closePlanModal(): void {
+  planModalRoot?.unmount();
+  planModalHost?.remove();
+  planModalRoot = null;
+  planModalHost = null;
   document.getElementById(MODAL_ID)?.remove();
+  document.getElementById(MODAL_HOST_ID)?.remove();
 }
 
 function formatBillingDate(value?: number): string | null {
@@ -427,18 +439,7 @@ export function openPlanModal(options: { plan: AppPlan; context: PlanModalContex
       </div>
     `
       : '';
-  const overlay = document.createElement('div');
-  overlay.id = MODAL_ID;
-  overlay.innerHTML = `
-    <section class="mfp-plan-modal" role="dialog" aria-modal="true" aria-labelledby="mfp-plan-title">
-      <div class="mfp-plan-header">
-        <button class="mfp-plan-close" type="button" aria-label="Close">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true">
-            <path d="M6 6l12 12M18 6 6 18"></path>
-          </svg>
-        </button>
-      </div>
-      <div class="mfp-plan-scroll">
+  const bodyHtml = `
         <div class="mfp-plan-hero">
           <div class="mfp-plan-star-wrap">
             ${renderPlanStarIcon({ className: 'mfp-plan-star' })}
@@ -462,9 +463,61 @@ export function openPlanModal(options: { plan: AppPlan; context: PlanModalContex
           <button class="mfp-plan-cta" type="button">${options.plan === 'pro' ? 'Manage billing' : getUpgradeLabel()}</button>
           <div class="mfp-plan-note" aria-live="polite"></div>
         </div>
-      </div>
-    </section>
   `;
+
+  planModalHost = document.createElement('div');
+  planModalHost.id = MODAL_HOST_ID;
+  document.body.appendChild(planModalHost);
+  planModalRoot = createRoot(planModalHost);
+  flushSync(() => {
+    planModalRoot?.render(
+      createElement(Modal, {
+        title: copy.title,
+        variant: 'billing',
+        tone: options.plan === 'pro' ? 'success' : 'primary',
+        size: 'lg',
+        titleId: 'mfp-plan-title',
+        onClose: () => closePlanModal(),
+        closeOnBackdrop: false,
+        closeOnEscape: false,
+        portalTarget: document.body,
+        overlayId: MODAL_ID,
+        dialogAs: 'section',
+        bodyHtml,
+        classNames: {
+          overlay: 'mfp-plan-overlay',
+          dialog: 'mfp-plan-modal',
+          body: 'mfp-plan-scroll',
+        },
+        header: createElement(
+          'div',
+          { className: 'mfp-plan-header' },
+          createElement(
+            'button',
+            { className: 'mfp-plan-close', type: 'button', 'aria-label': 'Close' },
+            createElement(
+              'svg',
+              {
+                viewBox: '0 0 24 24',
+                fill: 'none',
+                stroke: 'currentColor',
+                strokeWidth: '2.5',
+                strokeLinecap: 'round',
+                'aria-hidden': true,
+              },
+              createElement('path', { d: 'M6 6l12 12M18 6 6 18' })
+            )
+          )
+        ),
+      })
+    );
+  });
+
+  const overlay = document.getElementById(MODAL_ID);
+  if (!overlay) {
+    closePlanModal();
+    return;
+  }
 
   const close = (): void => closePlanModal();
   overlay.addEventListener('click', (event) => {
@@ -522,7 +575,6 @@ export function openPlanModal(options: { plan: AppPlan; context: PlanModalContex
       });
   });
 
-  document.body.appendChild(overlay);
   if (options.plan === 'pro') void hydrateSubscriptionSummary(overlay);
   overlay.querySelector<HTMLElement>('.mfp-plan-close')?.focus();
 }

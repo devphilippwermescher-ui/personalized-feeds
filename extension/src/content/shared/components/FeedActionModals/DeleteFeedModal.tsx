@@ -33,8 +33,8 @@ export function DeleteFeedModal({
 }: DeleteFeedModalProps) {
   const [submitting, setSubmitting] = useState(false);
   const deleteDescription = getDeleteFeedDescription(feedName, memberCount);
-  const leadingIcon = confirmLeadingIcon === undefined
-    ? (
+  const leadingIcon =
+    confirmLeadingIcon === undefined ? (
       <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2">
         <polyline points="3 6 5 6 21 6" />
         <path d="M19 6l-1 14H6L5 6" />
@@ -42,8 +42,9 @@ export function DeleteFeedModal({
         <path d="M14 11v6" />
         <path d="M9 6V4h6v2" />
       </svg>
-    )
-    : confirmLeadingIcon;
+    ) : (
+      confirmLeadingIcon
+    );
 
   const handleDelete = async () => {
     if (submitting) {
@@ -62,10 +63,18 @@ export function DeleteFeedModal({
   return (
     <LfsModal
       title={title}
+      variant="confirm"
+      tone={confirmVariant === 'danger' ? 'danger' : 'neutral'}
       onClose={onClose}
       footer={
         <div className="lfa-feed-confirm-footer">
-          <LfsButton label={cancelLabel} variant="secondary" onClick={onClose} disabled={submitting} className="lfa-feed-confirm-cancel-btn" />
+          <LfsButton
+            label={cancelLabel}
+            variant="secondary"
+            onClick={onClose}
+            disabled={submitting}
+            className="lfa-feed-confirm-cancel-btn"
+          />
           <LfsButton
             label={submitting ? submittingLabel : confirmLabel}
             variant={confirmVariant}
@@ -78,12 +87,8 @@ export function DeleteFeedModal({
       }
     >
       <div className="lfa-feed-confirm-content">
-        <p className="lfa-feed-confirm-text">
-          {descriptionTitle || deleteDescription.title}
-        </p>
-        <p className="lfa-feed-confirm-subtext">
-          {description || deleteDescription.description}
-        </p>
+        <p className="lfa-feed-confirm-text">{descriptionTitle || deleteDescription.title}</p>
+        <p className="lfa-feed-confirm-subtext">{description || deleteDescription.description}</p>
       </div>
     </LfsModal>
   );

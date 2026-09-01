@@ -21,7 +21,13 @@ export function ConfirmDuplicateModal({ onClose, onConfirm }: ConfirmDuplicateMo
   };
 
   return (
-    <LfsModal title={CONTENT_COPY.feedModals.duplicateTitle} centeredTitle onClose={onClose}>
+    <LfsModal
+      title={CONTENT_COPY.feedModals.duplicateTitle}
+      variant="confirm"
+      tone="warning"
+      centeredTitle
+      onClose={onClose}
+    >
       <div className="lfa-duplicate-modal">
         <div className="lfa-duplicate-icon">
           <svg viewBox="0 0 24 24" width="34" height="34" fill="none" stroke="currentColor" strokeWidth="2">
