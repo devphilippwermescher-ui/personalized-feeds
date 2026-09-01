@@ -5,6 +5,7 @@ import '../runtime/set-public-path';
  *
  * Initializes:
  *   - post-buttons       — "Add to feed" buttons on LinkedIn feed posts
+ *   - messaging-buttons  — "Add to feed" buttons on LinkedIn messaging profile cards
  *   - speech-to-comment  — floating mic button for voice comments
  *
  * Responds to feature-settings changes from background so toggles take
@@ -16,6 +17,7 @@ import { DASHBOARD_ANALYTICS_SYNC_ENABLED } from 'shared/feature-flags';
 import { initNativeInviteTracking } from './native-invite-tracking';
 import { initLinkedInAnalyticsPassiveCapture } from './linkedin-analytics-passive-capture';
 import { destroyPostButtons, initPostButtons } from './post-buttons';
+import { destroyMessagingButtons, initMessagingButtons } from './messaging-buttons';
 import { destroySpeechToCommentButton } from './speech-to-comment';
 import type { UserFeatureSettings } from 'shared/types';
 
@@ -29,6 +31,12 @@ let featureSettings: UserFeatureSettings = {
 let domReady = false;
 
 function applyFeatureUI(): void {
+  if (featureSettings.messagingButtons) {
+    initMessagingButtons();
+  } else {
+    destroyMessagingButtons();
+  }
+
   if (featureSettings.postButtons) {
     initPostButtons();
   } else {

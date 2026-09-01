@@ -335,7 +335,8 @@ async function openFeedModal(profile: PostAuthorProfile, feeds: FeedSummary[]): 
   });
 }
 
-async function handlePostButtonClick(profile: PostAuthorProfile): Promise<void> {
+export async function openProfileFeedPicker(profile: PostAuthorProfile): Promise<void> {
+  ensureStyles();
   const authState = await sendMessage<{ isAuthenticated?: boolean }>({ type: 'FEEDS_GET_AUTH_STATE' });
   if (!authState?.isAuthenticated) {
     showToast(CONTENT_COPY.postButtons.signInRequired, 'error');
@@ -414,7 +415,7 @@ function handleGlobalPostControlEvent(event: Event): void {
     return;
   }
 
-  void handlePostButtonClick(profile).catch((error) => {
+  void openProfileFeedPicker(profile).catch((error) => {
     showToast(error instanceof Error ? error.message : CONTENT_COPY.postButtons.failedToOpenFeeds, 'error');
   });
 }

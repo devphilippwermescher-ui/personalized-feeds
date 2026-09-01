@@ -419,8 +419,6 @@ export function openPlanModal(options: { plan: AppPlan; context: PlanModalContex
         }
       : getContextCopy(options.context);
   let selectedBillingInterval: ProBillingInterval = 'annual';
-  const getUpgradeLabel = (): string =>
-    selectedBillingInterval === 'annual' ? 'Upgrade to Pro — $156/year' : 'Upgrade to Pro — $19/month';
   const billingSelector =
     options.plan === 'free'
       ? `
@@ -460,7 +458,7 @@ export function openPlanModal(options: { plan: AppPlan; context: PlanModalContex
           <p><strong>myFeedPilot Pro</strong> removes those limits and adds complete visitor collection, including private-mode views and recruiter insights, so your network tracking can grow with you.</p>
         </div>
         <div class="mfp-plan-actions">
-          <button class="mfp-plan-cta" type="button">${options.plan === 'pro' ? 'Manage billing' : getUpgradeLabel()}</button>
+          <button class="mfp-plan-cta" type="button">${options.plan === 'pro' ? 'Manage billing' : 'Upgrade to Pro'}</button>
           <div class="mfp-plan-note" aria-live="polite"></div>
         </div>
   `;
@@ -539,7 +537,6 @@ export function openPlanModal(options: { plan: AppPlan; context: PlanModalContex
         option.classList.toggle('is-selected', isSelected);
         option.setAttribute('aria-pressed', String(isSelected));
       });
-      if (cta) cta.textContent = getUpgradeLabel();
     });
   });
   cta?.addEventListener('click', () => {

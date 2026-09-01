@@ -46,7 +46,7 @@ describe('plan modal', () => {
     expect(monthly?.getAttribute('aria-pressed')).toBe('false');
     expect(annual?.textContent).toContain('$156 billed yearly');
     expect(annual?.textContent).toContain('Save 32%');
-    expect(document.querySelector('.mfp-plan-cta')?.textContent).toContain('$156/year');
+    expect(document.querySelector('.mfp-plan-cta')?.textContent).toBe('Upgrade to Pro');
   });
 
   it('updates the selected period and opens Monthly checkout through the background', async () => {
@@ -59,7 +59,7 @@ describe('plan modal', () => {
     expect(monthly?.classList.contains('is-selected')).toBe(true);
     expect(monthly?.getAttribute('aria-pressed')).toBe('true');
     expect(annual?.getAttribute('aria-pressed')).toBe('false');
-    expect(document.querySelector('.mfp-plan-cta')?.textContent).toContain('$19/month');
+    expect(document.querySelector('.mfp-plan-cta')?.textContent).toBe('Upgrade to Pro');
 
     document.querySelector<HTMLButtonElement>('.mfp-plan-cta')?.click();
     await vi.waitFor(() => {
