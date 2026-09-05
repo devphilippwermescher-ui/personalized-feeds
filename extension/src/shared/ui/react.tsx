@@ -83,6 +83,7 @@ interface LfsInputFieldProps {
   inputClassName?: string;
   onChange: ChangeEventHandler<HTMLInputElement>;
   inputRef?: Ref<HTMLInputElement>;
+  maxLength?: number;
 }
 
 interface LfsDropdownProps {
@@ -105,6 +106,7 @@ export function LfsInputField({
   inputClassName,
   onChange,
   inputRef,
+  maxLength,
 }: LfsInputFieldProps) {
   return (
     <label className={cx('lfs-field', className)}>
@@ -116,6 +118,7 @@ export function LfsInputField({
         type="text"
         value={value}
         placeholder={placeholder}
+        maxLength={maxLength}
         onChange={onChange}
       />
       {helper ? <span className="lfs-field__helper">{helper}</span> : null}

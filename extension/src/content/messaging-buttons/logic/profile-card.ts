@@ -9,8 +9,11 @@ const CONNECTION_DEGREE_PATTERN = /^(?:[•·]\s*)?(1st|2nd|3rd\+?)$/i;
 const PROFILE_CARD_SELECTOR = [
   '[class*="msg-thread__profile"]',
   '[class*="msg-thread-profile"]',
+  '[class*="msg-thread-banner"]',
+  '[class*="msg-entity-lockup"]',
   '[class*="messaging-profile"]',
   '[data-view-name*="messaging-profile"]',
+  '[data-test-id*="conversation-details"]',
 ].join(', ');
 
 function normalizedText(element: Element | null): string {
@@ -41,8 +44,12 @@ function findProfileLink(degreeElement: HTMLElement): HTMLAnchorElement | null {
   const directLink = degreeElement.closest<HTMLAnchorElement>('a[href*="/in/"]');
   if (directLink) return directLink;
 
+  const explicitCard = degreeElement.closest<HTMLElement>(PROFILE_CARD_SELECTOR);
+  const explicitCardLink = explicitCard?.querySelector<HTMLAnchorElement>('a[href*="/in/"]');
+  if (explicitCardLink) return explicitCardLink;
+
   let current: HTMLElement | null = degreeElement.parentElement;
-  for (let depth = 0; current && depth < 7; depth += 1, current = current.parentElement) {
+  for (let depth = 0; current && depth < 14; depth += 1, current = current.parentElement) {
     const links = Array.from(current.querySelectorAll<HTMLAnchorElement>('a[href*="/in/"]'));
     const namedLink = links.find((link) => cleanDisplayName(link.getAttribute('aria-label') || link.textContent || ''));
     if (namedLink) return namedLink;

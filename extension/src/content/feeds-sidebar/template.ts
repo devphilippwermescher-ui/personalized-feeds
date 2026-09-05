@@ -157,6 +157,15 @@ export function renderSidebarHeader(params: {
             </div>
           </div>
           <div class="lfa-account-menu-divider"></div>
+          <button class="lfa-account-menu-link" id="lfa-profile-settings-btn" type="button">
+            <span class="lfa-account-menu-link-icon lfa-account-menu-link-icon--profile">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z"></path>
+                <path d="M4 21a8 8 0 0 1 16 0"></path>
+              </svg>
+            </span>
+            <span>Profile &amp; billing</span>
+          </button>
           <button class="lfa-account-menu-link lfa-account-menu-link--plan" id="lfa-manage-plan-btn" type="button">
             <span class="lfa-account-menu-link-icon lfa-account-menu-link-icon--plan">
               ${renderPlanOutlineStarIcon({ className: 'lfa-plan-star-glyph' })}
@@ -166,15 +175,6 @@ export function renderSidebarHeader(params: {
           ${
             DASHBOARD_ENABLED
               ? `
-          <button class="lfa-account-menu-link" id="lfa-profile-settings-btn" type="button">
-            <span class="lfa-account-menu-link-icon">
-              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
-                <circle cx="12" cy="12" r="3"></circle>
-                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.01a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
-              </svg>
-            </span>
-            <span>${CONTENT_COPY.common.profileSettings}</span>
-          </button>
           <button class="lfa-account-menu-link" id="lfa-subscription-btn" type="button">
             <span class="lfa-account-menu-link-icon">
               <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">

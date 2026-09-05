@@ -353,6 +353,10 @@ export const SHELL_CSS = `
     background: linear-gradient(135deg, #ffe477 0%, #f6c93d 100%);
     box-shadow: inset 0 0 0 1px rgba(217, 154, 0, 0.16);
   }
+  .lfa-account-menu-link-icon--profile {
+    color: #4f46e5;
+    background: #eef2ff;
+  }
   .lfa-account-menu-link-icon .lfa-plan-star-glyph {
     width: 21px;
     height: 21px;

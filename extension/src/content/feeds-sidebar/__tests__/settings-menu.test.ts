@@ -72,7 +72,8 @@ describe('settings menu', () => {
 
     expect(headerHtml).not.toContain('id="lfa-header-dashboard-btn"');
     expect(headerHtml).not.toContain('id="lfa-manage-account-btn"');
-    expect(headerHtml).not.toContain('id="lfa-profile-settings-btn"');
+    expect(headerHtml).toContain('id="lfa-profile-settings-btn"');
+    expect(headerHtml).toContain('Profile &amp; billing');
     expect(headerHtml).not.toContain('id="lfa-subscription-btn"');
     expect(signedOutBodyHtml).not.toContain('id="lfa-open-dashboard-btn"');
     expect(freeUserBodyHtml).not.toContain('id="lfa-open-subscription-btn"');
@@ -105,6 +106,9 @@ describe('settings menu', () => {
     expect(signedInHeader).toContain('Current plan: Free');
     expect(signedInHeader).not.toContain('lfa-plan-toggle-btn');
     expect(signedInHeader).toContain('id="lfa-manage-plan-btn"');
+    expect(signedInHeader.indexOf('id="lfa-profile-settings-btn"')).toBeLessThan(
+      signedInHeader.indexOf('id="lfa-manage-plan-btn"')
+    );
     expect(signedInHeader).toContain('class="lfa-plan-star-glyph"');
     expect(signedInHeader).toContain('fill="none" stroke="currentColor"');
     expect(signedInHeader.indexOf('id="lfa-manage-plan-btn"')).toBeLessThan(

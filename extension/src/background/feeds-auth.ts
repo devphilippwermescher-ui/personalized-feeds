@@ -1,5 +1,9 @@
 import type { User } from 'firebase/auth';
-import type { UserFeatureSettings } from 'shared/types';
+import type { UserFeatureSettings, UserProfilePreferences } from 'shared/types';
+import {
+  DEFAULT_USER_PROFILE_PREFERENCES,
+  normalizeUserProfilePreferences,
+} from 'shared/user-profile-preferences';
 import { getCurrentUser, signInWithGoogleTokens, waitForAuthReady } from '../services/auth';
 
 type OffscreenAuthResult =
@@ -28,6 +32,7 @@ let pendingOffscreenAuth:
   | null = null;
 
 export const FEATURE_SETTINGS_STORAGE_KEY = 'pf_feature_settings';
+export const PROFILE_PREFERENCES_STORAGE_KEY = 'pf_profile_preferences';
 export const DEFAULT_FEATURE_SETTINGS: UserFeatureSettings = {
   messagingButtons: true,
   postButtons: true,
@@ -109,14 +114,48 @@ export async function startOffscreenAuth(): Promise<OffscreenAuthResult> {
   });
 }
 
-export function formatUserInfo(user: { uid: string; displayName: string; email: string; photoURL: string }) {
+export function formatUserInfo(
+  user: { uid: string; displayName: string; email: string; photoURL: string },
+  preferences: UserProfilePreferences = DEFAULT_USER_PROFILE_PREFERENCES
+) {
+  const normalized = normalizeUserProfilePreferences(preferences);
   return {
     isAuthenticated: true,
     userId: user.uid,
-    displayName: user.displayName || '',
+    displayName: normalized.displayName || user.displayName || '',
     email: user.email || '',
-    photoURL: user.photoURL || '',
+    photoURL: normalized.avatarDataUrl || user.photoURL || '',
+    authDisplayName: user.displayName || '',
+    authPhotoURL: user.photoURL || '',
+    billingCurrency: normalized.billingCurrency,
   };
+}
+
+export async function persistUserProfilePreferencesToStorage(
+  userId: string,
+  preferences: UserProfilePreferences
+): Promise<void> {
+  await setStorageValue({
+    [PROFILE_PREFERENCES_STORAGE_KEY]: {
+      userId,
+      preferences: normalizeUserProfilePreferences(preferences),
+    },
+  });
+}
+
+export async function getStoredUserProfilePreferences(
+  userId: string
+): Promise<UserProfilePreferences | null> {
+  const result = await getStorageValue<{
+    [PROFILE_PREFERENCES_STORAGE_KEY]?: {
+      userId?: string;
+      preferences?: Partial<UserProfilePreferences>;
+    };
+  }>(PROFILE_PREFERENCES_STORAGE_KEY);
+  const stored = result[PROFILE_PREFERENCES_STORAGE_KEY];
+  return stored?.userId === userId
+    ? normalizeUserProfilePreferences(stored.preferences)
+    : null;
 }
 
 export function getStorageValue<T>(keys: string | string[]): Promise<T> {

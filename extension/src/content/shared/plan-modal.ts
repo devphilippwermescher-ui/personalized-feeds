@@ -2,10 +2,17 @@ import { createElement } from 'react';
 import { flushSync } from 'react-dom';
 import { createRoot, type Root } from 'react-dom/client';
 import type { AppPlan, BillingSubscription } from 'shared/plans';
+import type { BillingCurrency } from 'shared/types';
+import { DEFAULT_BILLING_CURRENCY } from 'shared/user-profile-preferences';
 import type { ProBillingInterval } from 'shared/subscription-config';
 import { Modal } from 'shared/ui/modal';
 import { getPlanSnapshot, openCheckout, openCustomerPortal } from '../subscription/services/billing-service';
 import { renderPlanStarIcon } from './plan-star';
+import {
+  closeProfilePreferencesModal,
+  openProfilePreferencesModal,
+} from '../profile-preferences/public';
+import { loadProfilePreferences } from '../profile-preferences/services/profile-preferences-service';
 
 export type PlanModalContext = 'manage' | 'feeds' | 'members';
 
@@ -201,18 +208,42 @@ function injectPlanModalStyles(): void {
     }
     #${MODAL_ID} .mfp-plan-about p {
       margin: 0;
+      color: #d4c8af !important;
     }
     #${MODAL_ID} .mfp-plan-about p + p {
       margin-top: 11px;
     }
     #${MODAL_ID} .mfp-plan-about strong {
-      color: #fffaf0;
+      color: #fffaf0 !important;
     }
     #${MODAL_ID} .mfp-plan-billing {
       display: grid;
       grid-template-columns: 1fr 1fr;
       gap: 10px;
       margin: 0 22px 18px;
+    }
+    #${MODAL_ID} .mfp-plan-currency-note {
+      margin: -9px 22px 18px;
+      color: #9f9278;
+      text-align: center;
+      font-size: 11px;
+      line-height: 1.45;
+    }
+    #${MODAL_ID} .mfp-plan-currency-link {
+      padding: 0;
+      border: 0;
+      color: #c7bda7;
+      background: transparent;
+      font: inherit;
+      font-weight: 700;
+      text-decoration: underline;
+      text-underline-offset: 2px;
+      cursor: pointer;
+    }
+    #${MODAL_ID} .mfp-plan-currency-link:hover,
+    #${MODAL_ID} .mfp-plan-currency-link:focus-visible {
+      color: #fff8e5;
+      outline: none;
     }
     #${MODAL_ID} .mfp-plan-billing-option {
       position: relative;
@@ -407,9 +438,24 @@ async function waitForProActivation(overlay: HTMLElement, context: PlanModalCont
   }
 }
 
+function applyBillingCurrency(overlay: HTMLElement, currency: BillingCurrency): void {
+  const symbol = currency === 'EUR' ? '€' : '$';
+  const values: Record<string, string> = {
+    monthly: `${symbol}19`,
+    annualMonthly: `${symbol}13`,
+    annualTotal: `${symbol}156 billed yearly`,
+  };
+
+  Object.entries(values).forEach(([key, value]) => {
+    const element = overlay.querySelector<HTMLElement>(`[data-plan-price="${key}"]`);
+    if (element) element.textContent = value;
+  });
+}
+
 export function openPlanModal(options: { plan: AppPlan; context: PlanModalContext }): void {
   injectPlanModalStyles();
   closePlanModal();
+  closeProfilePreferencesModal();
 
   const copy =
     options.plan === 'pro'
@@ -419,22 +465,27 @@ export function openPlanModal(options: { plan: AppPlan; context: PlanModalContex
         }
       : getContextCopy(options.context);
   let selectedBillingInterval: ProBillingInterval = 'annual';
+  let selectedBillingCurrency: BillingCurrency = DEFAULT_BILLING_CURRENCY;
   const billingSelector =
     options.plan === 'free'
       ? `
       <div class="mfp-plan-billing" role="group" aria-label="Choose billing period">
         <button class="mfp-plan-billing-option" type="button" data-billing-interval="monthly" aria-pressed="false">
           <span class="mfp-plan-billing-name">Monthly</span>
-          <span class="mfp-plan-billing-price"><strong>$19</strong><span>/ month</span></span>
+          <span class="mfp-plan-billing-price"><strong data-plan-price="monthly">€19</strong><span>/ month</span></span>
           <span class="mfp-plan-billing-detail">Billed monthly</span>
         </button>
         <button class="mfp-plan-billing-option is-selected" type="button" data-billing-interval="annual" aria-pressed="true">
           <span class="mfp-plan-billing-save">Save 32%</span>
           <span class="mfp-plan-billing-name">Annual</span>
-          <span class="mfp-plan-billing-price"><strong>$13</strong><span>/ month</span></span>
-          <span class="mfp-plan-billing-detail">$156 billed yearly</span>
+          <span class="mfp-plan-billing-price"><strong data-plan-price="annualMonthly">€13</strong><span>/ month</span></span>
+          <span class="mfp-plan-billing-detail" data-plan-price="annualTotal">€156 billed yearly</span>
         </button>
       </div>
+      <p class="mfp-plan-currency-note">
+        Prices are shown in your preferred currency. Change it in
+        <button class="mfp-plan-currency-link" type="button">Profile &amp; billing</button>.
+      </p>
     `
       : '';
   const bodyHtml = `
@@ -525,6 +576,10 @@ export function openPlanModal(options: { plan: AppPlan; context: PlanModalContex
     if (event.key === 'Escape') close();
   });
   overlay.querySelector('.mfp-plan-close')?.addEventListener('click', close);
+  overlay.querySelector('.mfp-plan-currency-link')?.addEventListener('click', () => {
+    closePlanModal();
+    void openProfilePreferencesModal().catch(() => openPlanModal(options));
+  });
   const cta = overlay.querySelector<HTMLButtonElement>('.mfp-plan-cta');
   overlay.querySelectorAll<HTMLButtonElement>('[data-billing-interval]').forEach((button) => {
     button.addEventListener('click', () => {
@@ -571,6 +626,18 @@ export function openPlanModal(options: { plan: AppPlan; context: PlanModalContex
         }
       });
   });
+
+  if (options.plan === 'free') {
+    void loadProfilePreferences()
+      .then(({ preferences }) => {
+        if (!overlay.isConnected) return;
+        selectedBillingCurrency = preferences.billingCurrency;
+        applyBillingCurrency(overlay, selectedBillingCurrency);
+      })
+      .catch(() => {
+        selectedBillingCurrency = DEFAULT_BILLING_CURRENCY;
+      });
+  }
 
   if (options.plan === 'pro') void hydrateSubscriptionSummary(overlay);
   overlay.querySelector<HTMLElement>('.mfp-plan-close')?.focus();

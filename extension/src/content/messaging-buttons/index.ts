@@ -8,9 +8,12 @@ const STYLE_ID = 'lfa-messaging-buttons-styles';
 const WRAPPER_CLASS = 'lfa-messaging-feed-btn-wrapper';
 const BOUND_ATTRIBUTE = 'data-lfa-messaging-feed-bound';
 const CONTROL_EVENTS = ['pointerdown', 'mousedown', 'mouseup', 'touchstart', 'click'] as const;
+const ROUTE_WATCH_INTERVAL_MS = 500;
 
 let observer: MutationObserver | null = null;
 let scanTimer: number | null = null;
+let routeWatchTimer: number | null = null;
+let lastObservedUrl = '';
 
 function ensureStyles(): void {
   if (document.getElementById(STYLE_ID)) return;
@@ -56,8 +59,16 @@ function buildButton(onClick: () => void): HTMLSpanElement {
   return wrapper;
 }
 
+function removeInjectedMessagingButtons(): void {
+  document.querySelectorAll(`.${WRAPPER_CLASS}`).forEach((element) => element.remove());
+  document.querySelectorAll(`[${BOUND_ATTRIBUTE}]`).forEach((element) => element.removeAttribute(BOUND_ATTRIBUTE));
+}
+
 function injectMessagingButtons(): void {
-  if (!isLinkedInMessagingRoute(window.location.pathname)) return;
+  if (!isLinkedInMessagingRoute(window.location.pathname)) {
+    removeInjectedMessagingButtons();
+    return;
+  }
 
   findMessagingProfileTargets(document).forEach(({ degreeElement, profile }) => {
     const profileKey = profile.linkedinUsername.toLowerCase();
@@ -87,17 +98,32 @@ function scheduleScan(): void {
   }, 75);
 }
 
-export function initMessagingButtons(): void {
-  if (!isLinkedInMessagingRoute(window.location.pathname)) {
-    destroyMessagingButtons();
-    return;
-  }
+function startRouteWatcher(): void {
+  if (routeWatchTimer !== null) return;
 
+  lastObservedUrl = window.location.href;
+  routeWatchTimer = window.setInterval(() => {
+    const currentUrl = window.location.href;
+    const routeChanged = currentUrl !== lastObservedUrl;
+    lastObservedUrl = currentUrl;
+
+    // LinkedIn can finish rendering a conversation without adding another
+    // child node visible to our observer. Keep the Messaging integration
+    // self-healing while that surface is open, as well as after URL changes.
+    if (routeChanged || isLinkedInMessagingRoute(window.location.pathname)) {
+      scheduleScan();
+    }
+  }, ROUTE_WATCH_INTERVAL_MS);
+}
+
+export function initMessagingButtons(): void {
   ensureStyles();
   injectMessagingButtons();
-  observer?.disconnect();
-  observer = new MutationObserver(scheduleScan);
-  observer.observe(document.body, { childList: true, subtree: true });
+  startRouteWatcher();
+  if (!observer) {
+    observer = new MutationObserver(scheduleScan);
+    observer.observe(document.documentElement, { childList: true, subtree: true });
+  }
 }
 
 export function destroyMessagingButtons(): void {
@@ -107,6 +133,10 @@ export function destroyMessagingButtons(): void {
     window.clearTimeout(scanTimer);
     scanTimer = null;
   }
-  document.querySelectorAll(`.${WRAPPER_CLASS}`).forEach((element) => element.remove());
-  document.querySelectorAll(`[${BOUND_ATTRIBUTE}]`).forEach((element) => element.removeAttribute(BOUND_ATTRIBUTE));
+  if (routeWatchTimer !== null) {
+    window.clearInterval(routeWatchTimer);
+    routeWatchTimer = null;
+  }
+  lastObservedUrl = '';
+  removeInjectedMessagingButtons();
 }

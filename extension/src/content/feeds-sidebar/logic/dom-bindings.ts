@@ -57,7 +57,11 @@ export function bindSidebarDom(container: HTMLElement, deps: SidebarDomBindingsD
   });
   container.querySelector('#lfa-footer-get-pro-btn')?.addEventListener('click', deps.openManagePlan);
   container.querySelector('#lfa-add-feed-btn')?.addEventListener('click', deps.showCreateFeedForm);
-  container.querySelector('#lfa-profile-settings-btn')?.addEventListener('click', deps.openProfileSettings);
+  container.querySelector('#lfa-profile-settings-btn')?.addEventListener('click', () => {
+    container.querySelector('#lfa-account-menu')?.classList.remove('lfa-account-menu--open');
+    deps.setAccountMenuOpen(false);
+    deps.openProfileSettings();
+  });
   container.querySelector('#lfa-manage-account-btn')?.addEventListener('click', () => {
     container.querySelector('#lfa-settings-menu')?.classList.remove('lfa-settings-menu--open');
     deps.setSettingsMenuOpen(false);
@@ -101,6 +105,8 @@ function bindSettingsMenu(container: HTMLElement, deps: SidebarDomBindingsDeps):
 
   settingsBtn?.addEventListener('click', (event) => {
     event.stopPropagation();
+    container.querySelector('#lfa-account-menu')?.classList.remove('lfa-account-menu--open');
+    deps.setAccountMenuOpen(false);
     const isOpen = settingsMenu?.classList.toggle('lfa-settings-menu--open') ?? false;
     deps.setSettingsMenuOpen(isOpen);
   });
@@ -140,6 +146,8 @@ function bindAccountMenu(container: HTMLElement, deps: SidebarDomBindingsDeps): 
 
   accountBtn?.addEventListener('click', (event) => {
     event.stopPropagation();
+    container.querySelector('#lfa-settings-menu')?.classList.remove('lfa-settings-menu--open');
+    deps.setSettingsMenuOpen(false);
     const isOpen = accountMenu?.classList.toggle('lfa-account-menu--open') ?? false;
     deps.setAccountMenuOpen(isOpen);
   });

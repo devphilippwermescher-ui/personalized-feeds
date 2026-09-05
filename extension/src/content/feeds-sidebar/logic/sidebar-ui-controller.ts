@@ -26,6 +26,10 @@ import { onFeatureSettingsChange } from '../../feature-settings';
 import type { FeedActionDeps } from './feed-actions';
 import type { MemberActionDeps } from './member-actions';
 import { openPlanModal } from '../../shared/plan-modal';
+import {
+  openProfilePreferencesModal,
+  PROFILE_PREFERENCES_UPDATED_EVENT,
+} from '../../profile-preferences/public';
 
 interface SidebarUiControllerDeps {
   dashboardUrl: string;
@@ -205,8 +209,14 @@ export function createSidebarUiController(deps: SidebarUiControllerDeps): {
             });
           }
         },
-        openProfileSettings: () =>
-          window.open(`${deps.dashboardUrl}/settings/profile`, '_blank'),
+        openProfileSettings: () => {
+          void openProfilePreferencesModal().catch((error) => {
+            deps.showToast(
+              error instanceof Error ? error.message : 'Profile preferences could not be opened.',
+              'error'
+            );
+          });
+        },
         openSubscription: () =>
           window.open(`${deps.dashboardUrl}/subscription`, '_blank'),
         openManagePlan: () =>
@@ -320,6 +330,13 @@ export function createSidebarUiController(deps: SidebarUiControllerDeps): {
       if (sidebarOpen) {
         renderSidebarContent();
       }
+    });
+
+    document.addEventListener(PROFILE_PREFERENCES_UPDATED_EVENT, (event) => {
+      const updatedUser = (event as CustomEvent<{ user?: UserInfo }>).detail?.user;
+      if (!updatedUser || updatedUser.userId !== deps.getCurrentUser()?.userId) return;
+      deps.setCurrentUser(updatedUser);
+      if (sidebarOpen) renderSidebarContent();
     });
 
     const overlay = document.createElement('div');

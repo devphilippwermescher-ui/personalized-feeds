@@ -54,4 +54,21 @@ describe('LinkedIn messaging profile cards', () => {
       connectionDegree: '2nd',
     });
   });
+
+  it('finds the profile link in a deeply nested SPA conversation card', () => {
+    document.body.innerHTML = `
+      <section class="msg-entity-lockup__card">
+        <a href="/in/grace-hopper/">Grace Hopper</a>
+        <div><div><div><div><div><div><div><div>
+          <span class="connection-degree">1st</span>
+        </div></div></div></div></div></div></div></div>
+      </section>
+    `;
+
+    expect(findMessagingProfileTargets(document)[0]?.profile).toMatchObject({
+      linkedinUsername: 'grace-hopper',
+      displayName: 'Grace Hopper',
+      connectionDegree: '1st',
+    });
+  });
 });

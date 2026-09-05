@@ -156,6 +156,10 @@ export function settingsDoc(userId: string) {
   return doc(getFirebaseDb(), 'users', userId, 'settings', 'preferences');
 }
 
+export function profilePreferencesDoc(userId: string) {
+  return doc(getFirebaseDb(), 'users', userId, 'settings', 'profile');
+}
+
 export function subscriptionDoc(userId: string) {
   return doc(getFirebaseDb(), 'users', userId, 'billing', 'subscription');
 }

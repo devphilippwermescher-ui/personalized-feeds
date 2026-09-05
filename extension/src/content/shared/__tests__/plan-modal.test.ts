@@ -44,8 +44,10 @@ describe('plan modal', () => {
     expect(annual?.classList.contains('is-selected')).toBe(true);
     expect(annual?.getAttribute('aria-pressed')).toBe('true');
     expect(monthly?.getAttribute('aria-pressed')).toBe('false');
-    expect(annual?.textContent).toContain('$156 billed yearly');
+    expect(monthly?.textContent).toContain('€19');
+    expect(annual?.textContent).toContain('€156 billed yearly');
     expect(annual?.textContent).toContain('Save 32%');
+    expect(document.querySelector('.mfp-plan-currency-note')?.textContent).toContain('Profile & billing');
     expect(document.querySelector('.mfp-plan-cta')?.textContent).toBe('Upgrade to Pro');
   });
 
@@ -66,6 +68,31 @@ describe('plan modal', () => {
       expect(document.querySelector('.mfp-plan-note')?.textContent).toContain('Checkout opened');
     });
     expect(sendMessage).toHaveBeenCalledWith({ type: 'BILLING_OPEN_CHECKOUT', interval: 'monthly' });
+  });
+
+  it('restores a saved USD preference instead of the EUR default', async () => {
+    sendMessage.mockImplementation(async (message: { type?: string }) => {
+      if (message.type === 'PROFILE_PREFERENCES_GET') {
+        return {
+          success: true,
+          preferences: { displayName: '', avatarDataUrl: '', billingCurrency: 'USD' },
+          user: {
+            userId: 'user-1',
+            displayName: 'Test User',
+            email: 'test@example.com',
+            photoURL: '',
+          },
+        };
+      }
+      return { success: true };
+    });
+
+    openPlanModal({ plan: 'free', context: 'manage' });
+
+    await vi.waitFor(() => {
+      expect(document.querySelector('[data-plan-price="monthly"]')?.textContent).toBe('$19');
+      expect(document.querySelector('[data-plan-price="annualTotal"]')?.textContent).toBe('$156 billed yearly');
+    });
   });
 
   it('closes from Escape without leaving the overlay behind', () => {
