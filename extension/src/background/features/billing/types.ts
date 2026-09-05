@@ -1,8 +1,9 @@
 import type { BillingSubscription } from 'shared/plans';
 import type { ProBillingInterval } from 'shared/subscription-config';
+import type { BillingCurrency } from 'shared/types';
 
 export type BillingMessage =
-  | { type: 'BILLING_OPEN_CHECKOUT'; interval: ProBillingInterval }
+  | { type: 'BILLING_OPEN_CHECKOUT'; interval: ProBillingInterval; currency: BillingCurrency }
   | { type: 'BILLING_OPEN_PORTAL' };
 
 export interface BillingActionResponse {

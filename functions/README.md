@@ -19,14 +19,21 @@ cp functions/.env.example functions/.env.local
 cp functions/.secret.local.example functions/.secret.local
 ```
 
-Fill `functions/.env.local` with the Test mode Store ID and the two Test mode Variant IDs:
+Fill `functions/.env.local` with the USD Test mode Store ID and its two Variant IDs. Leave the EUR values empty until that store is ready:
 
 ```dotenv
-LEMON_SQUEEZY_STORE_ID=your_test_store_id
-LEMON_SQUEEZY_MONTHLY_VARIANT_ID=2069629
-LEMON_SQUEEZY_ANNUAL_VARIANT_ID=2069645
+LEMON_SQUEEZY_USD_STORE_ID=your_usd_test_store_id
+LEMON_SQUEEZY_USD_MONTHLY_VARIANT_ID=your_usd_monthly_test_variant_id
+LEMON_SQUEEZY_USD_ANNUAL_VARIANT_ID=your_usd_annual_test_variant_id
+
+LEMON_SQUEEZY_EUR_STORE_ID=
+LEMON_SQUEEZY_EUR_MONTHLY_VARIANT_ID=
+LEMON_SQUEEZY_EUR_ANNUAL_VARIANT_ID=
+
 LEMON_SQUEEZY_TEST_MODE=true
 ```
+
+The extension sends the saved billing currency to the callable Function. USD checkout works with the required configuration above. If EUR is selected before all EUR identifiers exist, checkout is blocked with a clear message instead of silently opening a USD checkout.
 
 Fill `functions/.secret.local`:
 
@@ -70,7 +77,7 @@ npm run simulate:billing-webhook -- --uid=YOUR_LOCAL_UID --interval=annual
 
 ### Full Lemon Squeezy Test mode demo
 
-For the real checkout, `LEMON_SQUEEZY_API_KEY` must be a Test mode API key. Clicking the modal's checkout button calls the local callable Function, which creates a checkout containing the Firebase UID in Lemon Squeezy `custom_data`.
+For the real checkout, `LEMON_SQUEEZY_API_KEY` must be a Test mode API key. Lemon Squeezy API keys are user-scoped, so one Test mode key can access both stores owned by that account. Clicking the modal's checkout button calls the local callable Function, which selects the allowlisted Store/Variant for the requested currency and includes the Firebase UID, interval and currency in Lemon Squeezy `custom_data`.
 
 Lemon Squeezy needs a public HTTPS webhook URL. Run a temporary tunnel to local port `5001` with a tool such as Cloudflare Tunnel or ngrok. If the generated tunnel origin is `https://example.trycloudflare.com`, configure this Test mode webhook URL:
 
@@ -96,17 +103,19 @@ Then:
 4. Verify the webhook response in Lemon Squeezy and the subscription document in local Firestore.
 5. Return to LinkedIn. The modal polls Firestore and switches to the Pro view.
 
+When the EUR store is ready, point its webhook to the same environment URL and configure it with the same environment-specific signing secret. The Function validates every incoming Store and Variant against the configured allowlist.
+
 The copied public checkout links are useful for previewing Lemon Squeezy, but they do not replace the callable Function because they do not reliably attach the authenticated Firebase UID.
 
-## Shared development deployment
+## Shared staging deployment
 
-Deploying Functions requires the development Firebase project to use the Blaze plan. The project owner should attach the team's billing account; a developer does not need to use a personal card.
+Deploying Functions requires the staging Firebase project to use the Blaze plan. The project owner should attach the team's billing account; a developer does not need to use a personal card.
 
-Create `functions/.env.myfeedpilot-dev` with the same non-secret Test mode identifiers, then configure secrets interactively:
+Create `functions/.env.myfeedpilot-staging` with the same non-secret Test mode identifiers, then configure secrets interactively:
 
 ```bash
-firebase functions:secrets:set LEMON_SQUEEZY_API_KEY --project development
-firebase functions:secrets:set LEMON_SQUEEZY_WEBHOOK_SECRET --project development
+firebase functions:secrets:set LEMON_SQUEEZY_API_KEY --project staging
+firebase functions:secrets:set LEMON_SQUEEZY_WEBHOOK_SECRET --project staging
 ```
 
 Build and deploy:
@@ -115,15 +124,15 @@ Build and deploy:
 npm run type-check
 npm run test:functions
 npm run build:functions
-firebase deploy --only functions --project development
+firebase deploy --only functions --project staging
 ```
 
 After deployment, configure the Test mode webhook URL:
 
 ```text
-https://us-central1-myfeedpilot-dev.cloudfunctions.net/lemonSqueezyWebhook
+https://us-central1-myfeedpilot-staging.cloudfunctions.net/lemonSqueezyWebhook
 ```
 
-The normal `npm run dev:extension` build targets the development Firebase project without using localhost. Production builds target production unless `APP_ENV` is explicitly supplied.
+Build the extension against deployed staging services with `APP_ENV=staging npm run build:extension`. Production builds target production unless `APP_ENV` is explicitly supplied.
 
-Production must use separate live Store/Variant IDs, API keys and webhook secrets. Test mode products and credentials must never be reused in production.
+Production must use live Store/Variant IDs, a Live mode API key and a production-only webhook secret. Test mode products and credentials must never be reused in production. Real `.env.*` files and `.secret.local` are ignored by Git; only templates and documentation are committed.

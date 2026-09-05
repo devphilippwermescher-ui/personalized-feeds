@@ -19,6 +19,8 @@ import {
 } from './dashboard-analytics/dashboard-analytics-sync-runtime';
 import { migrateToIndependentLinkedInSync } from './linkedin-sync-state-migration';
 import { registerBillingMessageHandler } from './features/billing/public';
+import { reinjectLinkedInContentRuntimeIntoOpenTabs } from './runtime/reinject-linkedin-content-runtime';
+import { registerLinkedInContentRuntimeRestoration } from './runtime/register-linkedin-content-runtime';
 
 function queueDashboardAnalyticsWhenEnabled(trigger: Parameters<typeof queueDashboardAnalyticsSync>[0]): void {
   if (DASHBOARD_ANALYTICS_SYNC_ENABLED) {
@@ -30,8 +32,11 @@ if (DASHBOARD_ANALYTICS_SYNC_ENABLED) {
   initNativeInviteNetworkObserver();
 }
 
+registerLinkedInContentRuntimeRestoration();
+
 chrome.runtime.onInstalled.addListener((details) => {
   const trigger: ProfileViewersSyncTrigger = details.reason === 'install' ? 'install' : 'update';
+  void reinjectLinkedInContentRuntimeIntoOpenTabs();
   void appendProfileViewersWakeEvent({
     event: 'runtime_installed',
     trigger,
@@ -102,6 +107,10 @@ void appendProfileViewersWakeEvent({
   event: 'worker_loaded',
   trigger: 'service_worker',
 });
+// A manual Reload from chrome://extensions starts a fresh service worker but
+// does not reliably deliver onInstalled. Restore content UI in already-open
+// LinkedIn tabs from the worker lifecycle itself as well.
+void reinjectLinkedInContentRuntimeIntoOpenTabs();
 // Acceptance Rate is now reconciled by the shared Profile Analytics alarm.
 // Remove the legacy standalone invitation-status alarm after upgrading.
 void chrome.alarms?.clear(CONNECTION_INVITES_STATUS_ALARM_NAME);

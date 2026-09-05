@@ -2,6 +2,7 @@ import { connectFunctionsEmulator, getFunctions, httpsCallable, type Functions }
 import { FIREBASE_EMULATOR_HOST, FIREBASE_EMULATOR_PORTS, shouldUseFirebaseEmulators } from 'shared/app-environment';
 import { getFirebaseApp } from 'shared/firebase-config';
 import { BILLING_FUNCTION_NAMES, BILLING_FUNCTION_REGION, type ProBillingInterval } from 'shared/subscription-config';
+import type { BillingCurrency } from 'shared/types';
 import { waitForAuthReady } from '../../../../services/auth';
 
 interface BillingUrlResponse {
@@ -32,13 +33,16 @@ async function requireAuthenticatedUser(): Promise<void> {
   if (!user) throw new Error('Sign in to manage your plan.');
 }
 
-export async function createBillingCheckoutUrl(interval: ProBillingInterval): Promise<string> {
+export async function createBillingCheckoutUrl(
+  interval: ProBillingInterval,
+  currency: BillingCurrency
+): Promise<string> {
   await requireAuthenticatedUser();
-  const createCheckout = httpsCallable<{ interval: ProBillingInterval }, BillingUrlResponse>(
+  const createCheckout = httpsCallable<{ interval: ProBillingInterval; currency: BillingCurrency }, BillingUrlResponse>(
     getBillingFunctions(),
     BILLING_FUNCTION_NAMES.createCheckout
   );
-  const result = await createCheckout({ interval });
+  const result = await createCheckout({ interval, currency });
   return assertHttpsUrl(result.data.url);
 }
 

@@ -1,4 +1,5 @@
 export type BillingInterval = 'monthly' | 'annual';
+export type BillingCurrency = 'EUR' | 'USD';
 
 export interface LemonSqueezySubscriptionAttributes {
   store_id: number;
@@ -24,8 +25,16 @@ export interface LemonSqueezySubscriptionWebhook {
   };
 }
 
-export interface BillingConfiguration {
+export interface BillingStoreConfiguration {
+  currency: BillingCurrency;
   storeId: string;
   variants: Record<BillingInterval, string>;
+}
+
+export interface BillingConfiguration {
+  stores: {
+    USD: BillingStoreConfiguration;
+    EUR?: BillingStoreConfiguration;
+  };
   testMode: boolean;
 }

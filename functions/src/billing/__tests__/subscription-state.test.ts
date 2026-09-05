@@ -3,8 +3,18 @@ import { parseSubscriptionWebhook } from '../subscription-state.js';
 import type { BillingConfiguration, LemonSqueezySubscriptionWebhook } from '../types.js';
 
 const configuration: BillingConfiguration = {
-  storeId: '42',
-  variants: { monthly: '2069629', annual: '2069645' },
+  stores: {
+    USD: {
+      currency: 'USD',
+      storeId: '42',
+      variants: { monthly: '2069629', annual: '2069645' },
+    },
+    EUR: {
+      currency: 'EUR',
+      storeId: '84',
+      variants: { monthly: '3069629', annual: '3069645' },
+    },
+  },
   testMode: true,
 };
 
@@ -37,6 +47,7 @@ describe('Lemon Squeezy subscription mapping', () => {
     expect(result.userId).toBe('firebase-user');
     expect(result.subscription).toMatchObject({
       plan: 'pro',
+      billingCurrency: 'USD',
       billingInterval: 'annual',
       variantId: '2069645',
       status: 'active',
@@ -44,6 +55,16 @@ describe('Lemon Squeezy subscription mapping', () => {
       testMode: true,
     });
     expect(result.subscription).not.toHaveProperty('endsAt');
+  });
+
+  it('maps an allowed EUR store and variant to an EUR subscription', () => {
+    const result = parseSubscriptionWebhook(createPayload({ store_id: 84, variant_id: 3069629 }), configuration);
+
+    expect(result.subscription).toMatchObject({
+      billingCurrency: 'EUR',
+      billingInterval: 'monthly',
+      variantId: '3069629',
+    });
   });
 
   it('keeps the paid end date for a cancelled subscription', () => {
@@ -65,6 +86,12 @@ describe('Lemon Squeezy subscription mapping', () => {
   it('rejects a variant that is not part of the Pro product', () => {
     expect(() => parseSubscriptionWebhook(createPayload({ variant_id: 999 }), configuration)).toThrow(
       'not an allowed Pro variant'
+    );
+  });
+
+  it('rejects a store that is not configured for billing', () => {
+    expect(() => parseSubscriptionWebhook(createPayload({ store_id: 999 }), configuration)).toThrow(
+      'store does not match'
     );
   });
 

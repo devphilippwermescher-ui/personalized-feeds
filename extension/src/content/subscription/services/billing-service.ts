@@ -1,5 +1,6 @@
 import type { BillingSubscription } from 'shared/plans';
 import type { ProBillingInterval } from 'shared/subscription-config';
+import type { BillingCurrency } from 'shared/types';
 
 interface BillingActionResponse {
   success?: boolean;
@@ -23,10 +24,11 @@ function assertBillingAction(response: BillingActionResponse): void {
   }
 }
 
-export async function openCheckout(interval: ProBillingInterval): Promise<void> {
+export async function openCheckout(interval: ProBillingInterval, currency: BillingCurrency): Promise<void> {
   const response = await sendMessage<BillingActionResponse>({
     type: 'BILLING_OPEN_CHECKOUT',
     interval,
+    currency,
   });
   assertBillingAction(response);
 }

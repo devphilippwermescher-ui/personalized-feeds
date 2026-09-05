@@ -7,13 +7,16 @@ import { MESSAGING_BUTTONS_CSS } from './styles';
 const STYLE_ID = 'lfa-messaging-buttons-styles';
 const WRAPPER_CLASS = 'lfa-messaging-feed-btn-wrapper';
 const BOUND_ATTRIBUTE = 'data-lfa-messaging-feed-bound';
+const PROFILE_KEY_ATTRIBUTE = 'data-lfa-messaging-profile-key';
 const CONTROL_EVENTS = ['pointerdown', 'mousedown', 'mouseup', 'touchstart', 'click'] as const;
-const ROUTE_WATCH_INTERVAL_MS = 500;
+const SCAN_DELAY_MS = 25;
+const ROUTE_WATCH_INTERVAL_MS = 400;
 
 let observer: MutationObserver | null = null;
 let scanTimer: number | null = null;
 let routeWatchTimer: number | null = null;
 let lastObservedUrl = '';
+let lastScanDiagnostic = '';
 
 function ensureStyles(): void {
   if (document.getElementById(STYLE_ID)) return;
@@ -64,28 +67,87 @@ function removeInjectedMessagingButtons(): void {
   document.querySelectorAll(`[${BOUND_ATTRIBUTE}]`).forEach((element) => element.removeAttribute(BOUND_ATTRIBUTE));
 }
 
+function getAttachedWrappers(degreeElement: HTMLElement): HTMLElement[] {
+  const wrappers = Array.from(degreeElement.children).filter((element): element is HTMLElement =>
+    element.classList.contains(WRAPPER_CLASS)
+  );
+  const sibling = degreeElement.nextElementSibling;
+  if (sibling instanceof HTMLElement && sibling.classList.contains(WRAPPER_CLASS)) {
+    wrappers.push(sibling);
+  }
+  return wrappers;
+}
+
+function removeOrphanedMessagingButtons(): void {
+  document.querySelectorAll<HTMLElement>(`.${WRAPPER_CLASS}`).forEach((wrapper) => {
+    const profileKey = wrapper.getAttribute(PROFILE_KEY_ATTRIBUTE);
+    const siblingTarget = wrapper.previousElementSibling;
+    const parentTarget = wrapper.parentElement;
+    const hasSiblingTarget = siblingTarget?.getAttribute(BOUND_ATTRIBUTE) === profileKey;
+    const hasParentTarget = parentTarget?.getAttribute(BOUND_ATTRIBUTE) === profileKey;
+
+    if (!profileKey || (!hasSiblingTarget && !hasParentTarget)) {
+      wrapper.remove();
+    }
+  });
+}
+
+function removeDuplicateProfileBindings(
+  profileKey: string,
+  degreeElement: HTMLElement,
+  attachedWrappers: HTMLElement[]
+): void {
+  document.querySelectorAll<HTMLElement>(`.${WRAPPER_CLASS}`).forEach((wrapper) => {
+    if (wrapper.getAttribute(PROFILE_KEY_ATTRIBUTE) === profileKey && !attachedWrappers.includes(wrapper)) {
+      wrapper.remove();
+    }
+  });
+
+  document.querySelectorAll<HTMLElement>(`[${BOUND_ATTRIBUTE}]`).forEach((element) => {
+    if (element !== degreeElement && element.getAttribute(BOUND_ATTRIBUTE) === profileKey) {
+      element.removeAttribute(BOUND_ATTRIBUTE);
+    }
+  });
+}
+
 function injectMessagingButtons(): void {
   if (!isLinkedInMessagingRoute(window.location.pathname)) {
     removeInjectedMessagingButtons();
     return;
   }
 
-  findMessagingProfileTargets(document).forEach(({ degreeElement, profile }) => {
+  removeOrphanedMessagingButtons();
+
+  const targets = findMessagingProfileTargets(document);
+  const diagnostic = JSON.stringify({
+    pathname: window.location.pathname,
+    profileCards: document.querySelectorAll('.msg-s-profile-card').length,
+    targets: targets.length,
+  });
+  if (diagnostic !== lastScanDiagnostic) {
+    lastScanDiagnostic = diagnostic;
+    console.info('[messaging-buttons] Scan', JSON.parse(diagnostic));
+  }
+
+  targets.forEach(({ degreeElement, insertPosition, profile }) => {
     const profileKey = profile.linkedinUsername.toLowerCase();
     const existingProfileKey = degreeElement.getAttribute(BOUND_ATTRIBUTE);
-    const existingWrapper = degreeElement.nextElementSibling?.classList.contains(WRAPPER_CLASS)
-      ? degreeElement.nextElementSibling
-      : null;
+    const attachedWrappers = getAttachedWrappers(degreeElement);
+    removeDuplicateProfileBindings(profileKey, degreeElement, attachedWrappers);
+    const existingWrapper = attachedWrappers.find(
+      (wrapper) => wrapper.getAttribute(PROFILE_KEY_ATTRIBUTE) === profileKey
+    );
 
     if (existingProfileKey === profileKey && existingWrapper) return;
-    existingWrapper?.remove();
+    attachedWrappers.forEach((wrapper) => wrapper.remove());
 
     const wrapper = buildButton(() => {
       void openProfileFeedPicker(profile).catch((error) => {
         showToast(error instanceof Error ? error.message : CONTENT_COPY.postButtons.failedToOpenFeeds, 'error');
       });
     });
-    degreeElement.insertAdjacentElement('afterend', wrapper);
+    wrapper.setAttribute(PROFILE_KEY_ATTRIBUTE, profileKey);
+    degreeElement.insertAdjacentElement(insertPosition, wrapper);
     degreeElement.setAttribute(BOUND_ATTRIBUTE, profileKey);
   });
 }
@@ -95,7 +157,7 @@ function scheduleScan(): void {
   scanTimer = window.setTimeout(() => {
     scanTimer = null;
     injectMessagingButtons();
-  }, 75);
+  }, SCAN_DELAY_MS);
 }
 
 function startRouteWatcher(): void {
@@ -122,7 +184,13 @@ export function initMessagingButtons(): void {
   startRouteWatcher();
   if (!observer) {
     observer = new MutationObserver(scheduleScan);
-    observer.observe(document.documentElement, { childList: true, subtree: true });
+    observer.observe(document.documentElement, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+      attributes: true,
+      attributeFilter: ['href', 'aria-label', 'title', 'data-view-name', 'data-test-id'],
+    });
   }
 }
 
@@ -138,5 +206,6 @@ export function destroyMessagingButtons(): void {
     routeWatchTimer = null;
   }
   lastObservedUrl = '';
+  lastScanDiagnostic = '';
   removeInjectedMessagingButtons();
 }

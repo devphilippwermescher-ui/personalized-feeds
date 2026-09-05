@@ -8,10 +8,7 @@ import type { ProBillingInterval } from 'shared/subscription-config';
 import { Modal } from 'shared/ui/modal';
 import { getPlanSnapshot, openCheckout, openCustomerPortal } from '../subscription/services/billing-service';
 import { renderPlanStarIcon } from './plan-star';
-import {
-  closeProfilePreferencesModal,
-  openProfilePreferencesModal,
-} from '../profile-preferences/public';
+import { closeProfilePreferencesModal, openProfilePreferencesModal } from '../profile-preferences/public';
 import { loadProfilePreferences } from '../profile-preferences/services/profile-preferences-service';
 
 export type PlanModalContext = 'manage' | 'feeds' | 'members';
@@ -601,7 +598,9 @@ export function openPlanModal(options: { plan: AppPlan; context: PlanModalContex
     cta.disabled = true;
     cta.textContent = options.plan === 'pro' ? 'Opening billing…' : 'Opening secure checkout…';
 
-    void (options.plan === 'pro' ? openCustomerPortal() : openCheckout(selectedBillingInterval))
+    void (
+      options.plan === 'pro' ? openCustomerPortal() : openCheckout(selectedBillingInterval, selectedBillingCurrency)
+    )
       .then(() => {
         if (!overlay.isConnected) return;
         if (note) {

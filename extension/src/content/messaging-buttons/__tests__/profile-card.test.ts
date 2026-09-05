@@ -28,7 +28,8 @@ describe('LinkedIn messaging profile cards', () => {
     const targets = findMessagingProfileTargets(document);
 
     expect(targets).toHaveLength(1);
-    expect(targets[0].degreeElement.textContent).toBe('· 1st');
+    expect(targets[0].degreeElement.className).toBe('msg-thread__profile-header');
+    expect(targets[0].insertPosition).toBe('beforeend');
     expect(targets[0].profile).toMatchObject({
       linkedinUsername: 'gabriel-bernes',
       displayName: 'Gabriel P Bernes',
@@ -70,5 +71,91 @@ describe('LinkedIn messaging profile cards', () => {
       displayName: 'Grace Hopper',
       connectionDegree: '1st',
     });
+  });
+
+  it('supports the SPA identity row when the degree is a bare text node', () => {
+    document.body.innerHTML = `
+      <section data-view-name="messaging-profile-card">
+        <a aria-label="View Gabriel P Bernes's profile" href="/in/gabriel-p-bernes/">
+          Gabriel P Bernes
+        </a>
+        <div class="identity-row">
+          <strong>Gabriel P Bernes</strong>
+          <svg aria-label="Verified profile"></svg>
+          · 1st
+        </div>
+        <p>Software Engineer | Mobile</p>
+      </section>
+    `;
+
+    const target = findMessagingProfileTargets(document)[0];
+
+    expect(target?.insertPosition).toBe('beforeend');
+    expect(target?.degreeElement.className).toBe('identity-row');
+    expect(target?.profile).toMatchObject({
+      linkedinUsername: 'gabriel-p-bernes',
+      displayName: 'Gabriel P Bernes',
+      connectionDegree: '1st',
+    });
+  });
+
+  it('recognizes accessible degree labels before visible text is hydrated', () => {
+    document.body.innerHTML = `
+      <section class="msg-thread__profile-card">
+        <a href="/in/ada-lovelace/">Ada Lovelace</a>
+        <span aria-label="1st degree connection"></span>
+      </section>
+    `;
+
+    expect(findMessagingProfileTargets(document)[0]?.profile).toMatchObject({
+      linkedinUsername: 'ada-lovelace',
+      connectionDegree: '1st',
+    });
+  });
+
+  it('selects one visible degree target when LinkedIn also renders an accessibility duplicate', () => {
+    document.body.innerHTML = `
+      <section class="msg-thread__profile-card">
+        <div class="identity-row">
+          <a href="/in/gabriel-p-bernes/">Gabriel P Bernes</a>
+          <span aria-label="1st degree connection"></span>
+          <span class="visible-degree">· 1st</span>
+        </div>
+      </section>
+    `;
+
+    const targets = findMessagingProfileTargets(document);
+
+    expect(targets).toHaveLength(1);
+    expect(targets[0].degreeElement.className).toBe('identity-row');
+    expect(targets[0].insertPosition).toBe('beforeend');
+  });
+
+  it('prefers the visible LinkedIn degree even though LinkedIn marks it aria-hidden', () => {
+    document.body.innerHTML = `
+      <li>
+        <div class="msg-s-profile-card msg-s-profile-card-one-to-one">
+          <div class="artdeco-entity-lockup">
+            <a href="/in/ACoAACRPshYBLCHxtTUH4Cl1mCZPtGURwL_hJv8"><img src="avatar.jpg" /></a>
+            <div class="artdeco-entity-lockup__content">
+              <div class="artdeco-entity-lockup__title display-flex align-items-center">
+                <span><a class="profile-card-one-to-one__profile-link" href="/in/ACoAACRPshYBLCHxtTUH4Cl1mCZPtGURwL_hJv8">Gabriel P Bernes</a></span>
+                <div class="artdeco-entity-lockup__badge">
+                  <span class="a11y-text">1st degree connection</span>
+                  <span class="artdeco-entity-lockup__degree" aria-hidden="true">·&nbsp;1st</span>
+                </div>
+              </div>
+              <div class="artdeco-entity-lockup__subtitle">Software Engineer</div>
+            </div>
+          </div>
+        </div>
+      </li>
+    `;
+
+    const targets = findMessagingProfileTargets(document);
+
+    expect(targets).toHaveLength(1);
+    expect(targets[0].degreeElement.className).toContain('artdeco-entity-lockup__title');
+    expect(targets[0].insertPosition).toBe('beforeend');
   });
 });

@@ -67,7 +67,11 @@ describe('plan modal', () => {
     await vi.waitFor(() => {
       expect(document.querySelector('.mfp-plan-note')?.textContent).toContain('Checkout opened');
     });
-    expect(sendMessage).toHaveBeenCalledWith({ type: 'BILLING_OPEN_CHECKOUT', interval: 'monthly' });
+    expect(sendMessage).toHaveBeenCalledWith({
+      type: 'BILLING_OPEN_CHECKOUT',
+      interval: 'monthly',
+      currency: 'EUR',
+    });
   });
 
   it('restores a saved USD preference instead of the EUR default', async () => {
@@ -92,6 +96,15 @@ describe('plan modal', () => {
     await vi.waitFor(() => {
       expect(document.querySelector('[data-plan-price="monthly"]')?.textContent).toBe('$19');
       expect(document.querySelector('[data-plan-price="annualTotal"]')?.textContent).toBe('$156 billed yearly');
+    });
+
+    document.querySelector<HTMLButtonElement>('.mfp-plan-cta')?.click();
+    await vi.waitFor(() => {
+      expect(sendMessage).toHaveBeenCalledWith({
+        type: 'BILLING_OPEN_CHECKOUT',
+        interval: 'annual',
+        currency: 'USD',
+      });
     });
   });
 

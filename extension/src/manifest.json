@@ -3,7 +3,7 @@
   "name": "myFeedPilot",
   "version": "0.1.5",
   "description": "Manage personalized LinkedIn feeds, profile lists, and sharing",
-  "permissions": ["storage", "tabs", "scripting", "offscreen", "alarms", "cookies", "webRequest"],
+  "permissions": ["storage", "tabs", "scripting", "offscreen", "alarms", "cookies", "webRequest", "webNavigation"],
   "host_permissions": [
     "https://www.linkedin.com/*",
     "https://us-central1-myfeedpilot-dev.cloudfunctions.net/*",

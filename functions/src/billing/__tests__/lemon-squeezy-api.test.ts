@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createCheckout } from '../lemon-squeezy-api.js';
-import type { BillingConfiguration } from '../types.js';
+import type { BillingStoreConfiguration } from '../types.js';
 
-const configuration: BillingConfiguration = {
+const configuration: BillingStoreConfiguration = {
+  currency: 'USD',
   storeId: '42',
   variants: { monthly: '2069629', annual: '2069645' },
-  testMode: true,
 };
 
 afterEach(() => {
@@ -41,6 +41,7 @@ describe('Lemon Squeezy checkout creation', () => {
             custom: {
               user_id: 'firebase-user',
               billing_interval: 'annual',
+              billing_currency: 'USD',
             },
           },
         },

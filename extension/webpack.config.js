@@ -8,6 +8,7 @@ const validAppEnvironments = new Set(['development', 'staging', 'production']);
 module.exports = (_environment, argv) => {
   const appEnvironment = process.env.APP_ENV || (argv.mode === 'development' ? 'development' : 'production');
   const buildLabel = process.env.BUILD_LABEL || appEnvironment;
+  const contentBuildId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const useFirebaseEmulators = process.env.USE_FIREBASE_EMULATORS === 'true';
 
   if (!validAppEnvironments.has(appEnvironment)) {
@@ -70,6 +71,7 @@ module.exports = (_environment, argv) => {
       new webpack.DefinePlugin({
         __MFP_DEV_BUILD__: JSON.stringify(argv.mode === 'development'),
         __APP_ENV__: JSON.stringify(appEnvironment),
+        __MFP_CONTENT_BUILD_ID__: JSON.stringify(contentBuildId),
         __USE_FIREBASE_EMULATORS__: JSON.stringify(useFirebaseEmulators),
       }),
       new HtmlWebpackPlugin({

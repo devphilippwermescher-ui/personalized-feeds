@@ -3,9 +3,12 @@
 ## Що вже реалізовано
 
 - вибір Monthly або Annual у модалці **Manage plan**;
+- вибір EUR або USD у **Profile & billing** передається до захищеної Function;
+- checkout використовує окремий allowlisted Store/Variant набір для кожної валюти;
+- якщо EUR Store ще не налаштований, EUR checkout блокується без перенаправлення на USD;
 - Annual вибрано за замовчуванням як вигідніший тариф;
 - безпечне створення checkout через Firebase callable Function;
-- Firebase UID та email передаються в Lemon Squeezy як checkout metadata;
+- Firebase UID, email, інтервал і валюта передаються в Lemon Squeezy як checkout metadata;
 - webhook перевіряється через HMAC-підпис;
 - обробляються створення, оновлення, скасування, поновлення, завершення та пауза підписки;
 - стан підписки записується в `users/{uid}/billing/subscription`;
@@ -13,13 +16,14 @@
 - для активного Pro в модалці показуються тариф, дата поновлення/завершення і кнопка **Manage billing**;
 - Customer Portal URL отримується через захищену Firebase Function;
 - Test mode та Live mode розділені конфігурацією;
+- одна API key на середовище може працювати з обома Store одного Lemon Squeezy акаунта;
 - додано Firebase Emulator Suite режим, який не потребує Blaze;
 - production-збірка не отримує localhost permissions і не підключається до emulator-ів.
 
 ## Швидка локальна демонстрація
 
 1. Встановити Java 21.
-2. Створити `functions/.env.local` і `functions/.secret.local` за шаблонами.
+2. Створити `functions/.env.local` і `functions/.secret.local` за шаблонами та заповнити USD Test mode IDs.
 3. Запустити `npm run emulators:billing`.
 4. В іншому терміналі запустити `npm run dev:billing-local`.
 5. Завантажити `extension/dist` через Chrome **Load unpacked**.
@@ -32,7 +36,7 @@
    ```
 
 9. Показати документ підписки у локальному Firestore.
-10. Відкрити **Manage plan** і показати активний Annual Pro.
+10. Відкрити **Manage plan** і показати активний Annual Pro з валютою USD у Firestore.
 
 ## Повна Test mode демонстрація
 
@@ -42,9 +46,10 @@
 
 ## Що залишиться після демонстрації
 
-- власник проєкту підключає корпоративний billing account і Blaze до Firebase Dev;
-- dev Functions деплояться у `myfeedpilot-dev`;
+- власник проєкту підключає корпоративний billing account і Blaze до Firebase Staging;
+- staging Functions деплояться у `myfeedpilot-staging`;
 - тимчасовий tunnel замінюється постійним Firebase webhook URL;
-- проводиться спільний Test mode тест у dev-середовищі;
-- перед релізом створюються окремі Live mode API key, variants і webhook;
+- проводиться спільний Test mode тест у staging-середовищі;
+- після авторизації EUR Store додаються його Store ID і два Variant IDs без зміни checkout-коду;
+- перед релізом створюються Live mode API key, Store/Variant IDs і webhook secret;
 - налаштовуються budget alerts/spend caps та моніторинг помилок webhook.

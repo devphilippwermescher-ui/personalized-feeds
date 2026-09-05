@@ -14,6 +14,7 @@ const SUBSCRIPTION_EVENTS = new Set([
 export interface SubscriptionWriteModel {
   plan: 'pro';
   source: 'lemon_squeezy';
+  billingCurrency: 'EUR' | 'USD';
   status: string;
   customerId: string;
   subscriptionId: string;
@@ -47,7 +48,9 @@ export function parseSubscriptionWebhook(
   if (payload.data.type !== 'subscriptions') {
     throw new Error(`Unexpected webhook resource type: ${payload.data.type}`);
   }
-  if (String(attributes.store_id) !== configuration.storeId) {
+  const storeId = String(attributes.store_id);
+  const storeConfiguration = Object.values(configuration.stores).find((store) => store?.storeId === storeId);
+  if (!storeConfiguration) {
     throw new Error('Webhook store does not match the configured Lemon Squeezy store');
   }
   if (attributes.test_mode !== configuration.testMode) {
@@ -55,7 +58,7 @@ export function parseSubscriptionWebhook(
   }
 
   const variantId = String(attributes.variant_id);
-  const billingInterval = getBillingIntervalForVariant(configuration, variantId);
+  const billingInterval = getBillingIntervalForVariant(storeConfiguration, variantId);
   if (!billingInterval) {
     throw new Error(`Webhook variant is not an allowed Pro variant: ${variantId}`);
   }
@@ -72,6 +75,7 @@ export function parseSubscriptionWebhook(
     subscription: {
       plan: 'pro',
       source: 'lemon_squeezy',
+      billingCurrency: storeConfiguration.currency,
       status: attributes.status,
       customerId: String(attributes.customer_id),
       subscriptionId: payload.data.id,

@@ -44,13 +44,16 @@ const [configuration, secrets] = await Promise.all([
   readEnvironmentFile('.secret.local'),
 ]);
 const storeId = Number(
-  requireValue(configuration.LEMON_SQUEEZY_STORE_ID, 'Set LEMON_SQUEEZY_STORE_ID in functions/.env.local.')
+  requireValue(
+    configuration.LEMON_SQUEEZY_USD_STORE_ID || configuration.LEMON_SQUEEZY_STORE_ID,
+    'Set LEMON_SQUEEZY_USD_STORE_ID in functions/.env.local.'
+  )
 );
 const variantId = Number(
   requireValue(
     interval === 'annual'
-      ? configuration.LEMON_SQUEEZY_ANNUAL_VARIANT_ID
-      : configuration.LEMON_SQUEEZY_MONTHLY_VARIANT_ID,
+      ? configuration.LEMON_SQUEEZY_USD_ANNUAL_VARIANT_ID || configuration.LEMON_SQUEEZY_ANNUAL_VARIANT_ID
+      : configuration.LEMON_SQUEEZY_USD_MONTHLY_VARIANT_ID || configuration.LEMON_SQUEEZY_MONTHLY_VARIANT_ID,
     `Set the ${interval} variant ID in functions/.env.local.`
   )
 );
@@ -73,6 +76,7 @@ const payload = JSON.stringify({
     custom_data: {
       user_id: uid,
       billing_interval: interval,
+      billing_currency: 'USD',
     },
   },
   data: {

@@ -2,15 +2,35 @@ import type { PostAuthorProfile } from '../../post-buttons/public';
 
 export interface MessagingProfileTarget {
   degreeElement: HTMLElement;
+  insertPosition: 'afterend' | 'beforeend';
   profile: PostAuthorProfile;
 }
 
-const CONNECTION_DEGREE_PATTERN = /^(?:[•·]\s*)?(1st|2nd|3rd\+?)$/i;
+interface ConnectionDegreeAnchor {
+  element: HTMLElement;
+  degree: string;
+  insertPosition: 'afterend' | 'beforeend';
+  priority: number;
+}
+
+const CONNECTION_DEGREE_PATTERN = /^(?:[•·]\s*)?(1st|2nd|3rd\+?)(?:[-\s]+degree(?:\s+connection)?)?$/i;
+const DEGREE_ELEMENT_SELECTOR = [
+  'span',
+  'a',
+  'button',
+  'p',
+  '[class*="connection-degree"]',
+  '[class*="connectionDegree"]',
+  '[aria-label*="degree connection" i]',
+].join(', ');
 const PROFILE_CARD_SELECTOR = [
   '[class*="msg-thread__profile"]',
   '[class*="msg-thread-profile"]',
   '[class*="msg-thread-banner"]',
+  '[class*="msg-thread__link-to-profile"]',
   '[class*="msg-entity-lockup"]',
+  '[class*="msg-s-message-list__profile"]',
+  '[class*="msg-s-message-list__top-banner"]',
   '[class*="messaging-profile"]',
   '[data-view-name*="messaging-profile"]',
   '[data-test-id*="conversation-details"]',
@@ -18,6 +38,27 @@ const PROFILE_CARD_SELECTOR = [
 
 function normalizedText(element: Element | null): string {
   return element?.textContent?.replace(/\s+/g, ' ').trim() || '';
+}
+
+function parseConnectionDegree(value: string): string {
+  return value.replace(/\s+/g, ' ').trim().match(CONNECTION_DEGREE_PATTERN)?.[1] || '';
+}
+
+function getElementConnectionDegree(element: HTMLElement): string {
+  return (
+    parseConnectionDegree(normalizedText(element)) ||
+    parseConnectionDegree(element.getAttribute('aria-label') || '') ||
+    parseConnectionDegree(element.getAttribute('title') || '')
+  );
+}
+
+function isAccessibilityOnlyDegreeElement(element: HTMLElement): boolean {
+  return element.matches('.a11y-text, .visually-hidden');
+}
+
+function getDegreeAnchorPriority(element: HTMLElement): number {
+  const visibleTextPriority = parseConnectionDegree(normalizedText(element)) ? 100 : 30;
+  return visibleTextPriority - (isAccessibilityOnlyDegreeElement(element) ? 90 : 0);
 }
 
 function getLinkedInUsername(profileUrl: string): string {
@@ -105,17 +146,137 @@ function findHeadline(card: HTMLElement, displayName: string): string {
   );
 }
 
-function isInnermostDegreeElement(element: HTMLElement): boolean {
-  const text = normalizedText(element);
-  if (!CONNECTION_DEGREE_PATTERN.test(text)) return false;
+function findIdentityRowInsertionAnchor(
+  degreeAnchor: ConnectionDegreeAnchor,
+  card: HTMLElement,
+  displayName: string
+): Pick<ConnectionDegreeAnchor, 'element' | 'insertPosition'> {
+  if (degreeAnchor.insertPosition === 'beforeend') {
+    return degreeAnchor;
+  }
 
-  return !Array.from(element.querySelectorAll<HTMLElement>('span, a')).some(
-    (child) => child !== element && CONNECTION_DEGREE_PATTERN.test(normalizedText(child))
+  let current = degreeAnchor.element.parentElement;
+  for (let depth = 0; current && current !== card && depth < 4; depth += 1, current = current.parentElement) {
+    const text = normalizedText(current);
+    const containsName = Boolean(displayName && text.includes(displayName));
+    const containsDegree = /(?:^|[•·\s])(1st|2nd|3rd\+?)(?:\s|$)/i.test(text);
+    const containsHeadline = Boolean(
+      current.querySelector('[class*="headline"], [class*="occupation"], [class*="description"], p')
+    );
+
+    if (containsName && containsDegree && !containsHeadline) {
+      // LinkedIn renders an accessibility-only degree marker before the
+      // visible "· 1st" text. Appending to their shared identity row places
+      // the control after the complete visible degree, regardless of which
+      // marker was discovered first.
+      return { element: current, insertPosition: 'beforeend' };
+    }
+  }
+
+  return degreeAnchor;
+}
+
+function isInnermostDegreeElement(element: HTMLElement): boolean {
+  if (!getElementConnectionDegree(element)) return false;
+
+  return !Array.from(element.querySelectorAll<HTMLElement>(DEGREE_ELEMENT_SELECTOR)).some(
+    (child) => child !== element && Boolean(getElementConnectionDegree(child))
   );
 }
 
-function getConnectionDegree(element: HTMLElement): string {
-  return normalizedText(element).match(CONNECTION_DEGREE_PATTERN)?.[1] || '';
+function findElementDegreeAnchor(root: ParentNode): ConnectionDegreeAnchor | null {
+  if (root instanceof HTMLElement && isInnermostDegreeElement(root)) {
+    return {
+      element: root,
+      degree: getElementConnectionDegree(root),
+      insertPosition: 'afterend',
+      priority: getDegreeAnchorPriority(root),
+    };
+  }
+
+  const element = Array.from(root.querySelectorAll<HTMLElement>(DEGREE_ELEMENT_SELECTOR)).find(
+    isInnermostDegreeElement
+  );
+  if (!element) return null;
+
+  return {
+    element,
+    degree: getElementConnectionDegree(element),
+    insertPosition: 'afterend',
+    priority: getDegreeAnchorPriority(element),
+  };
+}
+
+function findDirectTextDegreeAnchor(root: ParentNode): ConnectionDegreeAnchor | null {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  let textNode = walker.nextNode();
+
+  while (textNode) {
+    const degree = parseConnectionDegree(textNode.textContent || '');
+    const parent = textNode.parentElement;
+    if (degree && parent && !parent.closest('.lfa-messaging-feed-btn-wrapper')) {
+      return {
+        element: parent,
+        degree,
+        // New LinkedIn Messaging markup can render "· 1st" as a bare text
+        // node beside the name and badge. Appending keeps the button on that row.
+        insertPosition: parent.matches('a, button') ? 'afterend' : 'beforeend',
+        priority: 80,
+      };
+    }
+    textNode = walker.nextNode();
+  }
+
+  return null;
+}
+
+function findDegreeAnchorNearProfileLink(profileLink: HTMLAnchorElement): ConnectionDegreeAnchor | null {
+  let current: HTMLElement | null = profileLink;
+  for (let depth = 0; current && depth < 10; depth += 1, current = current.parentElement) {
+    if (current === document.body || current === document.documentElement || current.tagName === 'MAIN') {
+      return null;
+    }
+
+    if (current.querySelectorAll('a[href*="/in/"]').length > 4) {
+      return null;
+    }
+
+    const elementAnchor = findElementDegreeAnchor(current);
+    const textAnchor = findDirectTextDegreeAnchor(current);
+    if (elementAnchor || textAnchor) {
+      return [elementAnchor, textAnchor]
+        .filter((anchor): anchor is ConnectionDegreeAnchor => Boolean(anchor))
+        .sort((left, right) => right.priority - left.priority)[0];
+    }
+  }
+
+  return null;
+}
+
+function buildMessagingProfileTarget(
+  degreeAnchor: ConnectionDegreeAnchor,
+  profileLink: HTMLAnchorElement
+): MessagingProfileTarget | null {
+  const linkedinUsername = getLinkedInUsername(profileLink.href);
+  if (!linkedinUsername) return null;
+
+  const card = findProfileCard(degreeAnchor.element, profileLink);
+  const displayName = findDisplayName(card, profileLink);
+  if (!displayName) return null;
+  const insertionAnchor = findIdentityRowInsertionAnchor(degreeAnchor, card, displayName);
+
+  return {
+    degreeElement: insertionAnchor.element,
+    insertPosition: insertionAnchor.insertPosition,
+    profile: {
+      linkedinUrl: profileLink.href,
+      linkedinUsername,
+      displayName,
+      headline: findHeadline(card, displayName),
+      profileImageUrl: card.querySelector<HTMLImageElement>('img')?.src || '',
+      connectionDegree: degreeAnchor.degree,
+    },
+  };
 }
 
 export function isLinkedInMessagingRoute(pathname: string): boolean {
@@ -123,37 +284,54 @@ export function isLinkedInMessagingRoute(pathname: string): boolean {
 }
 
 export function findMessagingProfileTargets(root: ParentNode = document): MessagingProfileTarget[] {
-  const targets: MessagingProfileTarget[] = [];
+  const targetsByProfile = new Map<string, { target: MessagingProfileTarget; priority: number }>();
+  const seenDegreeElements = new Set<HTMLElement>();
 
-  root
-    .querySelectorAll<HTMLElement>('span, a, [class*="connection-degree"], [class*="connectionDegree"]')
-    .forEach((degreeElement) => {
-      if (!isInnermostDegreeElement(degreeElement) || degreeElement.closest('.lfa-messaging-feed-btn-wrapper')) {
-        return;
-      }
+  const addTarget = (degreeAnchor: ConnectionDegreeAnchor, profileLink: HTMLAnchorElement): void => {
+    if (seenDegreeElements.has(degreeAnchor.element)) return;
 
-      const profileLink = findProfileLink(degreeElement);
-      if (!profileLink) return;
+    const target = buildMessagingProfileTarget(degreeAnchor, profileLink);
+    if (!target) return;
 
-      const linkedinUsername = getLinkedInUsername(profileLink.href);
-      if (!linkedinUsername) return;
+    seenDegreeElements.add(degreeAnchor.element);
+    const profileKey = target.profile.linkedinUsername.toLowerCase();
+    const existingTarget = targetsByProfile.get(profileKey);
+    if (!existingTarget || degreeAnchor.priority > existingTarget.priority) {
+      targetsByProfile.set(profileKey, { target, priority: degreeAnchor.priority });
+    }
+  };
 
-      const card = findProfileCard(degreeElement, profileLink);
-      const displayName = findDisplayName(card, profileLink);
-      if (!displayName) return;
+  root.querySelectorAll<HTMLElement>(DEGREE_ELEMENT_SELECTOR).forEach((degreeElement) => {
+    if (!isInnermostDegreeElement(degreeElement) || degreeElement.closest('.lfa-messaging-feed-btn-wrapper')) {
+      return;
+    }
 
-      targets.push({
-        degreeElement,
-        profile: {
-          linkedinUrl: profileLink.href,
-          linkedinUsername,
-          displayName,
-          headline: findHeadline(card, displayName),
-          profileImageUrl: card.querySelector<HTMLImageElement>('img')?.src || '',
-          connectionDegree: getConnectionDegree(degreeElement),
-        },
-      });
-    });
+    const profileLink = findProfileLink(degreeElement);
+    if (!profileLink) return;
 
-  return targets;
+    addTarget(
+      {
+        element: degreeElement,
+        degree: getElementConnectionDegree(degreeElement),
+        insertPosition: 'afterend',
+        priority: getDegreeAnchorPriority(degreeElement),
+      },
+      profileLink
+    );
+  });
+
+  // During client-side navigation LinkedIn sometimes renders the profile link
+  // first and places the connection degree in a bare text node. Starting from
+  // the stable /in/ link lets us handle that intermediate DOM without reload.
+  root.querySelectorAll<HTMLAnchorElement>('a[href*="/in/"]').forEach((profileLink) => {
+    const profileKey = getLinkedInUsername(profileLink.href).toLowerCase();
+    if (!profileKey || (targetsByProfile.get(profileKey)?.priority || 0) >= 100) return;
+
+    const degreeAnchor = findDegreeAnchorNearProfileLink(profileLink);
+    if (degreeAnchor) {
+      addTarget(degreeAnchor, profileLink);
+    }
+  });
+
+  return Array.from(targetsByProfile.values(), ({ target }) => target);
 }

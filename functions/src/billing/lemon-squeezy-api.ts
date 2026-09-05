@@ -1,4 +1,4 @@
-import type { BillingConfiguration, BillingInterval } from './types.js';
+import type { BillingInterval, BillingStoreConfiguration } from './types.js';
 
 const LEMON_SQUEEZY_API_ORIGIN = 'https://api.lemonsqueezy.com/v1';
 
@@ -39,7 +39,7 @@ async function requestLemonSqueezy<T>(apiKey: string, path: string, init: Reques
 
 export async function createCheckout(params: {
   apiKey: string;
-  configuration: BillingConfiguration;
+  configuration: BillingStoreConfiguration;
   interval: BillingInterval;
   userId: string;
   email?: string;
@@ -56,6 +56,7 @@ export async function createCheckout(params: {
             custom: {
               user_id: params.userId,
               billing_interval: params.interval,
+              billing_currency: params.configuration.currency,
             },
           },
         },

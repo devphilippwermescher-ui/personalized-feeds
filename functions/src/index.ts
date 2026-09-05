@@ -4,7 +4,7 @@ import { logger } from 'firebase-functions';
 import { defineSecret } from 'firebase-functions/params';
 import { HttpsError, onCall, onRequest } from 'firebase-functions/v2/https';
 import { setGlobalOptions } from 'firebase-functions/v2/options';
-import { getBillingConfiguration, isBillingInterval } from './billing/config.js';
+import { getBillingConfiguration, isBillingCurrency, isBillingInterval } from './billing/config.js';
 import { saveSubscription } from './billing/firestore-subscription-repository.js';
 import { createCheckout, getCustomerPortalUrl } from './billing/lemon-squeezy-api.js';
 import { isSubscriptionEvent, parseSubscriptionWebhook } from './billing/subscription-state.js';
@@ -34,6 +34,19 @@ export const createBillingCheckout = onCall(
     if (!isBillingInterval(interval)) {
       throw new HttpsError('invalid-argument', 'Choose Monthly or Annual billing.');
     }
+    const currency = request.data?.currency;
+    if (!isBillingCurrency(currency)) {
+      throw new HttpsError('invalid-argument', 'Choose EUR or USD billing.');
+    }
+
+    const billingConfiguration = getBillingConfiguration();
+    const storeConfiguration = billingConfiguration.stores[currency];
+    if (!storeConfiguration) {
+      throw new HttpsError(
+        'failed-precondition',
+        `${currency} checkout is not available yet. Select USD in Profile & billing to continue.`
+      );
+    }
 
     const existingSubscription = await getFirestore().doc(`users/${request.auth.uid}/billing/subscription`).get();
     if (hasCurrentProAccess(existingSubscription.data())) {
@@ -43,7 +56,7 @@ export const createBillingCheckout = onCall(
     try {
       const url = await createCheckout({
         apiKey: lemonSqueezyApiKey.value(),
-        configuration: getBillingConfiguration(),
+        configuration: storeConfiguration,
         interval,
         userId: request.auth.uid,
         email: request.auth.token.email,

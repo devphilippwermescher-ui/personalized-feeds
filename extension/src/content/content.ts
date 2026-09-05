@@ -20,6 +20,15 @@ import { destroyPostButtons, initPostButtons } from './post-buttons';
 import { destroyMessagingButtons, initMessagingButtons } from './messaging-buttons';
 import { destroySpeechToCommentButton } from './speech-to-comment';
 import type { UserFeatureSettings } from 'shared/types';
+import {
+  CONTENT_RUNTIME_PING,
+  CONTENT_RUNTIME_REFRESH,
+  type ContentRuntimeMessage,
+  type ContentRuntimePingResponse,
+} from '../shared/content-runtime';
+import { registerContentRuntime } from './runtime/content-runtime-registration';
+
+const CONTENT_BOOTSTRAP_DELAY_MS = 100;
 
 let featureSettings: UserFeatureSettings = {
   messagingButtons: true,
@@ -29,6 +38,19 @@ let featureSettings: UserFeatureSettings = {
 };
 
 let domReady = false;
+let stopFeatureSettingsListener: (() => void) | null = null;
+let contentRuntimeMessageListener:
+  | ((
+      message: ContentRuntimeMessage,
+      sender: chrome.runtime.MessageSender,
+      sendResponse: (response: ContentRuntimePingResponse) => void
+    ) => boolean)
+  | null = null;
+let originalPushState: History['pushState'] | null = null;
+let originalReplaceState: History['replaceState'] | null = null;
+let patchedPushState: History['pushState'] | null = null;
+let patchedReplaceState: History['replaceState'] | null = null;
+let pageReadyTimer: number | null = null;
 
 function applyFeatureUI(): void {
   if (featureSettings.messagingButtons) {
@@ -58,13 +80,6 @@ function applyFeatureSettings(nextSettings: UserFeatureSettings): void {
   }
 }
 
-void loadFeatureSettings().then(applyFeatureSettings);
-onFeatureSettingsChange(applyFeatureSettings);
-if (DASHBOARD_ANALYTICS_SYNC_ENABLED) {
-  initNativeInviteTracking();
-  initLinkedInAnalyticsPassiveCapture();
-}
-
 // ── Bootstrap ────────────────────────────────────────────────────────
 
 let linkedinActivityTimer: number | undefined;
@@ -79,17 +94,17 @@ function notifyLinkedInActivity(): void {
 }
 
 function onPageReady(): void {
+  pageReadyTimer = null;
   domReady = true;
   applyFeatureUI();
   notifyLinkedInActivity();
 }
 
-if (document.readyState === 'complete') {
-  setTimeout(onPageReady, 1000);
-} else {
-  window.addEventListener('load', () => {
-    setTimeout(onPageReady, 1000);
-  });
+function schedulePageReady(): void {
+  if (pageReadyTimer !== null) {
+    window.clearTimeout(pageReadyTimer);
+  }
+  pageReadyTimer = window.setTimeout(onPageReady, CONTENT_BOOTSTRAP_DELAY_MS);
 }
 
 // ── SPA route change handling ────────────────────────────────────────
@@ -107,17 +122,112 @@ function onRouteChange(): void {
   }
 }
 
-(function patchHistoryMethods(): void {
-  const origPush = history.pushState.bind(history);
-  history.pushState = (...args: Parameters<typeof history.pushState>) => {
-    origPush(...args);
+function patchHistoryMethods(): void {
+  originalPushState = history.pushState;
+  originalReplaceState = history.replaceState;
+  patchedPushState = function (...args: Parameters<typeof history.pushState>) {
+    originalPushState?.apply(history, args);
     onRouteChange();
   };
-  const origReplace = history.replaceState.bind(history);
-  history.replaceState = (...args: Parameters<typeof history.replaceState>) => {
-    origReplace(...args);
+  patchedReplaceState = function (...args: Parameters<typeof history.replaceState>) {
+    originalReplaceState?.apply(history, args);
     onRouteChange();
   };
-})();
+  history.pushState = patchedPushState;
+  history.replaceState = patchedReplaceState;
+}
 
-window.addEventListener('popstate', onRouteChange);
+function restoreHistoryMethods(): void {
+  if (patchedPushState && history.pushState === patchedPushState && originalPushState) {
+    history.pushState = originalPushState;
+  }
+  if (patchedReplaceState && history.replaceState === patchedReplaceState && originalReplaceState) {
+    history.replaceState = originalReplaceState;
+  }
+  originalPushState = null;
+  originalReplaceState = null;
+  patchedPushState = null;
+  patchedReplaceState = null;
+}
+
+function disposeContentRuntime(): void {
+  destroyPostButtons();
+  destroyMessagingButtons();
+  destroySpeechToCommentButton();
+  try {
+    stopFeatureSettingsListener?.();
+  } catch {
+    // The previous extension context is expected to be invalid after Reload.
+  }
+  stopFeatureSettingsListener = null;
+
+  if (contentRuntimeMessageListener) {
+    try {
+      chrome.runtime.onMessage.removeListener(contentRuntimeMessageListener);
+    } catch {
+      // The previous extension context is expected to be invalid after Reload.
+    }
+    contentRuntimeMessageListener = null;
+  }
+
+  window.removeEventListener('load', schedulePageReady);
+  window.removeEventListener('popstate', onRouteChange);
+  restoreHistoryMethods();
+  if (pageReadyTimer !== null) {
+    window.clearTimeout(pageReadyTimer);
+    pageReadyTimer = null;
+  }
+  window.clearTimeout(linkedinActivityTimer);
+  linkedinActivityTimer = undefined;
+  domReady = false;
+}
+
+function initializeContentRuntime(): void {
+  console.info('[content-runtime] Initialized LinkedIn content runtime', {
+    buildId: __MFP_CONTENT_BUILD_ID__,
+    url: window.location.href,
+    readyState: document.readyState,
+  });
+  contentRuntimeMessageListener = (
+    message: ContentRuntimeMessage,
+    _sender: chrome.runtime.MessageSender,
+    sendResponse: (response: ContentRuntimePingResponse) => void
+  ): boolean => {
+    if (message?.type !== CONTENT_RUNTIME_PING && message?.type !== CONTENT_RUNTIME_REFRESH) return false;
+
+    if (message.type === CONTENT_RUNTIME_REFRESH && domReady) {
+      console.info('[content-runtime] Refresh received', { url: window.location.href });
+      applyFeatureUI();
+    }
+
+    sendResponse({ ready: true });
+    return false;
+  };
+  chrome.runtime.onMessage.addListener(contentRuntimeMessageListener);
+
+  void loadFeatureSettings().then(applyFeatureSettings);
+  stopFeatureSettingsListener = onFeatureSettingsChange(applyFeatureSettings);
+  if (DASHBOARD_ANALYTICS_SYNC_ENABLED) {
+    initNativeInviteTracking();
+    initLinkedInAnalyticsPassiveCapture();
+  }
+
+  if (document.readyState === 'complete') {
+    schedulePageReady();
+  } else {
+    window.addEventListener('load', schedulePageReady, { once: true });
+  }
+
+  patchHistoryMethods();
+  window.addEventListener('popstate', onRouteChange);
+}
+
+registerContentRuntime(
+  window,
+  __MFP_CONTENT_BUILD_ID__,
+  initializeContentRuntime,
+  disposeContentRuntime,
+  () => {
+    if (domReady) applyFeatureUI();
+  }
+);

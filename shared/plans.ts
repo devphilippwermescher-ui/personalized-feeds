@@ -13,6 +13,7 @@ export interface BillingSubscription {
   plan?: AppPlan;
   status?: string;
   source?: 'lemon_squeezy' | 'manual' | 'development';
+  billingCurrency?: 'EUR' | 'USD';
   customerId?: string;
   subscriptionId?: string;
   variantId?: string;
