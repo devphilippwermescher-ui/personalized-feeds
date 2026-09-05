@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex, nofollow, noarchive" />
+    <meta name="theme-color" content="#f4f5f8" />
+    <title>myFeedPilot — Team releases</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <script src="./app.js" defer></script>
+  </head>
+  <body>
+    <header>
+      <a class="brand" href="./" aria-label="myFeedPilot team releases home">
+        <svg viewBox="0 0 48 36" aria-hidden="true">
+          <defs>
+            <linearGradient id="team-logo" x1="2" y1="18" x2="46" y2="18">
+              <stop stop-color="#643bee" />
+              <stop offset="1" stop-color="#1ea7e8" />
+            </linearGradient>
+          </defs>
+          <g fill="url(#team-logo)">
+            <rect x="2" y="1" width="44" height="7" rx="3.5" />
+            <rect x="2" y="12" width="44" height="7" rx="3.5" />
+            <circle cx="7" cy="29" r="5" />
+            <rect x="16" y="25" width="25" height="8" rx="4" />
+          </g>
+        </svg>
+        <span>myFeedPilot</span>
+      </a>
+      <div class="workspace-label"><span></span> Team release desk</div>
+    </header>
+
+    <main>
+      <section class="intro">
+        <div>
+          <p class="eyebrow">Release workspace</p>
+          <h1>Three environments.<br />One place to test.</h1>
+        </div>
+        <div class="build-status">
+          <span class="status-light"></span>
+          <div><small>Last published commit</small><strong data-commit>Loading…</strong></div>
+        </div>
+      </section>
+
+      <section class="environment-list" aria-label="Extension environments">
+        <article class="environment environment-development">
+          <div class="environment-identity">
+            <span class="environment-dot"></span>
+            <div>
+              <p>Development</p>
+              <h2>Fast feedback</h2>
+            </div>
+          </div>
+          <div class="environment-meta"><small>Build</small><strong data-env-version="development">Latest</strong></div>
+          <div class="environment-meta"><small>Firebase</small><strong>myfeedpilot-dev</strong></div>
+          <div class="environment-actions">
+            <a class="secondary-action" href="https://myfeedpilot-dev.web.app" target="_blank" rel="noreferrer"
+              >Dashboard ↗</a
+            >
+            <a
+              class="primary-action"
+              data-env-download="development"
+              href="./downloads/myfeedpilot-development-latest.zip"
+              >Download ZIP</a
+            >
+          </div>
+        </article>
+
+        <article class="environment environment-staging">
+          <div class="environment-identity">
+            <span class="environment-dot"></span>
+            <div>
+              <p>Staging</p>
+              <h2>Release candidate</h2>
+            </div>
+          </div>
+          <div class="environment-meta"><small>Build</small><strong data-env-version="staging">Latest</strong></div>
+          <div class="environment-meta"><small>Firebase</small><strong>myfeedpilot-staging</strong></div>
+          <div class="environment-actions">
+            <a class="secondary-action" href="https://myfeedpilot-staging.web.app" target="_blank" rel="noreferrer"
+              >Dashboard ↗</a
+            >
+            <a class="primary-action" data-env-download="staging" href="./downloads/myfeedpilot-staging-latest.zip"
+              >Download ZIP</a
+            >
+          </div>
+        </article>
+
+        <article class="environment environment-production">
+          <div class="environment-identity">
+            <span class="environment-dot"></span>
+            <div>
+              <p>Production</p>
+              <h2>Stable release</h2>
+            </div>
+          </div>
+          <div class="environment-meta">
+            <small>Version</small><strong data-env-version="production">v0.1.5</strong>
+          </div>
+          <div class="environment-meta"><small>Firebase</small><strong>myfeedpilot-production</strong></div>
+          <div class="environment-actions">
+            <a class="secondary-action" href="https://myfeedpilot-app.web.app" target="_blank" rel="noreferrer"
+              >Dashboard ↗</a
+            >
+            <a
+              class="primary-action"
+              data-env-download="production"
+              href="https://github.com/devphilippwermescher-ui/personalized-feeds/releases/download/v0.1.5/personalized-feeds-v0.1.5.zip"
+              >Download ZIP</a
+            >
+          </div>
+        </article>
+      </section>
+
+      <section class="notes" aria-labelledby="notes-title">
+        <div>
+          <p class="eyebrow">Quick install</p>
+          <h2 id="notes-title">Load any build in Chrome</h2>
+        </div>
+        <ol>
+          <li><span>01</span>Download and unpack the ZIP.</li>
+          <li>
+            <span>02</span>Open <button type="button" data-copy="chrome://extensions">chrome://extensions</button>.
+          </li>
+          <li><span>03</span>Enable Developer mode.</li>
+          <li><span>04</span>Choose “Load unpacked” and select the folder.</li>
+        </ol>
+      </section>
+
+      <section class="context-note">
+        <strong>PR builds</strong>
+        <p>Feature-branch development builds remain available in the PR workflow under Summary → Artifacts.</p>
+        <a
+          href="https://github.com/devphilippwermescher-ui/personalized-feeds/actions/workflows/build-release.yml"
+          target="_blank"
+          rel="noreferrer"
+          >Open GitHub Actions ↗</a
+        >
+      </section>
+    </main>
+
+    <footer><span>Internal testing utility</span><span data-published-at>Release metadata loading…</span></footer>
+    <div class="toast" role="status" aria-live="polite">Address copied</div>
+  </body>
+</html>

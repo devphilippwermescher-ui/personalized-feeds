@@ -18,12 +18,16 @@ Each pull request has its own preview channel. A new push updates the same chann
 
 Development builds do not create Git tags or GitHub Releases.
 
+The build is labeled `myFeedPilot Dev` in Chrome. After a merge to `main`, the latest development ZIP is also
+published to the team release hub at `https://myfeedpilot-team.web.app`.
+
 ## Staging
 
 Every push to `main` (normally a merged pull request) creates staging output after CI succeeds:
 
 - GitHub creates a pre-release named `Staging <short-sha> (v<version>)`;
 - the staging extension ZIP is attached to the pre-release;
+- the latest development and staging ZIPs are published to the team release hub;
 - the dashboard is deployed to the staging project's live Hosting channel at
   `https://myfeedpilot-staging.web.app`.
 
@@ -41,6 +45,8 @@ Commit all files changed by that command and merge the pull request into `main`.
 
 - creates the immutable `v0.2.0` production tag and GitHub release;
 - attaches the production extension ZIP;
+- attaches a stable `myfeedpilot-latest.zip` download alias;
+- updates the public product page at `https://myfeedpilot-production.web.app`;
 - deploys the same dashboard build to the Firebase Hosting live channel.
 
 Versions use `X.Y.Z` semantic versioning. Never reuse or delete a production tag; publish the next patch version instead.
@@ -61,6 +67,13 @@ The expected project IDs are:
 Firebase Hosting deploy targets are declared in `.firebaserc`. The production
 target deliberately points to `myfeedpilot-app`, so its public URL is
 `https://myfeedpilot-app.web.app` rather than the project's default Hosting URL.
+
+The production Firebase project also hosts two independent static sites:
+
+- `myfeedpilot-production` at `https://myfeedpilot-production.web.app` for the public product page;
+- `myfeedpilot-team` at `https://myfeedpilot-team.web.app` for development, staging, and production downloads.
+
+The team hub is excluded from search indexing, but it is still publicly reachable by anyone who knows its URL.
 
 Use a development-only Firebase project and minimally privileged service account for the `development` environment because its credential is available to same-repository pull-request workflows. Pull requests from forks are deliberately prevented from deploying. Do not configure a required reviewer if previews and production releases must remain fully automatic.
 

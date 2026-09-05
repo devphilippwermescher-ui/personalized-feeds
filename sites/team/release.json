@@ -1,0 +1,19 @@
+{
+  "version": "0.1.5",
+  "commit": "b04c3fb",
+  "publishedAt": null,
+  "environments": {
+    "development": {
+      "label": "main development · b04c3fb",
+      "downloadUrl": "./downloads/myfeedpilot-development-latest.zip"
+    },
+    "staging": {
+      "label": "main staging · b04c3fb",
+      "downloadUrl": "./downloads/myfeedpilot-staging-latest.zip"
+    },
+    "production": {
+      "label": "v0.1.5",
+      "downloadUrl": "https://github.com/devphilippwermescher-ui/personalized-feeds/releases/download/v0.1.5/personalized-feeds-v0.1.5.zip"
+    }
+  }
+}

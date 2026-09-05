@@ -4,6 +4,7 @@ const HtmlWebpackPlugin = require('html-webpack-plugin');
 const CopyWebpackPlugin = require('copy-webpack-plugin');
 
 const appEnvironment = process.env.APP_ENV || 'production';
+const buildLabel = process.env.BUILD_LABEL || appEnvironment;
 const validAppEnvironments = new Set(['development', 'staging', 'production']);
 
 if (!validAppEnvironments.has(appEnvironment)) {
@@ -76,7 +77,24 @@ module.exports = (_environment, argv) => ({
     }),
     new CopyWebpackPlugin({
       patterns: [
-        { from: 'src/manifest.json', to: 'manifest.json' },
+        {
+          from: 'src/manifest.json',
+          to: 'manifest.json',
+          transform(content) {
+            const manifest = JSON.parse(content.toString());
+            const environmentNames = {
+              development: 'myFeedPilot Dev',
+              staging: 'myFeedPilot Staging',
+              production: 'myFeedPilot',
+            };
+
+            manifest.name = environmentNames[appEnvironment];
+            manifest.version_name =
+              appEnvironment === 'production' ? manifest.version : `${manifest.version}-${buildLabel}`.slice(0, 45);
+
+            return JSON.stringify(manifest, null, 2);
+          },
+        },
         { from: 'src/icons', to: 'icons', noErrorOnMissing: true },
       ],
     }),
