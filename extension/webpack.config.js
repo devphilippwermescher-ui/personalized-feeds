@@ -7,6 +7,7 @@ const validAppEnvironments = new Set(['development', 'staging', 'production']);
 
 module.exports = (_environment, argv) => {
   const appEnvironment = process.env.APP_ENV || (argv.mode === 'development' ? 'development' : 'production');
+  const buildLabel = process.env.BUILD_LABEL || appEnvironment;
   const useFirebaseEmulators = process.env.USE_FIREBASE_EMULATORS === 'true';
 
   if (!validAppEnvironments.has(appEnvironment)) {
@@ -88,9 +89,20 @@ module.exports = (_environment, argv) => {
             to: 'manifest.json',
             transform(content) {
               const manifest = JSON.parse(content.toString());
+              const environmentNames = {
+                development: 'myFeedPilot Dev',
+                staging: 'myFeedPilot Staging',
+                production: 'myFeedPilot',
+              };
+
+              manifest.name = environmentNames[appEnvironment];
+              manifest.version_name =
+                appEnvironment === 'production' ? manifest.version : `${manifest.version}-${buildLabel}`.slice(0, 45);
+
               if (useFirebaseEmulators) {
                 manifest.host_permissions = [...new Set([...(manifest.host_permissions || []), 'http://127.0.0.1/*'])];
               }
+
               return JSON.stringify(manifest, null, 2);
             },
           },
