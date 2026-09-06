@@ -16,6 +16,7 @@
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://myfeedpilot-production.web.app" />
     <title>myFeedPilot — Take the controls of your LinkedIn feed</title>
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
     <link rel="stylesheet" href="./styles.css" />
     <script src="./app.js" defer></script>
   </head>
@@ -75,38 +76,63 @@
           </p>
         </div>
 
-        <div class="signal-stage hero-enter" aria-label="An illustration of a focused LinkedIn feed">
-          <div class="stage-orbit orbit-one" aria-hidden="true"></div>
-          <div class="stage-orbit orbit-two" aria-hidden="true"></div>
-          <div class="feed-window">
-            <div class="feed-toolbar">
-              <div class="window-dots" aria-hidden="true"><i></i><i></i><i></i></div>
-              <div class="focus-state"><span></span> Focus feed active</div>
+        <div class="signal-stage hero-enter" role="img" aria-label="myFeedPilot feed organizer preview">
+          <div class="product-halo" aria-hidden="true"></div>
+          <div class="product-window" aria-hidden="true">
+            <div class="product-topbar">
+              <div class="product-brand">
+                <svg viewBox="0 0 48 36">
+                  <g fill="currentColor">
+                    <rect x="2" y="1" width="44" height="7" rx="3.5" />
+                    <rect x="2" y="12" width="44" height="7" rx="3.5" />
+                    <circle cx="7" cy="29" r="5" />
+                    <rect x="16" y="25" width="25" height="8" rx="4" />
+                  </g>
+                </svg>
+                <strong>myFeedPilot</strong>
+              </div>
+              <div class="product-actions"><b>Pro</b><span>•••</span></div>
             </div>
-            <article class="feed-item feed-item-muted">
-              <div class="avatar avatar-coral">ML</div>
-              <div><strong>Market Leaders</strong><span>General update · 2h</span></div>
-              <b>18</b>
-            </article>
-            <article class="feed-item feed-item-active">
-              <div class="avatar avatar-violet">IK</div>
-              <div><strong>Ideas worth following</strong><span>Your selected voices · now</span></div>
-              <b>01</b>
-            </article>
-            <div class="post-preview">
-              <div class="post-author"><span class="avatar avatar-cyan">NS</span><span></span></div>
-              <div class="post-line wide"></div>
-              <div class="post-line"></div>
-              <div class="post-line short"></div>
-              <div class="post-signal"><span>Signal matched</span><b>92%</b></div>
+            <div class="product-tabs">
+              <strong>My Feeds</strong>
+              <span>Shared with me</span>
             </div>
-            <article class="feed-item feed-item-muted">
-              <div class="avatar avatar-green">CP</div>
-              <div><strong>Customer pulse</strong><span>People you track · 18m</span></div>
-              <b>07</b>
-            </article>
+            <div class="product-search"><span>Search feeds…</span><b>+ Feed</b></div>
+
+            <div class="product-feed is-open">
+              <div class="product-feed-head">
+                <span class="drag-handle">⠿</span>
+                <strong>Prospects</strong>
+                <div class="feed-head-actions"><span>2</span><i>↗</i><b>⌃</b></div>
+              </div>
+              <div class="product-members">
+                <div class="product-member">
+                  <span class="member-avatar avatar-maya">MC</span>
+                  <span class="member-copy"><strong>Maya Chen</strong><small>Growth &amp; partnerships</small></span>
+                  <span class="member-action">Follow</span>
+                </div>
+                <div class="product-member">
+                  <span class="member-avatar avatar-jon">JB</span>
+                  <span class="member-copy"><strong>Jon Bell</strong><small>Product leadership</small></span>
+                  <span class="member-action">Connect</span>
+                </div>
+              </div>
+            </div>
+            <div class="product-feed compact-feed">
+              <div class="product-feed-head">
+                <span class="drag-handle">⠿</span><strong>Industry voices</strong>
+                <div class="feed-head-actions"><span>8</span><b>⌄</b></div>
+              </div>
+            </div>
+            <div class="product-feed compact-feed">
+              <div class="product-feed-head">
+                <span class="drag-handle">⠿</span><strong>Partners</strong>
+                <div class="feed-head-actions"><span>4</span><b>⌄</b></div>
+              </div>
+            </div>
           </div>
-          <div class="pilot-chip"><span></span> Noise filtered</div>
+          <div class="product-callout sort-callout" aria-hidden="true"><span>↕</span> Drag to reorder</div>
+          <div class="product-callout share-callout" aria-hidden="true"><span>↗</span> Share a feed</div>
         </div>
 
         <a class="scroll-cue" href="#why" aria-label="Scroll to learn more"> <span>Explore</span><i></i> </a>
@@ -129,17 +155,17 @@
             <h3>Build feeds around people, not algorithms.</h3>
           </div>
           <p class="feature-copy">
-            Group clients, prospects, peers, and creators into focused streams you can open directly inside LinkedIn.
+            Group clients, prospects, peers, and creators—then drag profiles between focused feeds as priorities change.
           </p>
         </article>
         <article class="feature-row reveal">
           <p class="feature-number">02</p>
           <div>
-            <p class="feature-kicker">Keep the context</p>
-            <h3>Know why every profile matters.</h3>
+            <p class="feature-kicker">Share the route</p>
+            <h3>Turn a useful feed into a shared advantage.</h3>
           </div>
           <p class="feature-copy">
-            Organize the relationships behind your work so the right conversation is easier to find and continue.
+            Share curated feeds with teammates so everyone can follow the same people, context, and opportunities.
           </p>
         </article>
         <article class="feature-row reveal">
