@@ -21,6 +21,7 @@ import { migrateToIndependentLinkedInSync } from './linkedin-sync-state-migratio
 import { registerBillingMessageHandler } from './features/billing/public';
 import { reinjectLinkedInContentRuntimeIntoOpenTabs } from './runtime/reinject-linkedin-content-runtime';
 import { registerLinkedInContentRuntimeRestoration } from './runtime/register-linkedin-content-runtime';
+import { registerMessagingProfilePickerRelay } from './features/messaging-buttons/messaging/message-handler';
 
 function queueDashboardAnalyticsWhenEnabled(trigger: Parameters<typeof queueDashboardAnalyticsSync>[0]): void {
   if (DASHBOARD_ANALYTICS_SYNC_ENABLED) {
@@ -33,6 +34,7 @@ if (DASHBOARD_ANALYTICS_SYNC_ENABLED) {
 }
 
 registerLinkedInContentRuntimeRestoration();
+registerMessagingProfilePickerRelay();
 
 chrome.runtime.onInstalled.addListener((details) => {
   const trigger: ProfileViewersSyncTrigger = details.reason === 'install' ? 'install' : 'update';

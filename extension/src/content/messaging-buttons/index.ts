@@ -1,6 +1,6 @@
 import { CONTENT_COPY } from '../shared/copy';
 import { showToast } from '../shared/toast';
-import { openProfileFeedPicker } from '../post-buttons/public';
+import type { PostAuthorProfile } from '../post-buttons/public';
 import { findMessagingProfileTargets, isLinkedInMessagingRoute } from './logic/profile-card';
 import { MESSAGING_BUTTONS_CSS } from './styles';
 
@@ -17,6 +17,19 @@ let scanTimer: number | null = null;
 let routeWatchTimer: number | null = null;
 let lastObservedUrl = '';
 let lastScanDiagnostic = '';
+let lastSurfaceActive = false;
+
+export interface MessagingButtonsOptions {
+  isSurfaceActive?: () => boolean;
+  openProfileFeedPicker?: (profile: PostAuthorProfile) => Promise<void>;
+}
+
+const isDefaultMessagingSurfaceActive = (): boolean => isLinkedInMessagingRoute(window.location.pathname);
+const missingProfileFeedPicker = async (_profile: PostAuthorProfile): Promise<void> => {
+  throw new Error(CONTENT_COPY.postButtons.failedToOpenFeeds);
+};
+let isMessagingSurfaceActive = isDefaultMessagingSurfaceActive;
+let openMessagingProfileFeedPicker = missingProfileFeedPicker;
 
 function ensureStyles(): void {
   if (document.getElementById(STYLE_ID)) return;
@@ -92,6 +105,40 @@ function removeOrphanedMessagingButtons(): void {
   });
 }
 
+function isRenderedElement(element: HTMLElement): boolean {
+  if (!element.isConnected) return false;
+
+  const rect = element.getBoundingClientRect();
+  if (rect.width <= 0 || rect.height <= 0) return false;
+
+  let current: HTMLElement | null = element;
+  while (current) {
+    const style = window.getComputedStyle(current);
+    if (current.hidden || style.display === 'none' || style.visibility === 'hidden') return false;
+    current = current.parentElement;
+  }
+
+  return true;
+}
+
+function removeHiddenMessagingButtons(): void {
+  document.querySelectorAll<HTMLElement>(`.${WRAPPER_CLASS}`).forEach((wrapper) => {
+    const siblingTarget = wrapper.previousElementSibling;
+    const parentTarget = wrapper.parentElement;
+    const target =
+      siblingTarget instanceof HTMLElement && siblingTarget.hasAttribute(BOUND_ATTRIBUTE)
+        ? siblingTarget
+        : parentTarget?.hasAttribute(BOUND_ATTRIBUTE)
+          ? parentTarget
+          : null;
+
+    if (target && !isRenderedElement(target)) {
+      target.removeAttribute(BOUND_ATTRIBUTE);
+      wrapper.remove();
+    }
+  });
+}
+
 function removeDuplicateProfileBindings(
   profileKey: string,
   degreeElement: HTMLElement,
@@ -111,14 +158,15 @@ function removeDuplicateProfileBindings(
 }
 
 function injectMessagingButtons(): void {
-  if (!isLinkedInMessagingRoute(window.location.pathname)) {
+  if (!isMessagingSurfaceActive()) {
     removeInjectedMessagingButtons();
     return;
   }
 
   removeOrphanedMessagingButtons();
+  removeHiddenMessagingButtons();
 
-  const targets = findMessagingProfileTargets(document);
+  const targets = findMessagingProfileTargets(document).filter(({ degreeElement }) => isRenderedElement(degreeElement));
   const diagnostic = JSON.stringify({
     pathname: window.location.pathname,
     profileCards: document.querySelectorAll('.msg-s-profile-card').length,
@@ -142,7 +190,7 @@ function injectMessagingButtons(): void {
     attachedWrappers.forEach((wrapper) => wrapper.remove());
 
     const wrapper = buildButton(() => {
-      void openProfileFeedPicker(profile).catch((error) => {
+      void openMessagingProfileFeedPicker(profile).catch((error) => {
         showToast(error instanceof Error ? error.message : CONTENT_COPY.postButtons.failedToOpenFeeds, 'error');
       });
     });
@@ -164,21 +212,27 @@ function startRouteWatcher(): void {
   if (routeWatchTimer !== null) return;
 
   lastObservedUrl = window.location.href;
+  lastSurfaceActive = isMessagingSurfaceActive();
   routeWatchTimer = window.setInterval(() => {
     const currentUrl = window.location.href;
     const routeChanged = currentUrl !== lastObservedUrl;
+    const surfaceActive = isMessagingSurfaceActive();
+    const surfaceChanged = surfaceActive !== lastSurfaceActive;
     lastObservedUrl = currentUrl;
+    lastSurfaceActive = surfaceActive;
 
     // LinkedIn can finish rendering a conversation without adding another
     // child node visible to our observer. Keep the Messaging integration
     // self-healing while that surface is open, as well as after URL changes.
-    if (routeChanged || isLinkedInMessagingRoute(window.location.pathname)) {
+    if (routeChanged || surfaceChanged || surfaceActive) {
       scheduleScan();
     }
   }, ROUTE_WATCH_INTERVAL_MS);
 }
 
-export function initMessagingButtons(): void {
+export function initMessagingButtons(options: MessagingButtonsOptions = {}): void {
+  isMessagingSurfaceActive = options.isSurfaceActive || isDefaultMessagingSurfaceActive;
+  openMessagingProfileFeedPicker = options.openProfileFeedPicker || missingProfileFeedPicker;
   ensureStyles();
   injectMessagingButtons();
   startRouteWatcher();
@@ -207,5 +261,8 @@ export function destroyMessagingButtons(): void {
   }
   lastObservedUrl = '';
   lastScanDiagnostic = '';
+  lastSurfaceActive = false;
+  isMessagingSurfaceActive = isDefaultMessagingSurfaceActive;
+  openMessagingProfileFeedPicker = missingProfileFeedPicker;
   removeInjectedMessagingButtons();
 }

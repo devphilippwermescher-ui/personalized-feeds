@@ -18,6 +18,7 @@ import { initNativeInviteTracking } from './native-invite-tracking';
 import { initLinkedInAnalyticsPassiveCapture } from './linkedin-analytics-passive-capture';
 import { destroyPostButtons, initPostButtons } from './post-buttons';
 import { destroyMessagingButtons, initMessagingButtons } from './messaging-buttons';
+import { openProfileFeedPicker } from './post-buttons/public';
 import { destroySpeechToCommentButton } from './speech-to-comment';
 import type { UserFeatureSettings } from 'shared/types';
 import {
@@ -27,6 +28,7 @@ import {
   type ContentRuntimePingResponse,
 } from '../shared/content-runtime';
 import { registerContentRuntime } from './runtime/content-runtime-registration';
+import { isMessagingProfilePickerOpenMessage, type MessagingProfilePickerResponse } from '../shared/messaging-buttons';
 
 const CONTENT_BOOTSTRAP_DELAY_MS = 100;
 
@@ -41,9 +43,9 @@ let domReady = false;
 let stopFeatureSettingsListener: (() => void) | null = null;
 let contentRuntimeMessageListener:
   | ((
-      message: ContentRuntimeMessage,
+      message: unknown,
       sender: chrome.runtime.MessageSender,
-      sendResponse: (response: ContentRuntimePingResponse) => void
+      sendResponse: (response: ContentRuntimePingResponse | MessagingProfilePickerResponse) => void
     ) => boolean)
   | null = null;
 let originalPushState: History['pushState'] | null = null;
@@ -54,7 +56,7 @@ let pageReadyTimer: number | null = null;
 
 function applyFeatureUI(): void {
   if (featureSettings.messagingButtons) {
-    initMessagingButtons();
+    initMessagingButtons({ openProfileFeedPicker });
   } else {
     destroyMessagingButtons();
   }
@@ -189,13 +191,27 @@ function initializeContentRuntime(): void {
     readyState: document.readyState,
   });
   contentRuntimeMessageListener = (
-    message: ContentRuntimeMessage,
+    message: unknown,
     _sender: chrome.runtime.MessageSender,
-    sendResponse: (response: ContentRuntimePingResponse) => void
+    sendResponse: (response: ContentRuntimePingResponse | MessagingProfilePickerResponse) => void
   ): boolean => {
-    if (message?.type !== CONTENT_RUNTIME_PING && message?.type !== CONTENT_RUNTIME_REFRESH) return false;
+    if (isMessagingProfilePickerOpenMessage(message)) {
+      void openProfileFeedPicker(message.profile)
+        .then(() => sendResponse({ success: true }))
+        .catch((error: unknown) => {
+          sendResponse({
+            success: false,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        });
+      return true;
+    }
 
-    if (message.type === CONTENT_RUNTIME_REFRESH && domReady) {
+    if (typeof message !== 'object' || message === null || !('type' in message)) return false;
+    const runtimeMessage = message as ContentRuntimeMessage;
+    if (runtimeMessage.type !== CONTENT_RUNTIME_PING && runtimeMessage.type !== CONTENT_RUNTIME_REFRESH) return false;
+
+    if (runtimeMessage.type === CONTENT_RUNTIME_REFRESH && domReady) {
       console.info('[content-runtime] Refresh received', { url: window.location.href });
       applyFeatureUI();
     }
@@ -222,12 +238,6 @@ function initializeContentRuntime(): void {
   window.addEventListener('popstate', onRouteChange);
 }
 
-registerContentRuntime(
-  window,
-  __MFP_CONTENT_BUILD_ID__,
-  initializeContentRuntime,
-  disposeContentRuntime,
-  () => {
-    if (domReady) applyFeatureUI();
-  }
-);
+registerContentRuntime(window, __MFP_CONTENT_BUILD_ID__, initializeContentRuntime, disposeContentRuntime, () => {
+  if (domReady) applyFeatureUI();
+});

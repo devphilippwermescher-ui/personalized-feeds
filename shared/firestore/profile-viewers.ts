@@ -224,19 +224,11 @@ export async function upsertProfileViewers(
  */
 export async function pruneFreeCollectedProfileViewers(
   userId: string,
-  maxFreeProfiles: number,
-  allowedUsernames?: string[]
+  maxFreeProfiles: number
 ): Promise<number> {
   const viewers = await getProfileViewers(userId);
-  const allowedUsernameSet = allowedUsernames
-    ? new Set(allowedUsernames.map(normalizeLinkedInUsername).filter(Boolean))
-    : null;
   const freeViewers = viewers.filter((viewer) => viewer.collectedPlan === 'free');
-  const staleFreeViewers = allowedUsernameSet
-    ? freeViewers.filter(
-        (viewer) => !allowedUsernameSet.has(normalizeLinkedInUsername(viewer.linkedinUsername))
-      )
-    : freeViewers.slice(Math.max(0, maxFreeProfiles));
+  const staleFreeViewers = freeViewers.slice(Math.max(0, maxFreeProfiles));
 
   if (staleFreeViewers.length === 0) {
     return 0;

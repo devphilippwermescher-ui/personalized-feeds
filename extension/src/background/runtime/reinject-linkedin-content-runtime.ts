@@ -1,8 +1,9 @@
 import {
-  CONTENT_RUNTIME_REGISTRATION_MARKER,
+  CONTENT_RUNTIME_REFRESH,
+  CONTENT_RUNTIME_REPLACEMENT_MARKER,
+  type ContentRuntimePingResponse,
 } from '../../shared/content-runtime';
-import { refreshContentRuntimeRegistration } from './refresh-content-runtime-registration';
-import { resetStaleContentRuntimeRegistration } from './reset-stale-content-runtime';
+import { requestContentRuntimeReplacement } from './request-content-runtime-replacement';
 
 const LINKEDIN_TAB_PATTERN = 'https://www.linkedin.com/*';
 const CONTENT_RUNTIME_FILE = 'content.js';
@@ -10,12 +11,10 @@ const refreshesInFlight = new Map<number, Promise<void>>();
 
 async function refreshActiveContentRuntime(tabId: number): Promise<boolean> {
   try {
-    const results = await chrome.scripting.executeScript({
-      target: { tabId },
-      func: refreshContentRuntimeRegistration,
-      args: [CONTENT_RUNTIME_REGISTRATION_MARKER],
-    });
-    return results.some((result) => result.result === true);
+    const response = (await chrome.tabs.sendMessage(tabId, {
+      type: CONTENT_RUNTIME_REFRESH,
+    })) as ContentRuntimePingResponse | undefined;
+    return response?.ready === true;
   } catch {
     return false;
   }
@@ -28,13 +27,13 @@ async function runLinkedInContentRuntimeRefresh(tabId: number): Promise<void> {
   }
 
   try {
-    // An extension Reload can leave the isolated-world Window alive while its
-    // Chrome API context and listeners are invalid. Clear that same-build
-    // marker before evaluating content.js again.
+    // Do not dispose the previous runtime before its replacement is available.
+    // If file injection fails, a transient health-check failure must not leave
+    // an otherwise working LinkedIn tab without its existing observers.
     await chrome.scripting.executeScript({
       target: { tabId },
-      func: resetStaleContentRuntimeRegistration,
-      args: [CONTENT_RUNTIME_REGISTRATION_MARKER],
+      func: requestContentRuntimeReplacement,
+      args: [CONTENT_RUNTIME_REPLACEMENT_MARKER],
     });
     await chrome.scripting.executeScript({
       target: { tabId },

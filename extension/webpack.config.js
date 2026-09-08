@@ -23,6 +23,7 @@ module.exports = (_environment, argv) => {
       popup: './src/popup/index.tsx',
       offscreen: './src/offscreen/index.ts',
       content: './src/content/content.ts',
+      'messaging-content': './src/content/messaging-buttons/frame.ts',
       'dashboard-extension-bridge': './src/content/dashboard-extension-bridge.ts',
       'linkedin-invite-network-hook': './src/content/linkedin-invite-network-hook.ts',
       'linkedin-analytics-network-hook': './src/content/linkedin-analytics-network-hook.ts',

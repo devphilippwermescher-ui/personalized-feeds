@@ -381,8 +381,7 @@ export async function syncProfileViewersViaApi(
   ) {
     await pruneFreeCollectedProfileViewers(
       user.uid,
-      visibleViewerLimit,
-      rankedViewerCandidates.map((viewer) => viewer.linkedinUsername)
+      visibleViewerLimit
     );
   }
 

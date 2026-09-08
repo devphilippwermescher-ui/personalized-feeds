@@ -46,6 +46,12 @@
       "run_at": "document_idle"
     },
     {
+      "matches": ["https://www.linkedin.com/preload/*"],
+      "js": ["messaging-content.js"],
+      "run_at": "document_idle",
+      "all_frames": true
+    },
+    {
       "matches": ["https://www.linkedin.com/*"],
       "js": ["profile-content.js"],
       "run_at": "document_idle"
