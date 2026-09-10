@@ -3,12 +3,7 @@ import { CONTENT_COPY, getSidebarEmptyCopy } from '../shared/copy';
 import { DASHBOARD_ENABLED } from 'shared/feature-flags';
 import type { UserFeatureSettings } from 'shared/types';
 import { renderPlanOutlineStarIcon } from '../shared/plan-star';
-
-function escapeHtml(text: string): string {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
-}
+import { escapeHtml } from '../shared/escape-html';
 
 function renderSupportFooter(isPremium: boolean): string {
   return `

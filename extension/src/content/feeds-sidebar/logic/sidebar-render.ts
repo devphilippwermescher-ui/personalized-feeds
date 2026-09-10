@@ -3,6 +3,8 @@ import type { UserFeatureSettings } from 'shared/types';
 import { renderMemberEditorOverlay } from '../components/MemberEditor/MemberEditor';
 import { renderFeedRow } from '../components/FeedRow/FeedRow';
 
+export { escapeHtml } from '../../shared/escape-html';
+
 export interface SidebarDomSnapshot {
   feedListScrollTop: number;
   memberEditorScrollTop: number;
@@ -182,12 +184,6 @@ export function renderSidebarInnerMarkup(params: RenderSidebarInnerParams): void
   });
 
   container.appendChild(content);
-}
-
-export function escapeHtml(text: string): string {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
 }
 
 export function getLogoUrl(): string {

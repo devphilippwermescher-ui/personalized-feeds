@@ -63,13 +63,9 @@ function isVisibleProfileViewer(viewer: ProfileViewerListItem): boolean {
   return !('searchKey' in viewer);
 }
 
-export function buildRecruiterAggregateMember(
-  summary?: ProfileViewerSummary | null
-): FeedMemberInfo | null {
+export function buildRecruiterAggregateMember(summary?: ProfileViewerSummary | null): FeedMemberInfo | null {
   const recruiterViewerCount =
-    summary &&
-    Number.isSafeInteger(summary.recruiterViewerCount) &&
-    (summary.recruiterViewerCount || 0) > 0
+    summary && Number.isSafeInteger(summary.recruiterViewerCount) && (summary.recruiterViewerCount || 0) > 0
       ? summary.recruiterViewerCount
       : undefined;
 
@@ -115,21 +111,20 @@ export function withProfileViewersFeed(
     memberCount: members.length,
     privateViewerCount,
     recruiterViewerCount,
-    profileViewersCollectionProgress:
-      collectionProgress || existingProfileViewersFeed?.profileViewersCollectionProgress,
+    // The background response is authoritative. In particular, `undefined`
+    // after a completed sync must clear progress that was set by an earlier
+    // PROFILE_VIEWERS_SYNC_STARTED event, even if the completion event was
+    // missed while the content script was being reloaded or reinjected.
+    profileViewersCollectionProgress: collectionProgress,
     sortOrder: -1,
     ownerId: currentUser.userId,
     isSystem: true,
     systemType: 'profileViewers',
     isRefreshingProfileViewers: existingProfileViewersFeed?.isRefreshingProfileViewers,
-    isConfirmingProfileViewersRefresh:
-      existingProfileViewersFeed?.isConfirmingProfileViewersRefresh,
+    isConfirmingProfileViewersRefresh: existingProfileViewersFeed?.isConfirmingProfileViewersRefresh,
   };
 
-  return [
-    profileViewersFeed,
-    ...feeds.filter((feed) => feed.id !== PROFILE_VIEWERS_FEED_ID),
-  ];
+  return [profileViewersFeed, ...feeds.filter((feed) => feed.id !== PROFILE_VIEWERS_FEED_ID)];
 }
 
 export function buildProfileViewersState(params: {
@@ -145,13 +140,9 @@ export function buildProfileViewersState(params: {
   feeds: FeedInfo[];
   feedMembersById: Record<string, FeedMemberInfo[]>;
 } {
-  const members = params.viewers
-    .filter(isVisibleProfileViewer)
-    .map(profileViewerToMember);
+  const members = params.viewers.filter(isVisibleProfileViewer).map(profileViewerToMember);
   const privateViewerCount =
-    params.summary &&
-    Number.isSafeInteger(params.summary.privateViewerCount) &&
-    params.summary.privateViewerCount >= 0
+    params.summary && Number.isSafeInteger(params.summary.privateViewerCount) && params.summary.privateViewerCount >= 0
       ? params.summary.privateViewerCount
       : undefined;
   const recruiterViewerCount =
@@ -161,10 +152,7 @@ export function buildProfileViewersState(params: {
       ? params.summary.recruiterViewerCount
       : undefined;
   const recruiterAggregateMember = buildRecruiterAggregateMember(params.summary);
-  const membersWithRecruiterAggregate =
-    recruiterAggregateMember
-      ? [recruiterAggregateMember, ...members]
-      : members;
+  const membersWithRecruiterAggregate = recruiterAggregateMember ? [recruiterAggregateMember, ...members] : members;
 
   return {
     members: membersWithRecruiterAggregate,

@@ -1,0 +1,60 @@
+import { DASHBOARD_ANALYTICS_SYNC_ENABLED } from 'shared/feature-flags';
+import {
+  queueProfileAnalyticsForLinkedInActivity,
+  queueProfileAnalyticsSync,
+} from './profile-analytics-sync-coordinator';
+import { queueProfileViewersFirstSurfaceSync } from '../profile-viewers/profile-viewers-coordinator';
+
+export function registerProfileAnalyticsMessageHandler(): void {
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (
+    !DASHBOARD_ANALYTICS_SYNC_ENABLED &&
+    typeof message?.type === 'string' &&
+    message.type.startsWith('PROFILE_ANALYTICS_')
+  ) {
+    sendResponse({ success: true, queued: false, disabled: true });
+    return false;
+  }
+
+  if (message.type === 'PROFILE_ANALYTICS_CONNECTION_HISTORY_REPAIR_NOW') {
+    const trigger = message.mode === 'restart' ? 'history_repair' : 'history_resume';
+    void queueProfileAnalyticsSync(trigger, sender.tab?.id)
+      .then((result) => sendResponse({ success: result.success, result }))
+      .catch((error) =>
+        sendResponse({ success: false, error: error instanceof Error ? error.message : String(error) })
+      );
+    return true;
+  }
+
+  if (message.type === 'PROFILE_ANALYTICS_PROFILE_METADATA_CHANGED') {
+    if (!sender.tab?.url?.startsWith('https://www.linkedin.com/') || typeof sender.tab.id !== 'number') {
+      sendResponse({ success: false, error: 'Profile metadata events are accepted only from LinkedIn tabs.' });
+      return false;
+    }
+    console.info('[profile-analytics] profile metadata change detected', {
+      mutation: message.mutation,
+      sourceUrl: message.sourceUrl,
+      linkedInTabId: sender.tab.id,
+    });
+    void queueProfileAnalyticsSync('profile_metadata_changed', sender.tab.id).catch((error) => {
+      console.warn('[profile-analytics] profile metadata sync failed', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
+    sendResponse({ success: true, queued: true });
+    return false;
+  }
+
+  if (message.type !== 'PROFILE_ANALYTICS_LINKEDIN_ACTIVITY') return false;
+
+  // Compatibility for a content script from a previous extension bundle that
+  // still emits the old analytics-specific activity message.
+  void queueProfileViewersFirstSurfaceSync('linkedin_activity').finally(() => {
+    void queueProfileAnalyticsForLinkedInActivity(sender.tab?.id).catch((error) => {
+      console.warn('[profile-analytics] LinkedIn activity sync failed', error);
+    });
+  });
+  sendResponse({ success: true, queued: true });
+  return false;
+  });
+}

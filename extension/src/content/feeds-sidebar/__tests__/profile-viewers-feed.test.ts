@@ -3,6 +3,39 @@ import type { ProfileViewerListItem } from 'shared/types';
 import { buildProfileViewersState, PROFILE_VIEWERS_FEED_ID } from '../logic/profile-viewers-feed';
 
 describe('buildProfileViewersState', () => {
+  it('clears stale collection progress when the latest background response is idle', () => {
+    const state = buildProfileViewersState({
+      viewers: [],
+      summary: null,
+      feeds: [
+        {
+          id: PROFILE_VIEWERS_FEED_ID,
+          name: 'Profile Visitors',
+          description: 'Auto-saved from LinkedIn over the last 90 days',
+          color: '#0A66C2',
+          memberCount: 0,
+          sortOrder: -1,
+          ownerId: 'user-1',
+          isSystem: true,
+          systemType: 'profileViewers',
+          profileViewersCollectionProgress: {
+            phase: 'visible',
+            startedAt: 123,
+          },
+        },
+      ],
+      feedMembersById: {},
+      currentUser: {
+        userId: 'user-1',
+        displayName: 'User',
+        email: 'user@example.com',
+        photoURL: '',
+      },
+    });
+
+    expect(state.feeds[0].profileViewersCollectionProgress).toBeUndefined();
+  });
+
   it('adds a recruiter aggregate row when LinkedIn reports recruiter viewers', () => {
     const state = buildProfileViewersState({
       viewers: [],
@@ -65,8 +98,7 @@ describe('buildProfileViewersState', () => {
         id: 'currentCompany%3D123',
         itemType: 'search',
         searchKey: 'currentCompany=123',
-        searchUrl:
-          'https://www.linkedin.com/search/results/people/?origin=WHO_VIEWED_ME&currentCompany=123',
+        searchUrl: 'https://www.linkedin.com/search/results/people/?origin=WHO_VIEWED_ME&currentCompany=123',
         displayName: 'Someone at Example',
         keywords: '',
         currentCompany: '123',

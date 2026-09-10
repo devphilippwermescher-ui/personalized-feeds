@@ -1,6 +1,6 @@
 import { isPersistableProfileViewerIdentity } from 'shared/linkedin-identity';
 import type { ProfileViewerInput } from 'shared/types';
-import { mergeProfileViewerCandidates } from '../../../profile-viewers-parser-merge';
+import { mergeProfileViewerCandidates } from '../profile-viewers-parser-merge';
 
 export interface ProfileViewerCollectionWindow {
   rankedViewers: ProfileViewerInput[];

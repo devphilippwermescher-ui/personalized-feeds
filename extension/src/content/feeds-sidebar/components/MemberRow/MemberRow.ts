@@ -1,12 +1,7 @@
 import type { FeedMemberInfo } from '../../types';
 import { getMemberInitials } from '../../utils';
 import { SHOW_LINKEDIN_PREMIUM_ICONS } from '../../constants';
-
-function escapeHtml(text: string): string {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
-}
+import { escapeHtml } from '../../../shared/escape-html';
 
 function renderMemberMeta(member: FeedMemberInfo): string {
   const metaParts = [member.headline, member.viewedAgoText, member.mutualConnectionsText]

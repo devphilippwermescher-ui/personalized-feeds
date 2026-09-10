@@ -1,7 +1,7 @@
 import { isValidLinkedInProfileUsername } from 'shared/linkedin-identity';
 import { isUsableLinkedInProfileImageUrl } from 'shared/profile-viewer-quality';
 import { parseOrderedRscFlightRecords } from '../../../../linkedin/rsc-flight-records';
-import { hasExplicitProfileViewerPremiumSignal } from '../../../profile-viewers-premium';
+import { hasExplicitProfileViewerPremiumSignal } from '../profile-viewers-premium';
 
 export interface ProfileOccurrence {
   linkedinUsername: string;

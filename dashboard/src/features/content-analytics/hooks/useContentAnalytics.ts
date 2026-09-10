@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { DashboardAnalyticsSyncStatus } from 'shared/types';
-import { sendMessageToExtension } from '../../../utils/extensionMessaging';
+import { sendMessageToExtension } from '../../../services/extension-messaging';
 import {
   createEmptyContentAnalyticsCacheData,
   deleteContentAnalyticsCache,

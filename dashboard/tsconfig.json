@@ -24,8 +24,7 @@
       "react/*": ["./node_modules/@types/react/*"],
       "react-dom": ["./node_modules/@types/react-dom/index.d.ts"],
       "react-dom/*": ["./node_modules/@types/react-dom/*"]
-    },
-    "baseUrl": "."
+    }
   },
   "include": ["src", "../shared", "vite.config.ts"]
 }

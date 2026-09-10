@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { parseContentAnalyticsTopPosts } from '../content-analytics-top-posts-parser';
-import { isDashboardAnalyticsError } from '../../../background/dashboard-analytics/dashboard-analytics-errors';
+import { isDashboardAnalyticsError } from '../../../background/features/dashboard-analytics/dashboard-analytics-errors';
 import {
   buildTopPostsEmptyEngagementsFixture,
   buildTopPostsImpressionsFixture,
@@ -43,10 +43,7 @@ describe('parseContentAnalyticsTopPosts', () => {
   });
 
   it('keeps an explicit zero repost count', () => {
-    const result = parseContentAnalyticsTopPosts(
-      buildTopPostsImpressionsFixture({ numShares: 0 }),
-      'IMPRESSIONS'
-    );
+    const result = parseContentAnalyticsTopPosts(buildTopPostsImpressionsFixture({ numShares: 0 }), 'IMPRESSIONS');
 
     expect(result.posts[0].metrics.reposts).toBe(0);
   });

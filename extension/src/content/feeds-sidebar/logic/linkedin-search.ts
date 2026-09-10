@@ -1,5 +1,5 @@
 import type { LinkedInTypeaheadPerson } from '../../shared/components/FeedActionModals/FeedActionModals';
-import type { LinkedInProfileData } from '../../../../../shared/types';
+import type { LinkedInProfileData } from 'shared/types';
 import { parseLinkedInPeopleSearchPayload } from '../../../../../shared/linkedin-people-search';
 
 function getLinkedInCsrfToken(): string {

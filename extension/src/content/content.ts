@@ -14,12 +14,12 @@ import '../runtime/set-public-path';
 
 import { loadFeatureSettings, onFeatureSettingsChange } from './feature-settings';
 import { DASHBOARD_ANALYTICS_SYNC_ENABLED } from 'shared/feature-flags';
-import { initNativeInviteTracking } from './native-invite-tracking';
-import { initLinkedInAnalyticsPassiveCapture } from './linkedin-analytics-passive-capture';
+import { initLinkedInAnalyticsPassiveCapture } from './linkedin-analytics/passive-capture';
+import { initNativeInviteTracking } from './native-invite-tracking/controller';
 import { destroyPostButtons, initPostButtons } from './post-buttons';
 import { destroyMessagingButtons, initMessagingButtons } from './messaging-buttons';
 import { openProfileFeedPicker } from './post-buttons/public';
-import { destroySpeechToCommentButton } from './speech-to-comment';
+import { destroySpeechToCommentButton } from './speech-to-comment/controller';
 import type { UserFeatureSettings } from 'shared/types';
 import {
   CONTENT_RUNTIME_PING,

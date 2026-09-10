@@ -6,6 +6,7 @@ import { renderMemberStatusAction, renderMessageButton } from './member-actions'
 import { CONTENT_COPY } from '../../shared/copy';
 import { buildRecruiterAggregateMember } from './profile-viewers-feed';
 import type { ProfileViewerListItem, ProfileViewerSummary } from 'shared/types';
+import { escapeHtml } from '../../shared/escape-html';
 
 interface FeedMembersDeps {
   sendMsg: (message: Record<string, unknown>) => Promise<Record<string, unknown>>;
@@ -333,10 +334,4 @@ export function renderFeedPreview(feedId: string, feedMembersById: Record<string
         .join('')}
     </div>
   `;
-}
-
-function escapeHtml(text: string): string {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
 }

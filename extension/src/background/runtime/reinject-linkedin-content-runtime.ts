@@ -22,7 +22,6 @@ async function refreshActiveContentRuntime(tabId: number): Promise<boolean> {
 
 async function runLinkedInContentRuntimeRefresh(tabId: number): Promise<void> {
   if (await refreshActiveContentRuntime(tabId)) {
-    console.debug('[content-runtime] Refreshed LinkedIn UI integrations', { tabId });
     return;
   }
 

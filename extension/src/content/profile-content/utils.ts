@@ -1,10 +1,5 @@
 export { showToast } from '../shared/toast';
-
-export function escapeHtml(text: string): string {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
-}
+export { escapeHtml } from '../shared/escape-html';
 
 export function sendMessageToBackground(message: Record<string, unknown>): Promise<unknown> {
   return new Promise((resolve) => {

@@ -1,10 +1,5 @@
 import type { FeedInfo } from '../../types';
-
-function escapeHtml(text: string): string {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
-}
+import { escapeHtml } from '../../../shared/escape-html';
 
 interface RenderFeedRowOptions {
   feed: FeedInfo;

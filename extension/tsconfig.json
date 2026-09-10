@@ -14,7 +14,6 @@
     "noEmit": false,
     "outDir": "./dist",
     "rootDir": "..",
-    "baseUrl": ".",
     "paths": {
       "shared/*": ["../shared/*"],
       "react": ["./node_modules/@types/react/index.d.ts"],

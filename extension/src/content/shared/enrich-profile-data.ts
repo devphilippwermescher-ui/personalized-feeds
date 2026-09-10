@@ -1,4 +1,4 @@
-import type { LinkedInProfileData } from '../../../../shared/types';
+import type { LinkedInProfileData } from 'shared/types';
 import { getCanonicalLinkedInUsername } from '../../../../shared/linkedin-identity';
 import type { FeedMemberInfo } from '../feeds-sidebar/types';
 import { fetchLinkedInRelationshipStatus } from '../linkedin-relationship-status';

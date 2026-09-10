@@ -3,6 +3,7 @@ import { flushSync } from 'react-dom';
 import { createRoot } from 'react-dom/client';
 import { Modal } from 'shared/ui/modal';
 import { CONTENT_COPY, getMemberCountLabel } from './copy';
+import { escapeHtml } from './escape-html';
 
 export const PROFILE_FEED_MODAL_COLORS = ['#615DEC', '#2563EB', '#059669', '#DC2626', '#D97706', '#7C3AED'] as const;
 
@@ -24,12 +25,6 @@ interface CreateFeedModalElements {
   nameInput: HTMLInputElement;
   descriptionInput: HTMLInputElement | null;
   submitButton: HTMLButtonElement;
-}
-
-function escapeHtml(value: string): string {
-  const div = document.createElement('div');
-  div.textContent = value;
-  return div.innerHTML;
 }
 
 function createCloseIcon(): ReactElement {

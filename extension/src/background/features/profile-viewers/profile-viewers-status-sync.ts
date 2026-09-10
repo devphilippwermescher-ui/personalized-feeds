@@ -1,0 +1,430 @@
+import type { User } from 'firebase/auth';
+import { getProfileViewers, updateProfileViewer } from 'shared/firestore-service';
+import { normalizeLinkedInUsername } from 'shared/linkedin-identity';
+import type { ProfileViewer } from 'shared/types';
+import type { RelationshipResolution } from '../../../content/linkedin-relationship-status/types';
+import { getAuthenticatedFeedsUser } from '../auth/services/authenticated-user';
+import { getUserPlanSnapshot } from '../billing/services/plan-service';
+import { markTrackedConnectionAccepted } from '../connection-invites/services/lifecycle';
+import { resolveLinkedInRelationshipStatusInBackground } from '../relationship-status/services/resolver';
+import {
+  PROFILE_VIEWERS_STATUS_STALE_MS,
+  selectProfileViewersForStatusSync,
+} from './profile-viewers-status-sync-selection';
+import { getActiveLinkedInHeavySyncLock } from '../../platform/linkedin/heavy-sync-lock';
+
+export {
+  PROFILE_VIEWERS_STATUS_BATCH_LIMIT,
+  PROFILE_VIEWERS_STATUS_STALE_MS,
+  selectProfileViewersForStatusSync,
+} from './profile-viewers-status-sync-selection';
+
+export const PROFILE_VIEWERS_STATUS_ALARM_NAME = 'profile-viewers-status-sync';
+export const PROFILE_VIEWERS_STATUS_BATCH_COOLDOWN_MS = 5 * 60 * 1000;
+export const PROFILE_VIEWERS_STATUS_REQUEST_DELAY_MS = 5_000;
+const PROFILE_VIEWERS_STATUS_RESTRICTION_BACKOFF_MS = 12 * 60 * 60 * 1000;
+
+const PROFILE_VIEWERS_STATUS_STATE_KEY = 'lfs_profile_viewers_status_sync_state_v1';
+const PROFILE_VIEWERS_STATUS_LEASE_MS = 2 * 60 * 1000;
+const PROFILE_VIEWERS_STATUS_PRIORITY_LIMIT = 500;
+
+type ProfileViewersStatusSyncTrigger =
+  | 'install'
+  | 'update'
+  | 'chrome_startup'
+  | 'service_worker'
+  | 'sign_in'
+  | 'alarm'
+  | 'profile_viewers_sync'
+  | 'manual';
+
+interface ProfileViewersStatusSyncState {
+  userId?: string;
+  priorityUsernames: string[];
+  inProgressUntil?: number;
+  lastStartedAt?: number;
+  lastCompletedAt?: number;
+  nextDueAt?: number;
+  updatedAt: number;
+}
+
+export interface ProfileViewersStatusSyncQueueOptions {
+  trigger: ProfileViewersStatusSyncTrigger;
+  priorityUsernames?: string[];
+  urgent?: boolean;
+}
+
+export interface ProfileViewersStatusSyncResult {
+  ran: boolean;
+  success: boolean;
+  checkedCount?: number;
+  updatedCount?: number;
+  failedCount?: number;
+  remainingCount?: number;
+  nextDueAt?: number;
+  error?: string;
+}
+
+export interface ProfileViewersStatusSyncRunOptions {
+  forceStale?: boolean;
+}
+
+function getStoredStatusSyncState(): Promise<ProfileViewersStatusSyncState | null> {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(PROFILE_VIEWERS_STATUS_STATE_KEY, (stored) => {
+      const value = stored[PROFILE_VIEWERS_STATUS_STATE_KEY];
+      resolve(value && typeof value === 'object' ? (value as ProfileViewersStatusSyncState) : null);
+    });
+  });
+}
+
+function setStoredStatusSyncState(state: ProfileViewersStatusSyncState): Promise<void> {
+  return chrome.storage.local.set({
+    [PROFILE_VIEWERS_STATUS_STATE_KEY]: state,
+  });
+}
+
+function scheduleStatusSyncAlarmAt(scheduledAt: number): Promise<void> {
+  if (!chrome.alarms?.create) {
+    return Promise.resolve();
+  }
+
+  return chrome.alarms.create(PROFILE_VIEWERS_STATUS_ALARM_NAME, {
+    when: Math.max(Date.now() + 1_000, scheduledAt),
+  });
+}
+
+function waitBetweenStatusRequests(): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, PROFILE_VIEWERS_STATUS_REQUEST_DELAY_MS);
+  });
+}
+
+function isRestrictionSignal(error: unknown): boolean {
+  const status = (error as { httpStatus?: unknown })?.httpStatus;
+  const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+  return status === 429 || status === 999 || message.includes('temporarily restricted');
+}
+
+async function notifyLinkedInTabsAboutProfileViewerStatusSync(): Promise<void> {
+  const tabs = await chrome.tabs.query({ url: 'https://www.linkedin.com/*' });
+  await Promise.all(
+    tabs
+      .filter((tab): tab is chrome.tabs.Tab & { id: number } => typeof tab.id === 'number')
+      .map((tab) =>
+        chrome.tabs.sendMessage(tab.id, { type: 'PROFILE_VIEWERS_SYNC_COMPLETED' }).catch(() => {
+          /* the sidebar content script may not be ready in every LinkedIn tab */
+        })
+      )
+  );
+}
+
+function normalizePriorityUsernames(usernames: string[] = []): string[] {
+  return Array.from(new Set(usernames.map((username) => normalizeLinkedInUsername(username)).filter(Boolean))).slice(
+    0,
+    PROFILE_VIEWERS_STATUS_PRIORITY_LIMIT
+  );
+}
+
+function mergePriorityUsernames(current: string[] = [], incoming: string[] = []): string[] {
+  return normalizePriorityUsernames([...incoming, ...current]);
+}
+
+function buildStatusUpdate(
+  viewer: ProfileViewer,
+  resolution: RelationshipResolution,
+  resolvedAt: number
+): Parameters<typeof updateProfileViewer>[2] {
+  const preserveWithdrawn =
+    viewer.status === 'withdrawn' && (resolution.status === 'connect' || resolution.status === 'following');
+  const preserveUnavailable =
+    viewer.status === 'unavailable' &&
+    (resolution.status === 'connect' || resolution.status === 'following' || resolution.status === 'pending');
+  const update: Parameters<typeof updateProfileViewer>[2] = {
+    status: preserveUnavailable ? 'unavailable' : preserveWithdrawn ? 'withdrawn' : resolution.status,
+    statusResolvedAt: resolvedAt,
+    statusCheckFailedAt: 0,
+    statusCheckError: '',
+  };
+
+  const profileUrn = resolution.profileUrn || viewer.profileUrn;
+  const memberNumericId = resolution.memberNumericId || viewer.memberNumericId;
+  const profileImageUrl = resolution.profileImageUrl || viewer.profileImageUrl;
+
+  if (profileUrn) update.profileUrn = profileUrn;
+  if (memberNumericId) update.memberNumericId = memberNumericId;
+  if (profileImageUrl) update.profileImageUrl = profileImageUrl;
+  if (preserveUnavailable) {
+    update.canMessage = false;
+    update.canFollow = false;
+  } else {
+    if (typeof resolution.canMessage === 'boolean') update.canMessage = resolution.canMessage;
+    if (typeof resolution.canFollow === 'boolean') update.canFollow = resolution.canFollow;
+  }
+  if (preserveWithdrawn) {
+    update.canConnect = false;
+  } else if (preserveUnavailable) {
+    update.canConnect = false;
+  } else if (typeof resolution.canConnect === 'boolean') {
+    update.canConnect = resolution.canConnect;
+  }
+  if (preserveUnavailable) {
+    update.isFollowing = false;
+  } else if (typeof resolution.isFollowing === 'boolean') {
+    update.isFollowing = resolution.isFollowing;
+  }
+  if (typeof resolution.isPremium === 'boolean') update.isPremium = resolution.isPremium;
+
+  return update;
+}
+
+async function updateProfileViewerStatusFailure(
+  userId: string,
+  viewer: ProfileViewer,
+  error: unknown,
+  failedAt: number
+): Promise<void> {
+  const message = error instanceof Error ? error.message : String(error || 'Unknown status sync error');
+  await updateProfileViewer(userId, viewer.linkedinUsername || viewer.id, {
+    statusCheckFailedAt: failedAt,
+    statusCheckError: message.slice(0, 300),
+  });
+}
+
+async function getStatusSyncUser(explicitUser?: User): Promise<User | null> {
+  return explicitUser || (await getAuthenticatedFeedsUser());
+}
+
+export async function queueProfileViewersStatusSync(options: ProfileViewersStatusSyncQueueOptions): Promise<void> {
+  const user = await getStatusSyncUser();
+  if (!user) {
+    return;
+  }
+
+  const now = Date.now();
+  const state = await getStoredStatusSyncState();
+  const priorityUsernames = mergePriorityUsernames(
+    state?.userId === user.uid ? state.priorityUsernames : [],
+    options.priorityUsernames || []
+  );
+  const queuedAfterProfileViewersSync = options.trigger === 'profile_viewers_sync';
+  const nextDueAt = options.urgent
+    ? now + 1_000
+    : queuedAfterProfileViewersSync
+      ? now + PROFILE_VIEWERS_STATUS_BATCH_COOLDOWN_MS
+      : state?.userId === user.uid && state.nextDueAt
+        ? Math.min(state.nextDueAt, now + PROFILE_VIEWERS_STATUS_STALE_MS)
+        : now + PROFILE_VIEWERS_STATUS_BATCH_COOLDOWN_MS;
+  const nextState: ProfileViewersStatusSyncState = {
+    ...(state?.userId === user.uid ? state : {}),
+    userId: user.uid,
+    priorityUsernames,
+    nextDueAt,
+    updatedAt: now,
+  };
+
+  await setStoredStatusSyncState(nextState);
+  await scheduleStatusSyncAlarmAt(nextDueAt);
+  console.info('[profile-viewers-status-sync] queued', {
+    trigger: options.trigger,
+    urgent: options.urgent === true,
+    priorityCount: priorityUsernames.length,
+    nextDueAt,
+  });
+}
+
+export async function runProfileViewersStatusSync(
+  trigger: ProfileViewersStatusSyncTrigger = 'alarm',
+  explicitUser?: User,
+  options: ProfileViewersStatusSyncRunOptions = {}
+): Promise<ProfileViewersStatusSyncResult> {
+  const user = await getStatusSyncUser(explicitUser);
+  if (!user) {
+    return { ran: false, success: false, error: 'myFeedPilot authentication is required.' };
+  }
+
+  const now = Date.now();
+  let state = await getStoredStatusSyncState();
+  if (state?.userId && state.userId !== user.uid) {
+    state = null;
+  }
+
+  const heavySyncLock = await getActiveLinkedInHeavySyncLock(user.uid, now);
+  if (heavySyncLock) {
+    const nextDueAt = heavySyncLock.expiresAt + 5_000;
+    await setStoredStatusSyncState({
+      ...(state || {}),
+      userId: user.uid,
+      priorityUsernames: state?.priorityUsernames || [],
+      inProgressUntil: undefined,
+      nextDueAt,
+      updatedAt: now,
+    });
+    await scheduleStatusSyncAlarmAt(nextDueAt);
+    console.info('[profile-viewers-status-sync] deferred for Connections history bootstrap', {
+      trigger,
+      nextDueAt,
+      accountKey: heavySyncLock.accountKey,
+    });
+    return { ran: false, success: true, nextDueAt };
+  }
+
+  if (state?.inProgressUntil && now < state.inProgressUntil) {
+    await scheduleStatusSyncAlarmAt(state.inProgressUntil);
+    return { ran: false, success: true, nextDueAt: state.inProgressUntil };
+  }
+
+  if (trigger !== 'manual' && state?.nextDueAt && now < state.nextDueAt) {
+    await scheduleStatusSyncAlarmAt(state.nextDueAt);
+    return { ran: false, success: true, nextDueAt: state.nextDueAt };
+  }
+
+  const startedAt = Date.now();
+  state = {
+    ...(state || {}),
+    userId: user.uid,
+    priorityUsernames: state?.priorityUsernames || [],
+    inProgressUntil: startedAt + PROFILE_VIEWERS_STATUS_LEASE_MS,
+    lastStartedAt: startedAt,
+    updatedAt: startedAt,
+  };
+  await setStoredStatusSyncState(state);
+
+  try {
+    const [viewers, planSnapshot] = await Promise.all([getProfileViewers(user.uid), getUserPlanSnapshot(user.uid)]);
+    const visibleViewerLimit = planSnapshot.entitlements.maxVisibleProfileViewers;
+    const eligibleViewers = visibleViewerLimit === null ? viewers : viewers.slice(0, visibleViewerLimit);
+    const selectionNow = options.forceStale ? Number.POSITIVE_INFINITY : startedAt;
+    const candidates = selectProfileViewersForStatusSync(eligibleViewers, state.priorityUsernames, selectionNow);
+
+    if (candidates.length === 0) {
+      const nextDueAt = startedAt + PROFILE_VIEWERS_STATUS_STALE_MS;
+      await setStoredStatusSyncState({
+        ...state,
+        priorityUsernames: [],
+        inProgressUntil: undefined,
+        lastCompletedAt: Date.now(),
+        nextDueAt,
+        updatedAt: Date.now(),
+      });
+      await scheduleStatusSyncAlarmAt(nextDueAt);
+      return {
+        ran: true,
+        success: true,
+        checkedCount: 0,
+        updatedCount: 0,
+        failedCount: 0,
+        remainingCount: 0,
+        nextDueAt,
+      };
+    }
+
+    let updatedCount = 0;
+    let failedCount = 0;
+    const checkedUsernames: string[] = [];
+
+    for (let index = 0; index < candidates.length; index += 1) {
+      const viewer = candidates[index];
+      const username = normalizeLinkedInUsername(viewer.linkedinUsername || viewer.id);
+      if (!username) {
+        continue;
+      }
+
+      checkedUsernames.push(username);
+      try {
+        const resolution = await resolveLinkedInRelationshipStatusInBackground(username);
+        if (!resolution) {
+          throw new Error('LinkedIn relationship status was not found in GraphQL or profile HTML.');
+        }
+
+        await updateProfileViewer(user.uid, username, buildStatusUpdate(viewer, resolution, Date.now()));
+        if (resolution.status === 'connected') {
+          await markTrackedConnectionAccepted(user.uid, username).catch((error) => {
+            console.warn('[profile-viewers-status-sync] failed to mark connection invite accepted', error);
+          });
+        }
+        updatedCount += 1;
+      } catch (error) {
+        if (isRestrictionSignal(error)) throw error;
+        failedCount += 1;
+        await updateProfileViewerStatusFailure(user.uid, viewer, error, Date.now()).catch((updateError) => {
+          console.warn('[profile-viewers-status-sync] failed to persist status check failure', updateError);
+        });
+      }
+
+      if (index < candidates.length - 1) {
+        await waitBetweenStatusRequests();
+      }
+    }
+
+    const remainingCount = Math.max(
+      0,
+      selectProfileViewersForStatusSync(eligibleViewers, state.priorityUsernames, selectionNow, Number.MAX_SAFE_INTEGER)
+        .length - candidates.length
+    );
+    const nextDueAt =
+      remainingCount > 0
+        ? Date.now() + PROFILE_VIEWERS_STATUS_BATCH_COOLDOWN_MS
+        : Date.now() + PROFILE_VIEWERS_STATUS_STALE_MS;
+    const checkedSet = new Set(checkedUsernames);
+    const priorityUsernames = normalizePriorityUsernames(
+      state.priorityUsernames.filter((username) => !checkedSet.has(username))
+    );
+
+    await setStoredStatusSyncState({
+      ...state,
+      priorityUsernames,
+      inProgressUntil: undefined,
+      lastCompletedAt: Date.now(),
+      nextDueAt,
+      updatedAt: Date.now(),
+    });
+    await scheduleStatusSyncAlarmAt(nextDueAt);
+
+    if (updatedCount > 0) {
+      await notifyLinkedInTabsAboutProfileViewerStatusSync().catch((error) => {
+        console.warn('[profile-viewers-status-sync] failed to notify LinkedIn tabs', error);
+      });
+    }
+
+    console.info('[profile-viewers-status-sync] completed', {
+      trigger,
+      checkedCount: checkedUsernames.length,
+      updatedCount,
+      failedCount,
+      remainingCount,
+      nextDueAt,
+    });
+
+    return {
+      ran: true,
+      success: true,
+      checkedCount: checkedUsernames.length,
+      updatedCount,
+      failedCount,
+      remainingCount,
+      nextDueAt,
+    };
+  } catch (error) {
+    const nextDueAt =
+      Date.now() +
+      (isRestrictionSignal(error) ? PROFILE_VIEWERS_STATUS_RESTRICTION_BACKOFF_MS : PROFILE_VIEWERS_STATUS_STALE_MS);
+    await setStoredStatusSyncState({
+      ...(state || {
+        userId: user.uid,
+        priorityUsernames: [],
+      }),
+      inProgressUntil: undefined,
+      nextDueAt,
+      updatedAt: Date.now(),
+    });
+    await scheduleStatusSyncAlarmAt(nextDueAt);
+    console.warn('[profile-viewers-status-sync] failed', error);
+    return {
+      ran: true,
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+      nextDueAt,
+    };
+  }
+}

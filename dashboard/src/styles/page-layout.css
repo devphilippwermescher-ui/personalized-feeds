@@ -1,0 +1,61 @@
+/* ── Page ── */
+
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 28px;
+}
+
+.page-header h1 {
+  font-size: 24px;
+  font-weight: 700;
+  color: #1a1a2e;
+}
+
+.page-subtitle {
+  font-size: 14px;
+  color: #6b7280;
+  margin-top: 4px;
+}
+
+.page-header-back {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.back-btn {
+  background: none;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 8px;
+  cursor: pointer;
+  display: flex;
+  color: #6b7280;
+  transition: all 0.15s;
+}
+
+.back-btn:hover {
+  background: #f3f4f6;
+  color: #1a1a2e;
+}
+
+.back-btn svg {
+  width: 20px;
+  height: 20px;
+}
+
+.feed-detail-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.feed-dot-lg {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+

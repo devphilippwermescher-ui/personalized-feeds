@@ -94,11 +94,13 @@ export function detectCurrentProfileRelationship(currentProfileData: ProfileData
     findCurrentProfileRelationshipRoot({
       username: currentProfileData?.linkedinUsername,
       displayName: currentProfileData?.displayName,
-    }) ||
-    document.body;
+    }) || document.body;
 
-  const connectionDegree =
-    (scope.querySelector('.dist-value')?.textContent?.trim() || currentProfileData?.connectionDegree || '').trim();
+  const connectionDegree = (
+    scope.querySelector('.dist-value')?.textContent?.trim() ||
+    currentProfileData?.connectionDegree ||
+    ''
+  ).trim();
 
   const actions = getCurrentProfileRelationshipActions(scope);
   const buttonText = actions.map(getRelationshipButtonSignal);
@@ -153,7 +155,13 @@ export function detectCurrentProfileRelationship(currentProfileData: ProfileData
     hasFirstDegree ||
     (hasMessage && !hasConnect && !hasPremiumMessage && !hasFollow && !hasAuthoritativeFollowing && !hasNonFirstDegree)
   ) {
-    return { status: 'connected', connectionDegree: '1st', canMessage: true, canConnect: false, isPremium: isPremiumProfile ? true : undefined };
+    return {
+      status: 'connected',
+      connectionDegree: '1st',
+      canMessage: true,
+      canConnect: false,
+      isPremium: isPremiumProfile ? true : undefined,
+    };
   }
 
   if (hasConnect && hasAuthoritativeFollowing) {
@@ -238,10 +246,6 @@ export async function syncCurrentProfileMembershipStatuses(
       })
     )
   );
-
-  console.log(
-    `[LFS] synced current profile memberships: username=${currentProfileData.linkedinUsername}, status=${relationship.status || 'n/a'}, connectionDegree=${relationship.connectionDegree || 'n/a'}`
-  );
 }
 
 export async function syncCurrentProfileViewerStatus(deps: RelationshipDeps): Promise<void> {
@@ -274,14 +278,7 @@ export async function syncCurrentProfileViewerStatus(deps: RelationshipDeps): Pr
       return;
     }
   } catch (error) {
-    console.warn(
-      `[LFS] failed to sync current profile viewer: username=${currentProfileData.linkedinUsername}`,
-      error
-    );
+    console.warn(`[LFS] failed to sync current profile viewer: username=${currentProfileData.linkedinUsername}`, error);
     return;
   }
-
-  console.log(
-    `[LFS] synced current profile viewer: username=${currentProfileData.linkedinUsername}, status=${relationship.status || 'n/a'}, connectionDegree=${relationship.connectionDegree || 'n/a'}`
-  );
 }
