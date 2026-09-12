@@ -18,6 +18,7 @@ import { initLinkedInAnalyticsPassiveCapture } from './linkedin-analytics/passiv
 import { initNativeInviteTracking } from './native-invite-tracking/controller';
 import { destroyPostButtons, initPostButtons } from './post-buttons';
 import { destroyMessagingButtons, initMessagingButtons } from './messaging-buttons';
+import { destroyMessagingDrawerButtons, initMessagingDrawerButtons } from './messaging-buttons/drawer';
 import { openProfileFeedPicker } from './post-buttons/public';
 import { destroySpeechToCommentButton } from './speech-to-comment/controller';
 import type { UserFeatureSettings } from 'shared/types';
@@ -57,8 +58,10 @@ let pageReadyTimer: number | null = null;
 function applyFeatureUI(): void {
   if (featureSettings.messagingButtons) {
     initMessagingButtons({ openProfileFeedPicker });
+    initMessagingDrawerButtons(openProfileFeedPicker);
   } else {
     destroyMessagingButtons();
+    destroyMessagingDrawerButtons();
   }
 
   if (featureSettings.postButtons) {
@@ -155,6 +158,7 @@ function restoreHistoryMethods(): void {
 function disposeContentRuntime(): void {
   destroyPostButtons();
   destroyMessagingButtons();
+  destroyMessagingDrawerButtons();
   destroySpeechToCommentButton();
   try {
     stopFeatureSettingsListener?.();
