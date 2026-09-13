@@ -31,6 +31,10 @@ import {
   startOffscreenAuth,
 } from '../services/authenticated-user';
 import {
+  ensureAuthenticatedUserProfile,
+  resetAuthenticatedUserProfileReadiness,
+} from '../services/user-profile-readiness';
+import {
   appendProfileViewersWakeEvent,
   clearProfileViewersAlarm,
 } from '../../profile-viewers/profile-viewers-coordinator-storage';
@@ -90,7 +94,7 @@ export function registerAuthSettingsMessageHandler(): void {
     }
 
     if (message.type === 'FEEDS_GET_AUTH_STATE') {
-      (async () => {
+      void (async () => {
         const user = await getAuthenticatedFeedsUser();
         if (user) {
           const preferences = await resolveUserProfilePreferences(user.uid);
@@ -110,7 +114,13 @@ export function registerAuthSettingsMessageHandler(): void {
           // It's only cleared on explicit sign-out (FEEDS_SIGN_OUT).
           sendResponse({ isAuthenticated: false });
         }
-      })();
+      })().catch((error) => {
+        console.error('[feeds-auth] Failed to initialize the authenticated user profile:', error);
+        sendResponse({
+          isAuthenticated: false,
+          error: normalizeFeedsError(error, 'Account profile could not be initialized'),
+        });
+      });
       return true;
     }
 
@@ -124,6 +134,7 @@ export function registerAuthSettingsMessageHandler(): void {
           }
 
           const user = await signInWithGoogleTokens(result.idToken, result.accessToken);
+          await ensureAuthenticatedUserProfile(user);
 
           await setStoredFeedsAuthTokens({
             idToken: result.idToken,
@@ -170,6 +181,7 @@ export function registerAuthSettingsMessageHandler(): void {
     if (message.type === 'FEEDS_SIGN_OUT') {
       signOutUser()
         .then(async () => {
+          resetAuthenticatedUserProfileReadiness();
           await Promise.all([
             removeStorageValue('feedsUserInfo'),
             removeStorageValue(FEATURE_SETTINGS_STORAGE_KEY),

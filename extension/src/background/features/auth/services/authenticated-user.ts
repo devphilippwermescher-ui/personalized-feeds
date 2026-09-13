@@ -3,6 +3,7 @@ import type { UserFeatureSettings, UserProfilePreferences } from 'shared/types';
 import { DEFAULT_USER_PROFILE_PREFERENCES, normalizeUserProfilePreferences } from 'shared/user-profile-preferences';
 import { getCurrentUser, signInWithGoogleTokens, waitForAuthReady } from '../../../../services/auth';
 import { FEATURE_SETTINGS_STORAGE_KEY, normalizeFeatureSettings } from '../../../../shared/feature-settings';
+import { ensureAuthenticatedUserProfile } from './user-profile-readiness';
 
 export {
   DEFAULT_FEATURE_SETTINGS,
@@ -214,12 +215,14 @@ export async function getAuthenticatedFeedsUser(): Promise<User | null> {
   // 1. Check in-memory (fast path — service worker still alive)
   let user = getCurrentUser();
   if (user) {
+    await ensureAuthenticatedUserProfile(user);
     return user;
   }
 
   // 2. Wait for Firebase to rehydrate from IndexedDB (service worker cold-start)
   user = await waitForAuthReady();
   if (user) {
+    await ensureAuthenticatedUserProfile(user);
     return user;
   }
 
@@ -232,12 +235,15 @@ export async function getAuthenticatedFeedsUser(): Promise<User | null> {
   // 4. User was previously signed in but Firebase didn't restore — try stored Google tokens
   user = await rehydrateFeedsAuthFromStoredTokens();
   if (user) {
+    await ensureAuthenticatedUserProfile(user);
     return user;
   }
 
   // 5. Last resort: give Firebase one more chance with a longer timeout
   user = await waitForAuthReady(5000);
-
+  if (user) {
+    await ensureAuthenticatedUserProfile(user);
+  }
   return user;
 }
 
