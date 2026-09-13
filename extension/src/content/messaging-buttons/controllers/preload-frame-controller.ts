@@ -1,6 +1,7 @@
 import { loadFeatureSettings, onFeatureSettingsChange } from '../../feature-settings';
 import { destroyMessagingButtons, initMessagingButtons } from '../index';
 import { openTopFrameFeedPicker } from '../services/top-frame-feed-picker';
+import { onExtensionAuthStateChange } from '../../shared/extension-auth-state';
 
 function isTopLevelMessagingRoute(): boolean {
   const topWindow = window.top;
@@ -15,11 +16,13 @@ function isTopLevelMessagingRoute(): boolean {
 
 export function registerMessagingPreloadFrameRuntime(): () => void {
   let disposed = false;
+  let authenticated = false;
+  let messagingButtonsEnabled = false;
 
-  const applyMessagingSetting = (enabled: boolean): void => {
+  const applyMessagingButtons = (): void => {
     if (disposed) return;
 
-    if (enabled) {
+    if (authenticated && messagingButtonsEnabled) {
       initMessagingButtons({
         isSurfaceActive: isTopLevelMessagingRoute,
         openProfileFeedPicker: openTopFrameFeedPicker,
@@ -30,19 +33,28 @@ export function registerMessagingPreloadFrameRuntime(): () => void {
   };
 
   void loadFeatureSettings()
-    .then((settings) => applyMessagingSetting(settings.messagingButtons))
+    .then((settings) => {
+      messagingButtonsEnabled = settings.messagingButtons;
+      applyMessagingButtons();
+    })
     .catch(() => {
       // The frame can disappear while LinkedIn is completing SPA navigation.
     });
 
   const stopSettingsListener = onFeatureSettingsChange((settings) => {
-    applyMessagingSetting(settings.messagingButtons);
+    messagingButtonsEnabled = settings.messagingButtons;
+    applyMessagingButtons();
+  });
+  const stopAuthStateListener = onExtensionAuthStateChange((nextAuthenticated) => {
+    authenticated = nextAuthenticated;
+    applyMessagingButtons();
   });
 
   const dispose = (): void => {
     if (disposed) return;
     disposed = true;
     stopSettingsListener();
+    stopAuthStateListener();
     destroyMessagingButtons();
     window.removeEventListener('pagehide', dispose);
   };

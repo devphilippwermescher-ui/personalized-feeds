@@ -30,6 +30,7 @@ import {
 } from '../shared/content-runtime';
 import { registerContentRuntime } from './runtime/content-runtime-registration';
 import { isMessagingProfilePickerOpenMessage, type MessagingProfilePickerResponse } from '../shared/messaging-buttons';
+import { onExtensionAuthStateChange } from './shared/extension-auth-state';
 
 const CONTENT_BOOTSTRAP_DELAY_MS = 100;
 
@@ -41,7 +42,9 @@ let featureSettings: UserFeatureSettings = {
 };
 
 let domReady = false;
+let isExtensionAuthenticated = false;
 let stopFeatureSettingsListener: (() => void) | null = null;
+let stopAuthStateListener: (() => void) | null = null;
 let contentRuntimeMessageListener:
   | ((
       message: unknown,
@@ -56,7 +59,7 @@ let patchedReplaceState: History['replaceState'] | null = null;
 let pageReadyTimer: number | null = null;
 
 function applyFeatureUI(): void {
-  if (featureSettings.messagingButtons) {
+  if (isExtensionAuthenticated && featureSettings.messagingButtons) {
     initMessagingButtons({ openProfileFeedPicker });
     initMessagingDrawerButtons(openProfileFeedPicker);
   } else {
@@ -64,7 +67,7 @@ function applyFeatureUI(): void {
     destroyMessagingDrawerButtons();
   }
 
-  if (featureSettings.postButtons) {
+  if (isExtensionAuthenticated && featureSettings.postButtons) {
     initPostButtons();
   } else {
     destroyPostButtons();
@@ -76,6 +79,13 @@ function applyFeatureUI(): void {
   // } else {
   //   destroySpeechToCommentButton();
   // }
+}
+
+function applyAuthState(authenticated: boolean): void {
+  isExtensionAuthenticated = authenticated;
+  if (domReady) {
+    applyFeatureUI();
+  }
 }
 
 function applyFeatureSettings(nextSettings: UserFeatureSettings): void {
@@ -166,6 +176,12 @@ function disposeContentRuntime(): void {
     // The previous extension context is expected to be invalid after Reload.
   }
   stopFeatureSettingsListener = null;
+  try {
+    stopAuthStateListener?.();
+  } catch {
+    // The previous extension context is expected to be invalid after Reload.
+  }
+  stopAuthStateListener = null;
 
   if (contentRuntimeMessageListener) {
     try {
@@ -186,6 +202,7 @@ function disposeContentRuntime(): void {
   window.clearTimeout(linkedinActivityTimer);
   linkedinActivityTimer = undefined;
   domReady = false;
+  isExtensionAuthenticated = false;
 }
 
 function initializeContentRuntime(): void {
@@ -227,6 +244,7 @@ function initializeContentRuntime(): void {
 
   void loadFeatureSettings().then(applyFeatureSettings);
   stopFeatureSettingsListener = onFeatureSettingsChange(applyFeatureSettings);
+  stopAuthStateListener = onExtensionAuthStateChange(applyAuthState);
   if (DASHBOARD_ANALYTICS_SYNC_ENABLED) {
     initNativeInviteTracking();
     initLinkedInAnalyticsPassiveCapture();
