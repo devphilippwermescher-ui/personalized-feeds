@@ -44,6 +44,65 @@ describe('Messaging profile picker relay', () => {
     });
   });
 
+  it('forwards the profile after LinkedIn changes the child frame pathname', async () => {
+    sendMessage.mockResolvedValue({ success: true });
+    registerMessagingProfilePickerRelay();
+    const listener = addListener.mock.calls[0][0];
+    const sendResponse = vi.fn();
+    const profile = {
+      linkedinUrl: 'https://www.linkedin.com/in/olga-titienkova/',
+      linkedinUsername: 'olga-titienkova',
+      displayName: 'Olga Titienkova',
+    };
+
+    expect(
+      listener(
+        { type: MESSAGING_PROFILE_PICKER_REQUEST, profile },
+        {
+          frameId: 7074,
+          url: 'https://www.linkedin.com/messaging/thread/example/',
+          tab: { id: 42, url: 'https://www.linkedin.com/messaging/thread/example/' },
+        },
+        sendResponse
+      )
+    ).toBe(true);
+
+    await vi.waitFor(() => {
+      expect(sendMessage).toHaveBeenCalledWith(42, { type: MESSAGING_PROFILE_PICKER_OPEN, profile }, { frameId: 0 });
+      expect(sendResponse).toHaveBeenCalledWith({ success: true });
+    });
+  });
+
+  it('rejects a cross-origin child frame even when its top tab is LinkedIn', () => {
+    registerMessagingProfilePickerRelay();
+    const listener = addListener.mock.calls[0][0];
+    const sendResponse = vi.fn();
+
+    expect(
+      listener(
+        {
+          type: MESSAGING_PROFILE_PICKER_REQUEST,
+          profile: {
+            linkedinUrl: 'https://www.linkedin.com/in/olga-titienkova/',
+            linkedinUsername: 'olga-titienkova',
+            displayName: 'Olga Titienkova',
+          },
+        },
+        {
+          frameId: 7074,
+          url: 'https://example.com/embedded/',
+          tab: { id: 42, url: 'https://www.linkedin.com/messaging/thread/example/' },
+        },
+        sendResponse
+      )
+    ).toBe(false);
+    expect(sendMessage).not.toHaveBeenCalled();
+    expect(sendResponse).toHaveBeenCalledWith({
+      success: false,
+      error: 'Messaging profile request came from an unsupported frame',
+    });
+  });
+
   it('rejects the relay when the request did not originate in a LinkedIn child frame', () => {
     registerMessagingProfilePickerRelay();
     const listener = addListener.mock.calls[0][0];

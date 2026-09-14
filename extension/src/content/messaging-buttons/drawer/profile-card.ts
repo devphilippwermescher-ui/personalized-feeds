@@ -1,4 +1,5 @@
 import type { PostAuthorProfile } from '../../post-buttons/public';
+import { findLinkedInProfileImageUrl } from '../../shared/linkedin-profile-image';
 
 export interface MessagingDrawerProfileTarget {
   cardElement: HTMLElement;
@@ -81,7 +82,7 @@ export function findMessagingDrawerProfileTargets(root: ParentNode): MessagingDr
           linkedinUsername,
           displayName,
           headline: normalizedText(cardElement.querySelector('.artdeco-entity-lockup__subtitle')),
-          profileImageUrl: cardElement.querySelector<HTMLImageElement>('img')?.src || '',
+          profileImageUrl: findLinkedInProfileImageUrl(cardElement),
           connectionDegree,
         },
       },

@@ -1,4 +1,5 @@
 import type { PostAuthorProfile } from '../../post-buttons/public';
+import { findLinkedInProfileImageUrl } from '../../shared/linkedin-profile-image';
 
 export interface MessagingProfileTarget {
   degreeElement: HTMLElement;
@@ -273,7 +274,7 @@ function buildMessagingProfileTarget(
       linkedinUsername,
       displayName,
       headline: findHeadline(card, displayName),
-      profileImageUrl: card.querySelector<HTMLImageElement>('img')?.src || '',
+      profileImageUrl: findLinkedInProfileImageUrl(card),
       connectionDegree: degreeAnchor.degree,
     },
   };

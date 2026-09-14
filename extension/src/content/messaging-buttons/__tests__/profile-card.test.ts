@@ -158,4 +158,39 @@ describe('LinkedIn messaging profile cards', () => {
     expect(targets[0].degreeElement.className).toContain('artdeco-entity-lockup__title');
     expect(targets[0].insertPosition).toBe('beforeend');
   });
+
+  it('never treats the injected Add to feed icon as the profile avatar', () => {
+    document.body.innerHTML = `
+      <section class="msg-thread__profile-card">
+        <div class="identity-row">
+          <a href="/in/olga-titienkova/">Olga Titienkova</a>
+          <span>· 2nd</span>
+          <span class="lfa-messaging-feed-btn-wrapper">
+            <button><img src="chrome-extension://extension-id/icons/icon48.png" /></button>
+          </span>
+        </div>
+        <img src="https://media.licdn.com/dms/image/profile-displayphoto-shrink_100_100/olga" />
+      </section>
+    `;
+
+    expect(findMessagingProfileTargets(document)[0]?.profile.profileImageUrl).toBe(
+      'https://media.licdn.com/dms/image/profile-displayphoto-shrink_100_100/olga'
+    );
+  });
+
+  it('returns no avatar when the injected icon is the only image in the card', () => {
+    document.body.innerHTML = `
+      <section class="msg-thread__profile-card">
+        <a href="/in/olga-titienkova/">Olga Titienkova</a>
+        <div class="identity-row">
+          <span>· 2nd</span>
+          <span class="lfa-messaging-feed-btn-wrapper">
+            <button><img src="chrome-extension://extension-id/icons/icon48.png" /></button>
+          </span>
+        </div>
+      </section>
+    `;
+
+    expect(findMessagingProfileTargets(document)[0]?.profile.profileImageUrl).toBe('');
+  });
 });

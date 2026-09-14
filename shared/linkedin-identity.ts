@@ -1,4 +1,5 @@
 import type { FeedMember, LinkedInProfileData, ProfileViewerInput } from './types';
+import { normalizeLinkedInProfileImageUrl } from './linkedin-profile-image';
 
 const RESERVED_LINKEDIN_PROFILE_USERNAMES = new Set([
   'me',
@@ -155,8 +156,12 @@ export function buildMemberUpsertPatch(
   if (profileData.headline && profileData.headline !== existing.headline) {
     patch.headline = profileData.headline;
   }
-  if (profileData.profileImageUrl && profileData.profileImageUrl !== existing.profileImageUrl) {
-    patch.profileImageUrl = profileData.profileImageUrl;
+  const incomingProfileImageUrl = normalizeLinkedInProfileImageUrl(profileData.profileImageUrl);
+  const existingProfileImageUrl = normalizeLinkedInProfileImageUrl(existing.profileImageUrl);
+  if (incomingProfileImageUrl && incomingProfileImageUrl !== existing.profileImageUrl) {
+    patch.profileImageUrl = incomingProfileImageUrl;
+  } else if (existing.profileImageUrl && !existingProfileImageUrl) {
+    patch.profileImageUrl = '';
   }
   if (profileData.company && profileData.company !== existing.company) {
     patch.company = profileData.company;

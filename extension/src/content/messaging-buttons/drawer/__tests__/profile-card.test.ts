@@ -43,4 +43,23 @@ describe('Messaging drawer profile card', () => {
 
     expect(findMessagingDrawerProfileTargets(document)).toEqual([]);
   });
+
+  it('ignores the extension control icon when LinkedIn hydrates the avatar later', () => {
+    document.body.innerHTML = `
+      <div class="msg-s-profile-card msg-s-profile-card-one-to-one ph3">
+        <div class="artdeco-entity-lockup__title">
+          <a class="profile-card-one-to-one__profile-link" href="/in/olga-titienkova/">Olga Titienkova</a>
+          <span class="artdeco-entity-lockup__degree">· 2nd</span>
+          <span class="lfa-messaging-drawer-feed-btn-wrapper">
+            <button><img src="chrome-extension://extension-id/icons/icon48.png" /></button>
+          </span>
+        </div>
+        <img class="presence-entity__image" src="https://media.licdn.com/dms/image/profile-displayphoto-shrink_100_100/olga" />
+      </div>
+    `;
+
+    expect(findMessagingDrawerProfileTargets(document)[0]?.profile.profileImageUrl).toBe(
+      'https://media.licdn.com/dms/image/profile-displayphoto-shrink_100_100/olga'
+    );
+  });
 });
