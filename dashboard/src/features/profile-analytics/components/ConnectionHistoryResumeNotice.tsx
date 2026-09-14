@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { HiOutlineArrowPath } from 'react-icons/hi2';
-import { sendMessageToExtension } from '../../../utils/extensionMessaging';
+import { sendMessageToExtension } from '../../../services/extension-messaging';
 
 type ResumeState = 'idle' | 'resuming' | 'started' | 'failed';
 

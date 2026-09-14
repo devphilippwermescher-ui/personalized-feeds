@@ -1,4 +1,4 @@
-import type { LinkedInProfileData } from '../../../../shared/types';
+import type { LinkedInProfileData } from 'shared/types';
 
 export interface PostAuthorProfile extends LinkedInProfileData {
   postUrn?: string;

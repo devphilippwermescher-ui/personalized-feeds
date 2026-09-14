@@ -1,7 +1,8 @@
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { getFirebaseDb } from '../firebase-config';
-import type { UserFeatureSettings, UserProfile } from '../types';
-import { emailIndexCollection, normalizeEmail, settingsDoc } from './refs';
+import type { UserFeatureSettings, UserProfile, UserProfilePreferences } from '../types';
+import { normalizeUserProfilePreferences } from '../user-profile-preferences';
+import { emailIndexCollection, normalizeEmail, profilePreferencesDoc, settingsDoc } from './refs';
 
 const DEFAULT_USER_FEATURE_SETTINGS: UserFeatureSettings = {
   messagingButtons: true,
@@ -67,6 +68,22 @@ export async function updateUserFeatureSettings(
 
   await setDoc(settingsDoc(userId), next, { merge: true });
   return next;
+}
+
+export async function getUserProfilePreferences(userId: string): Promise<UserProfilePreferences> {
+  const snap = await getDoc(profilePreferencesDoc(userId));
+  return normalizeUserProfilePreferences(
+    snap.exists() ? (snap.data() as Partial<UserProfilePreferences>) : null
+  );
+}
+
+export async function updateUserProfilePreferences(
+  userId: string,
+  preferences: UserProfilePreferences
+): Promise<UserProfilePreferences> {
+  const normalized = normalizeUserProfilePreferences(preferences);
+  await setDoc(profilePreferencesDoc(userId), normalized, { merge: true });
+  return normalized;
 }
 
 export async function findUserProfileByEmail(email: string): Promise<UserProfile | null> {

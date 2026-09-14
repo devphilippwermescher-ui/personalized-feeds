@@ -1,8 +1,14 @@
+import type { ProfileViewersCollectionProgress } from '../../shared/profile-viewers-progress';
+import type { BillingCurrency } from 'shared/types';
+
 export interface UserInfo {
   userId: string;
   displayName: string;
   email: string;
   photoURL: string;
+  authDisplayName?: string;
+  authPhotoURL?: string;
+  billingCurrency?: BillingCurrency;
 }
 
 export interface FeedInfo {
@@ -26,6 +32,7 @@ export interface FeedInfo {
   systemType?: 'profileViewers';
   privateViewerCount?: number;
   recruiterViewerCount?: number;
+  profileViewersCollectionProgress?: ProfileViewersCollectionProgress;
   isRefreshingProfileViewers?: boolean;
   isConfirmingProfileViewersRefresh?: boolean;
 }

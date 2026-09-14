@@ -18,6 +18,7 @@ import {
   setProfileFeedModalContext,
 } from '../shared/profile-feed-modals';
 import { injectSharedStyles } from '../../shared/ui';
+import { openPlanModal } from '../shared/plan-modal';
 
 const POST_FLAG = 'data-lfa-post-buttons-bound';
 const STYLE_ID = 'lfa-post-buttons-styles';
@@ -33,6 +34,8 @@ let activeProfile: PostAuthorProfile | null = null;
 let globalPostControlEventsBound = false;
 let createFeedSubmitInFlight = false;
 const postControlProfiles = new WeakMap<HTMLElement, PostAuthorProfile>();
+
+class HandledPlanLimitError extends Error {}
 
 function sendMessage<T>(message: Record<string, unknown>): Promise<T | null> {
   return new Promise((resolve) => {
@@ -94,13 +97,17 @@ async function getFeeds(): Promise<FeedSummary[]> {
 }
 
 async function createFeed(name: string, color: string, description = ''): Promise<FeedSummary> {
-  const response = await sendMessage<{ success: boolean; feed?: FeedSummary; error?: string }>({
+  const response = await sendMessage<{ success: boolean; feed?: FeedSummary; error?: string; code?: string }>({
     type: 'FEEDS_CREATE',
     name,
     description,
     color,
   });
   if (!response?.success || !response.feed) {
+    if (response?.code === 'PLAN_LIMIT_REACHED') {
+      openPlanModal({ plan: 'free', context: 'feeds' });
+      throw new HandledPlanLimitError();
+    }
     throw new Error(response?.error || 'Failed to create feed');
   }
   return response.feed;
@@ -134,6 +141,7 @@ async function addProfileToFeed(feedId: string, feedName: string, profile: PostA
     error?: string;
     alreadyExists?: boolean;
     member?: FeedMemberInfo;
+    code?: string;
   }>({
     type: 'FEEDS_ADD_MEMBER',
     feedId,
@@ -141,6 +149,10 @@ async function addProfileToFeed(feedId: string, feedName: string, profile: PostA
   });
 
   if (!response?.success) {
+    if (response?.code === 'PLAN_LIMIT_REACHED') {
+      openPlanModal({ plan: 'free', context: 'members' });
+      throw new HandledPlanLimitError();
+    }
     throw new Error(response?.error || `Failed to add to "${feedName}"`);
   }
 
@@ -249,6 +261,10 @@ function bindCreateFeedModal(overlay: HTMLElement): void {
         added ? 'success' : 'error'
       );
     } catch (createError) {
+      if (createError instanceof HandledPlanLimitError) {
+        overlay.style.display = 'none';
+        return;
+      }
       const message = createError instanceof Error ? createError.message : 'Failed to create feed';
       showToast(createdFeedName ? feedCreatedButProfileAddFailedMessage(createdFeedName) : message, 'error');
       submitButton.disabled = false;
@@ -309,13 +325,18 @@ async function openFeedModal(profile: PostAuthorProfile, feeds: FeedSummary[]): 
         );
       } catch (error) {
         button.disabled = false;
+        if (error instanceof HandledPlanLimitError) {
+          overlay.style.display = 'none';
+          return;
+        }
         showToast(error instanceof Error ? error.message : CONTENT_COPY.postButtons.failedToAddToFeed, 'error');
       }
     });
   });
 }
 
-async function handlePostButtonClick(profile: PostAuthorProfile): Promise<void> {
+export async function openProfileFeedPicker(profile: PostAuthorProfile): Promise<void> {
+  ensureStyles();
   const authState = await sendMessage<{ isAuthenticated?: boolean }>({ type: 'FEEDS_GET_AUTH_STATE' });
   if (!authState?.isAuthenticated) {
     showToast(CONTENT_COPY.postButtons.signInRequired, 'error');
@@ -394,7 +415,7 @@ function handleGlobalPostControlEvent(event: Event): void {
     return;
   }
 
-  void handlePostButtonClick(profile).catch((error) => {
+  void openProfileFeedPicker(profile).catch((error) => {
     showToast(error instanceof Error ? error.message : CONTENT_COPY.postButtons.failedToOpenFeeds, 'error');
   });
 }

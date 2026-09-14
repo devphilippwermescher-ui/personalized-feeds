@@ -17,9 +17,7 @@ function paragraphChunk(id: string, text: string): string {
 }
 
 function seriesChunk(id: string, name: string, points: Array<[number, number]>): string {
-  const data = points
-    .map(([x, y]) => `{"y":${y},"tooltipPercentageText":null,"x":${x}}`)
-    .join(',');
+  const data = points.map(([x, y]) => `{"y":${y},"tooltipPercentageText":null,"x":${x}}`).join(',');
   return `${id}:["$","$Lyy",null,{"chart":{"type":"line"},"series":[{"name":"${name}","data":[${data}],"dashStyle":"Solid"}],"xAxis":{"type":"datetime"},"yAxis":[{"type":"linear"}]}]`;
 }
 
@@ -56,9 +54,10 @@ export function buildContentAnalyticsRscFixture(options: ContentAnalyticsRscFixt
   lines.push(seriesChunk('53', 'Impressions', points));
 
   if (options.cumulativeImpressionsSeries) {
-    const cumulativePoints = options.cumulativeImpressionsSeries.map(
-      (value, index): [number, number] => [START_MS + index * DAY_MS, value]
-    );
+    const cumulativePoints = options.cumulativeImpressionsSeries.map((value, index): [number, number] => [
+      START_MS + index * DAY_MS,
+      value,
+    ]);
     lines.push(seriesChunk('54', 'Impressions', cumulativePoints));
   }
 

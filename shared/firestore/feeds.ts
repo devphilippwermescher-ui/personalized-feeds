@@ -20,6 +20,7 @@ import {
   normalizeMemberNumericId,
 } from '../linkedin-identity';
 import type { Feed, FeedMember, LinkedInProfileData } from '../types';
+import { normalizeLinkedInProfileImageUrl } from '../linkedin-profile-image';
 import {
   docToFeed,
   docToMember,
@@ -170,7 +171,7 @@ export async function addMemberToFeed(
     isFollowing: profileData.isFollowing ?? false,
     displayName: profileData.displayName,
     headline: profileData.headline || '',
-    profileImageUrl: profileData.profileImageUrl || '',
+    profileImageUrl: normalizeLinkedInProfileImageUrl(profileData.profileImageUrl),
     company: profileData.company || '',
     location: profileData.location || '',
     connectionDegree: profileData.connectionDegree || '',
@@ -207,7 +208,7 @@ export async function getMemberByUsername(
   }) || null;
 }
 
-async function findExistingMemberInFeed(
+export async function findExistingMemberInFeed(
   userId: string,
   feedId: string,
   profileData: LinkedInProfileData
@@ -255,6 +256,9 @@ export async function updateMemberInFeed(
     (updates.status === 'connect' || updates.status === 'following' || updates.status === 'pending');
   const safeUpdates = {
     ...updates,
+    ...('profileImageUrl' in updates
+      ? { profileImageUrl: normalizeLinkedInProfileImageUrl(updates.profileImageUrl) }
+      : {}),
     ...(shouldPreserveWithdrawn ? { status: 'withdrawn' as const, canConnect: false } : {}),
     ...(shouldPreserveUnavailable
       ? { status: 'unavailable' as const, canMessage: false, canFollow: false, canConnect: false, isFollowing: false }

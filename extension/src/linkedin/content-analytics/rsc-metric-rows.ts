@@ -63,9 +63,7 @@ export function extractRscLabeledMetrics<TKey extends string>(
     if (!definition || values[definition.key] !== undefined) return;
 
     const value =
-      definition.layout === 'highlight'
-        ? findRscHighlightValue(records, index)
-        : findRscRowValue(records, index);
+      definition.layout === 'highlight' ? findRscHighlightValue(records, index) : findRscRowValue(records, index);
     if (typeof value === 'number') values[definition.key] = value;
   });
   return values;

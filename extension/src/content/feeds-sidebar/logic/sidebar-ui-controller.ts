@@ -25,6 +25,11 @@ import { getSharefeedTokenFromLocation } from './sharefeed-location';
 import { onFeatureSettingsChange } from '../../feature-settings';
 import type { FeedActionDeps } from './feed-actions';
 import type { MemberActionDeps } from './member-actions';
+import { openPlanModal } from '../../shared/plan-modal';
+import {
+  openProfilePreferencesModal,
+  PROFILE_PREFERENCES_UPDATED_EVENT,
+} from '../../profile-preferences/public';
 
 interface SidebarUiControllerDeps {
   dashboardUrl: string;
@@ -45,7 +50,6 @@ interface SidebarUiControllerDeps {
   getIsInitializing: () => boolean;
   setIsInitializing: (value: boolean) => void;
   getIsPremium: () => boolean;
-  setIsPremium: (value: boolean) => void;
   getAuthErrorMessage: () => string;
   setAuthErrorMessage: (message: string) => void;
   sendMsg: (message: Record<string, unknown>) => Promise<Record<string, unknown>>;
@@ -54,6 +58,7 @@ interface SidebarUiControllerDeps {
   handleSignIn: () => Promise<void>;
   handleSignOut: () => Promise<void>;
   checkAuth: () => Promise<void>;
+  loadPlan: (force?: boolean) => Promise<void>;
   schedulePendingShareRetries: () => void;
   renderFeedPreview: (feedId: string) => string;
   renderMembersList: (feed: FeedInfo) => string;
@@ -204,10 +209,21 @@ export function createSidebarUiController(deps: SidebarUiControllerDeps): {
             });
           }
         },
-        openProfileSettings: () =>
-          window.open(`${deps.dashboardUrl}/settings/profile`, '_blank'),
+        openProfileSettings: () => {
+          void openProfilePreferencesModal().catch((error) => {
+            deps.showToast(
+              error instanceof Error ? error.message : 'Profile preferences could not be opened.',
+              'error'
+            );
+          });
+        },
         openSubscription: () =>
           window.open(`${deps.dashboardUrl}/subscription`, '_blank'),
+        openManagePlan: () =>
+          openPlanModal({
+            plan: deps.getIsPremium() ? 'pro' : 'free',
+            context: 'manage',
+          }),
         updateFeatureSetting: async (key, value) => {
           const response = await deps.sendMsg({
             type: 'SETTINGS_UPDATE',
@@ -265,12 +281,6 @@ export function createSidebarUiController(deps: SidebarUiControllerDeps): {
           accountMenuOpen = value;
         },
         memberActionDeps: deps.getMemberActionDeps(),
-        togglePlan: () => {
-          const newPlan = deps.getIsPremium() ? 'free' : 'premium';
-          deps.setIsPremium(newPlan === 'premium');
-          chrome.storage.local.set({ pf_userPlan: newPlan });
-          renderSidebarContent();
-        },
       });
     });
   };
@@ -293,10 +303,9 @@ export function createSidebarUiController(deps: SidebarUiControllerDeps): {
       getTriggerBtn: () => triggerBtn,
       setIsInitializing: deps.setIsInitializing,
       renderSidebarContent,
-      setIsPremium: deps.setIsPremium,
-      getIsPremium: deps.getIsPremium,
       getCurrentUser: deps.getCurrentUser,
       loadFeeds: deps.loadFeeds,
+      loadPlan: deps.loadPlan,
       sendMsg: deps.sendMsg,
       setCurrentUser: deps.setCurrentUser,
       setAuthErrorMessage: deps.setAuthErrorMessage,
@@ -321,6 +330,13 @@ export function createSidebarUiController(deps: SidebarUiControllerDeps): {
       if (sidebarOpen) {
         renderSidebarContent();
       }
+    });
+
+    document.addEventListener(PROFILE_PREFERENCES_UPDATED_EVENT, (event) => {
+      const updatedUser = (event as CustomEvent<{ user?: UserInfo }>).detail?.user;
+      if (!updatedUser || updatedUser.userId !== deps.getCurrentUser()?.userId) return;
+      deps.setCurrentUser(updatedUser);
+      if (sidebarOpen) renderSidebarContent();
     });
 
     const overlay = document.createElement('div');
@@ -362,7 +378,6 @@ export function createSidebarUiController(deps: SidebarUiControllerDeps): {
     },
     start: () => {
       ensureInit({
-        setIsPremium: deps.setIsPremium,
         init,
       });
       deps.schedulePendingShareRetries();
@@ -371,14 +386,6 @@ export function createSidebarUiController(deps: SidebarUiControllerDeps): {
         void deps.checkAuth();
       }
 
-      chrome.storage.onChanged.addListener((changes, area) => {
-        if (area === 'local' && changes.pf_userPlan) {
-          deps.setIsPremium(changes.pf_userPlan.newValue === 'premium');
-          if (sidebarOpen) {
-            renderSidebarContent();
-          }
-        }
-      });
     },
   };
 }

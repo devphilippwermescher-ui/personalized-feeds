@@ -1,0 +1,25 @@
+{
+  "name": "myfeedpilot-functions",
+  "version": "0.1.0",
+  "private": true,
+  "main": "lib/index.js",
+  "engines": {
+    "node": "20"
+  },
+  "scripts": {
+    "clean": "node -e \"require('fs').rmSync('lib', { recursive: true, force: true })\"",
+    "build": "npm run clean && tsc",
+    "type-check": "tsc --noEmit",
+    "test": "vitest run src",
+    "simulate:webhook": "node scripts/simulate-local-webhook.mjs"
+  },
+  "dependencies": {
+    "firebase-admin": "^13.0.0",
+    "firebase-functions": "^7.3.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.2",
+    "vitest": "^2.1.9"
+  }
+}

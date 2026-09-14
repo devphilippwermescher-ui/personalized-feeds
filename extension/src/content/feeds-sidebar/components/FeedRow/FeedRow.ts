@@ -1,10 +1,5 @@
 import type { FeedInfo } from '../../types';
-
-function escapeHtml(text: string): string {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
-}
+import { escapeHtml } from '../../../shared/escape-html';
 
 interface RenderFeedRowOptions {
   feed: FeedInfo;
@@ -17,6 +12,11 @@ export function renderFeedRow({ feed, expanded, previewHtml, expandedContentHtml
   const isShared = Boolean(feed.isShared);
   const isSystem = Boolean(feed.isSystem);
   const isProfileViewers = feed.systemType === 'profileViewers';
+  const collectionProgress = isProfileViewers ? feed.profileViewersCollectionProgress : undefined;
+  const collectionStatusText =
+    collectionProgress?.phase === 'private_summary'
+      ? 'Checking private and recruiter views…'
+      : 'Collecting profile visitors…';
   const hasPrivateViewerCount =
     isProfileViewers && Number.isSafeInteger(feed.privateViewerCount) && (feed.privateViewerCount || 0) >= 0;
   const privateViewerCount = feed.privateViewerCount || 0;
@@ -129,6 +129,18 @@ export function renderFeedRow({ feed, expanded, previewHtml, expandedContentHtml
           </span>
         </div>
       </div>
+      ${
+        collectionProgress
+          ? `
+            <div class="lfa-profile-viewers-collection" role="status" aria-live="polite">
+              <span class="lfa-profile-viewers-collection-label">${collectionStatusText}</span>
+              <span class="lfa-profile-viewers-progress" role="progressbar" aria-label="${collectionStatusText}">
+                <span class="lfa-profile-viewers-progress-bar"></span>
+              </span>
+            </div>
+          `
+          : ''
+      }
       ${expanded ? `<div class="lfa-feed-expanded">${expandedContentHtml}</div>` : ''}
     </div>
   `;

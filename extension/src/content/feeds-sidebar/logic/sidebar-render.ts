@@ -3,6 +3,8 @@ import type { UserFeatureSettings } from 'shared/types';
 import { renderMemberEditorOverlay } from '../components/MemberEditor/MemberEditor';
 import { renderFeedRow } from '../components/FeedRow/FeedRow';
 
+export { escapeHtml } from '../../shared/escape-html';
+
 export interface SidebarDomSnapshot {
   feedListScrollTop: number;
   memberEditorScrollTop: number;
@@ -23,6 +25,7 @@ interface RenderSidebarInnerParams {
     logoUrl: string;
     currentUser: UserInfo | null;
     isPremium: boolean;
+    isPlanLoading?: boolean;
     featureSettings: UserFeatureSettings;
   }) => string;
   renderSidebarBody: (params: {
@@ -144,6 +147,7 @@ export function renderSidebarInnerMarkup(params: RenderSidebarInnerParams): void
     logoUrl: getLogoUrl(),
     currentUser,
     isPremium,
+    isPlanLoading: isInitializing,
     featureSettings,
   });
   container.appendChild(header);
@@ -184,16 +188,10 @@ export function renderSidebarInnerMarkup(params: RenderSidebarInnerParams): void
   container.appendChild(content);
 }
 
-export function escapeHtml(text: string): string {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
-}
-
 export function getLogoUrl(): string {
   return chrome.runtime.getURL('icons/icon48.png');
 }
 
 export function getLauncherLogoUrl(): string {
-  return chrome.runtime.getURL('icons/logo-mark.svg');
+  return chrome.runtime.getURL('icons/launcher-logo.png');
 }

@@ -19,9 +19,12 @@
     "resolveJsonModule": true,
     "esModuleInterop": true,
     "paths": {
-      "shared/*": ["../shared/*"]
-    },
-    "baseUrl": "."
+      "shared/*": ["../shared/*"],
+      "react": ["./node_modules/@types/react/index.d.ts"],
+      "react/*": ["./node_modules/@types/react/*"],
+      "react-dom": ["./node_modules/@types/react-dom/index.d.ts"],
+      "react-dom/*": ["./node_modules/@types/react-dom/*"]
+    }
   },
   "include": ["src", "../shared", "vite.config.ts"]
 }

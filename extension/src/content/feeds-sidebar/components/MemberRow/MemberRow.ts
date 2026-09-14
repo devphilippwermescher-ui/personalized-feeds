@@ -1,11 +1,7 @@
 import type { FeedMemberInfo } from '../../types';
 import { getMemberInitials } from '../../utils';
-
-function escapeHtml(text: string): string {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
-}
+import { SHOW_LINKEDIN_PREMIUM_ICONS } from '../../constants';
+import { escapeHtml } from '../../../shared/escape-html';
 
 function renderMemberMeta(member: FeedMemberInfo): string {
   const metaParts = [member.headline, member.viewedAgoText, member.mutualConnectionsText]
@@ -135,7 +131,7 @@ export function renderMemberRow({
         }
         <div class="lfa-member-info">
           <button class="lfa-member-name" data-member-action="open-profile" data-member-id="${escapeHtml(member.id)}" data-feed-id="${escapeHtml(feedId)}" type="button">
-            <span class="lfa-member-name-text">${escapeHtml(member.displayName)}</span>${member.isPremium ? ' <span class="lfa-member-premium-icon" title="LinkedIn Premium" aria-label="LinkedIn Premium">✦</span>' : ''}
+            <span class="lfa-member-name-text">${escapeHtml(member.displayName)}</span>${SHOW_LINKEDIN_PREMIUM_ICONS && member.isPremium ? ' <span class="lfa-member-premium-icon" title="LinkedIn Premium" aria-label="LinkedIn Premium">✦</span>' : ''}
           </button>
           ${showMeta ? renderMemberMeta(member) : ''}
         </div>

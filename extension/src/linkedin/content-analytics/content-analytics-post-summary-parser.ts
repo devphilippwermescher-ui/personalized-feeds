@@ -1,5 +1,5 @@
 import type { ContentAnalyticsMetricCoverage, ContentAnalyticsMetricValues } from 'shared/types';
-import { DashboardAnalyticsError } from '../../background/dashboard-analytics/dashboard-analytics-errors';
+import { DashboardAnalyticsError } from '../../background/features/dashboard-analytics/dashboard-analytics-errors';
 import { parseOrderedRscFlightRecords } from '../rsc-flight-records';
 import { extractRscLabeledMetrics, type RscMetricDefinition } from './rsc-metric-rows';
 

@@ -14,6 +14,7 @@ import {
   resetCreateFeedModalFields,
   setProfileFeedModalContext,
 } from '../../shared/profile-feed-modals';
+import { openPlanModal } from '../../shared/plan-modal';
 
 interface FeedActionDeps {
   getCurrentProfileData: () => ProfileData | null;
@@ -141,7 +142,7 @@ export function createFeedActions(deps: FeedActionDeps) {
           type: 'FEEDS_ADD_MEMBER',
           feedId,
           profileData,
-        })) as { success: boolean; error?: string; member?: unknown; alreadyExists?: boolean } | null;
+        })) as { success: boolean; error?: string; member?: unknown; alreadyExists?: boolean; code?: string } | null;
 
         if (result?.success) {
           if (result.alreadyExists) {
@@ -159,6 +160,11 @@ export function createFeedActions(deps: FeedActionDeps) {
           overlay.style.display = 'none';
           await refreshCardState();
         } else {
+          if (result?.code === 'PLAN_LIMIT_REACHED') {
+            overlay.style.display = 'none';
+            openPlanModal({ plan: 'free', context: 'members' });
+            return;
+          }
           resetFeedSelectionModalState(body);
           body.querySelectorAll('.pf-feed-option').forEach((option) => option.classList.remove('is-disabled', 'is-submitting'));
           if (status) {

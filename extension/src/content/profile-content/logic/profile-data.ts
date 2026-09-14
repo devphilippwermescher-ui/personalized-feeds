@@ -1,8 +1,36 @@
 import type { ProfileData } from '../types';
+import { getRelationshipButtonSignal, hasRelationshipSignal } from '../../shared/relationship-dom-signals';
+import { isWeakProfileViewerDisplayName } from 'shared/profile-viewer-quality';
 
 export function extractUsernameFromUrl(): string | null {
   const match = window.location.pathname.match(/^\/in\/([^/]+)/);
   return match ? match[1] : null;
+}
+
+function normalizeLinkedInUsername(value: string): string {
+  const normalized = value
+    .trim()
+    .replace(/^\/+|\/+$/g, '')
+    .toLowerCase();
+  try {
+    return decodeURIComponent(normalized);
+  } catch {
+    return normalized;
+  }
+}
+
+function getUsernameFromHref(value: string | null): string {
+  if (!value) {
+    return '';
+  }
+
+  try {
+    const url = new URL(value, window.location.origin);
+    const match = url.pathname.match(/^\/in\/([^/]+)/);
+    return normalizeLinkedInUsername(match?.[1] || '');
+  } catch {
+    return '';
+  }
 }
 
 function getProfileHrefCandidates(username: string): string[] {
@@ -14,24 +42,27 @@ function getProfileHrefCandidates(username: string): string[] {
   ];
 }
 
-function hasModernTopCardSignals(element: Element): boolean {
+function hasModernTopCardSignals(element: Element, username = ''): boolean {
+  const hasProfileAction = Array.from(element.querySelectorAll('button, a, [role="button"], [role="menuitem"]')).some(
+    (candidate) => hasRelationshipSignal(getRelationshipButtonSignal(candidate))
+  );
+  const hasTrustworthyHeading = Array.from(element.querySelectorAll<HTMLElement>('h1, h2')).some((heading) => {
+    const value = heading.textContent?.replace(/\s+/g, ' ').trim() || '';
+    return !isWeakProfileViewerDisplayName(value, username);
+  });
+
   return Boolean(
-    element.querySelector('h1, h2') &&
-      (
-        element.querySelector('a[href*="/preload/custom-invite/"]') ||
-        element.querySelector('a[href*="/messaging/compose/"]') ||
-        element.querySelector('a[href*="/overlay/contact-info/"]')
-      )
+    hasTrustworthyHeading && (hasProfileAction || element.querySelector('a[href*="/overlay/contact-info/"]'))
   );
 }
 
-function findModernTopCardByComponentKey(): HTMLElement | null {
+function findModernTopCardByComponentKey(username: string): HTMLElement | null {
   const candidates = Array.from(
     document.querySelectorAll<HTMLElement>('section[componentkey*="Topcard"], section[componentkey*="topcard"]')
   );
 
   for (const candidate of candidates) {
-    if (hasModernTopCardSignals(candidate)) {
+    if (hasModernTopCardSignals(candidate, username)) {
       return candidate;
     }
   }
@@ -40,35 +71,35 @@ function findModernTopCardByComponentKey(): HTMLElement | null {
 }
 
 export function findProfileTopCardRoot(username = extractUsernameFromUrl() || ''): HTMLElement | null {
-  const legacyRoot =
-    document.querySelector<HTMLElement>('section[data-member-id]') ||
-    document.querySelector<HTMLElement>('.pv-top-card');
-  if (legacyRoot) {
-    return legacyRoot;
-  }
-
-  const modernComponentRoot = findModernTopCardByComponentKey();
+  const modernComponentRoot = findModernTopCardByComponentKey(username);
   if (modernComponentRoot) {
     return modernComponentRoot;
+  }
+
+  const legacyRoot = document.querySelector<HTMLElement>('.pv-top-card');
+  if (legacyRoot) {
+    return legacyRoot;
   }
 
   if (!username) {
     return null;
   }
 
-  for (const href of getProfileHrefCandidates(username)) {
-    const links = Array.from(document.querySelectorAll(`a[href="${href}"]`));
-    for (const link of links) {
-      let current: Element | null = link;
-      let depth = 0;
+  const normalizedUsername = normalizeLinkedInUsername(username);
+  const profileLinks = Array.from(document.querySelectorAll<HTMLAnchorElement>('a[href*="/in/"]')).filter(
+    (link) => getUsernameFromHref(link.getAttribute('href')) === normalizedUsername
+  );
 
-      while (current && depth < 10) {
-        if (hasModernTopCardSignals(current)) {
-          return current as HTMLElement;
-        }
-        current = current.parentElement;
-        depth += 1;
+  for (const link of profileLinks) {
+    let current: Element | null = link;
+    let depth = 0;
+
+    while (current && current !== document.body && depth < 10) {
+      if (hasModernTopCardSignals(current, username)) {
+        return current as HTMLElement;
       }
+      current = current.parentElement;
+      depth += 1;
     }
   }
 
@@ -84,6 +115,24 @@ function firstNonEmptyText(selectors: string[], root: ParentNode): string {
   }
 
   return '';
+}
+
+function extractProfileDisplayName(root: ParentNode, username: string): string {
+  const candidates = Array.from(root.querySelectorAll<HTMLElement>('h1, h2'))
+    .map((heading) => heading.textContent?.replace(/\s+/g, ' ').trim() || '')
+    .filter((value) => !isWeakProfileViewerDisplayName(value, username));
+
+  if (candidates[0]) {
+    return candidates[0];
+  }
+
+  const normalizedUsername = normalizeLinkedInUsername(username);
+  const profileLinkName = Array.from(root.querySelectorAll<HTMLAnchorElement>('a[href*="/in/"]'))
+    .filter((link) => getUsernameFromHref(link.getAttribute('href')) === normalizedUsername)
+    .map((link) => link.textContent?.replace(/\s+/g, ' ').trim() || '')
+    .find((value) => !isWeakProfileViewerDisplayName(value, username));
+
+  return profileLinkName || '';
 }
 
 function extractModernHeadline(root: ParentNode): string {
@@ -361,7 +410,10 @@ export function extractProfileData(): ProfileData | null {
     return null;
   }
 
-  const displayName = firstNonEmptyText(['h1', 'h2'], section);
+  const displayName = extractProfileDisplayName(section, username);
+  if (!displayName) {
+    return null;
+  }
   const headline =
     firstNonEmptyText(['.text-body-medium'], section) ||
     extractModernHeadline(section);

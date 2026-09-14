@@ -3,7 +3,7 @@ export const SHELL_CSS = `
     appearance: none;
     -webkit-appearance: none;
     position: fixed;
-    right: 8px;
+    right: 0;
     top: 50%;
     transform: translateY(-50%);
     width: 48px;
@@ -12,31 +12,33 @@ export const SHELL_CSS = `
     min-height: 48px;
     margin: 0;
     padding: 0;
-    background: transparent;
-    border: none;
-    border-radius: 14px;
+    background: #ffffff;
+    border: 1.5px solid rgba(97, 93, 236, 0.32);
+    border-right: none;
+    border-radius: 14px 0 0 14px;
     display: flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
     z-index: 99998;
-    box-shadow: none;
-    transition: transform 0.2s ease, opacity 0.2s ease;
+    box-shadow:
+      -8px 10px 22px rgba(15, 23, 42, 0.10),
+      inset 0 1px 0 rgba(255, 255, 255, 0.95);
+    transition:
+      transform 0.2s ease,
+      opacity 0.2s ease,
+      box-shadow 0.2s ease;
   }
   .lfa-trigger-btn:hover {
-    background: transparent;
+    box-shadow:
+      -10px 14px 26px rgba(97, 93, 236, 0.14),
+      inset 0 1px 0 rgba(255, 255, 255, 0.98);
   }
   .lfa-trigger-btn img {
-    width: 28px;
-    height: 21px;
+    width: 36px;
+    height: 36px;
     object-fit: contain;
     display: block;
-    filter: drop-shadow(0 8px 12px rgba(46, 69, 145, 0.22));
-    transition: transform 0.18s ease, filter 0.18s ease;
-  }
-  .lfa-trigger-btn:hover img {
-    transform: translateY(-2px) scale(1.04);
-    filter: drop-shadow(0 11px 16px rgba(46, 69, 145, 0.28));
   }
   .lfa-trigger-btn:focus-visible {
     outline: 3px solid rgba(97, 93, 236, 0.3);
@@ -137,7 +139,10 @@ export const SHELL_CSS = `
     outline: 3px solid rgba(255, 138, 33, 0.26);
     outline-offset: 3px;
   }
-  .lfa-plan-toggle-btn {
+  .lfa-plan-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     border-radius: 8px;
     padding: 0 10px;
     height: 28px;
@@ -145,25 +150,21 @@ export const SHELL_CSS = `
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
     font-size: 11px !important;
     font-weight: 700 !important;
-    cursor: pointer;
-    transition: filter 0.15s ease;
   }
-  .lfa-plan-toggle-btn--free {
+  .lfa-plan-badge--free {
     border: 1.5px solid #d1d5db;
     background: #f9fafb;
     color: #6b7280;
   }
-  .lfa-plan-toggle-btn--free:hover {
-    filter: brightness(0.96);
+  .lfa-plan-badge--loading {
+    min-width: 48px;
+    visibility: hidden;
   }
-  .lfa-plan-toggle-btn--pro {
-    border: none;
-    background: linear-gradient(135deg, #615DEC 0%, #8b5cf6 100%);
-    color: #ffffff;
-    box-shadow: 0 4px 10px rgba(97, 93, 236, 0.35);
-  }
-  .lfa-plan-toggle-btn--pro:hover {
-    filter: brightness(1.08);
+  .lfa-plan-badge--pro {
+    border: 1px solid #f4c928;
+    background: #ffd95a;
+    color: #3f2b00;
+    box-shadow: none;
   }
   .lfa-account-menu-wrap,
   .lfa-settings-menu-wrap {
@@ -314,6 +315,16 @@ export const SHELL_CSS = `
   .lfa-account-menu-link--danger {
     color: #ef4444;
   }
+  .lfa-account-menu-link--plan {
+    border: none;
+    color: #a96f00;
+    background: transparent;
+  }
+  .lfa-account-menu-link--plan:hover,
+  .lfa-account-menu-link--plan:focus-visible {
+    color: #855700;
+    background: #fff7d6;
+  }
   .lfa-account-menu-link--danger:hover,
   .lfa-account-menu-link--danger:focus-visible {
     background: #fef2f2;
@@ -338,6 +349,20 @@ export const SHELL_CSS = `
   .lfa-account-menu-link--danger .lfa-account-menu-link-icon {
     background: #fef2f2;
     color: inherit;
+  }
+  .lfa-account-menu-link-icon--plan {
+    color: #201a0c;
+    background: linear-gradient(135deg, #ffe477 0%, #f6c93d 100%);
+    box-shadow: inset 0 0 0 1px rgba(217, 154, 0, 0.16);
+  }
+  .lfa-account-menu-link-icon--profile {
+    color: #4f46e5;
+    background: #eef2ff;
+  }
+  .lfa-account-menu-link-icon .lfa-plan-star-glyph {
+    width: 21px;
+    height: 21px;
+    display: block;
   }
   .lfa-settings-link {
     width: 100%;

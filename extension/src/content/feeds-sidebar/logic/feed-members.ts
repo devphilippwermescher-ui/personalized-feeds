@@ -6,6 +6,7 @@ import { renderMemberStatusAction, renderMessageButton } from './member-actions'
 import { CONTENT_COPY } from '../../shared/copy';
 import { buildRecruiterAggregateMember } from './profile-viewers-feed';
 import type { ProfileViewerListItem, ProfileViewerSummary } from 'shared/types';
+import { escapeHtml } from '../../shared/escape-html';
 
 interface FeedMembersDeps {
   sendMsg: (message: Record<string, unknown>) => Promise<Record<string, unknown>>;
@@ -230,6 +231,19 @@ export async function toggleFeedExpansion(feedId: string, deps: FeedMembersDeps)
   }
 }
 
+function renderFeedExpandedHeader(feed: FeedInfo): string {
+  const actionsHtml = renderFeedActions(feed);
+  if (!actionsHtml.trim()) {
+    return '';
+  }
+
+  return `
+    <div class="lfa-feed-expanded-header">
+      ${actionsHtml}
+    </div>
+  `;
+}
+
 export function renderMembersList(
   feed: FeedInfo,
   deps: Pick<FeedMembersDeps, 'getLoadingMembersFeedId' | 'getFeedMembersById'> & {
@@ -238,9 +252,7 @@ export function renderMembersList(
 ): string {
   if (deps.getLoadingMembersFeedId() === feed.id) {
     return `
-      <div class="lfa-feed-expanded-header">
-        ${renderFeedActions(feed)}
-      </div>
+      ${renderFeedExpandedHeader(feed)}
       <div class="lfa-feed-members-state">
         <div class="lfa-spinner lfa-spinner--small"></div>
         <p>${CONTENT_COPY.common.loadingProfiles}</p>
@@ -254,9 +266,7 @@ export function renderMembersList(
 
   if (members.length === 0) {
     return `
-      <div class="lfa-feed-expanded-header">
-        ${renderFeedActions(feed)}
-      </div>
+      ${renderFeedExpandedHeader(feed)}
       <div class="lfa-feed-members-empty">
         ${CONTENT_COPY.feedModals.emptyProfilesHint}
       </div>
@@ -264,9 +274,7 @@ export function renderMembersList(
   }
 
   return `
-    <div class="lfa-feed-expanded-header">
-      ${renderFeedActions(feed)}
-    </div>
+    ${renderFeedExpandedHeader(feed)}
     <div class="lfa-feed-members-list">
       ${members
         .map((member) => {
@@ -326,10 +334,4 @@ export function renderFeedPreview(feedId: string, feedMembersById: Record<string
         .join('')}
     </div>
   `;
-}
-
-function escapeHtml(text: string): string {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
 }

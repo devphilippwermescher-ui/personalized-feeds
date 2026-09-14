@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { HiOutlineArrowPath, HiOutlineTrash } from 'react-icons/hi2';
-import { sendMessageToExtension } from '../../../utils/extensionMessaging';
+import { sendMessageToExtension } from '../../../services/extension-messaging';
 import { deleteProfileAnalyticsCache } from '../services/profile-analytics-cache';
 
 type ResetState = 'idle' | 'confirming' | 'resetting' | 'started' | 'failed';

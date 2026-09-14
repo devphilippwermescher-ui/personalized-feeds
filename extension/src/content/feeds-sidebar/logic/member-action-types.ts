@@ -10,6 +10,7 @@ import type {
 export interface MemberActionDeps {
   sendMsg: (message: Record<string, unknown>) => Promise<Record<string, unknown>>;
   showToast: (message: string, type?: 'success' | 'error') => void;
+  showPlanModal?: () => void;
   renderSidebarContent: () => void;
   openLinkedInMessage: (linkedinUrl: string, profileUrn?: string) => void;
   openLinkedInProfile: (linkedinUrl: string) => void;

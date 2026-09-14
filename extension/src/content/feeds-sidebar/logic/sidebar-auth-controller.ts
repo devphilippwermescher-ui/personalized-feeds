@@ -19,6 +19,8 @@ interface SidebarAuthControllerDeps {
   setIsInitializing: (value: boolean) => void;
   renderSidebarContent: () => void;
   loadFeeds: () => Promise<void>;
+  loadPlan: (force?: boolean) => Promise<void>;
+  setIsPremium: (value: boolean) => void;
 }
 
 export function createSidebarAuthController(deps: SidebarAuthControllerDeps): {
@@ -47,6 +49,7 @@ export function createSidebarAuthController(deps: SidebarAuthControllerDeps): {
             setAuthErrorMessage: deps.setAuthErrorMessage,
             setIsLoading: deps.setIsLoading,
             setIsInitializing: deps.setIsInitializing,
+            setIsPremium: deps.setIsPremium,
             renderSidebarContent: deps.renderSidebarContent,
           });
         }
@@ -70,6 +73,7 @@ export function createSidebarAuthController(deps: SidebarAuthControllerDeps): {
         setAuthErrorMessage: deps.setAuthErrorMessage,
         renderSidebarContent: deps.renderSidebarContent,
         loadFeeds: deps.loadFeeds,
+        loadPlan: deps.loadPlan,
         setCurrentUser: deps.setCurrentUser,
       }),
     handleSignOut: () =>
@@ -80,6 +84,7 @@ export function createSidebarAuthController(deps: SidebarAuthControllerDeps): {
           deps.setFeeds(feeds as FeedInfo[]);
           deps.resetSignedOutState();
         },
+        setIsPremium: deps.setIsPremium,
         renderSidebarContent: deps.renderSidebarContent,
       }),
   };

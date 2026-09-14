@@ -136,4 +136,60 @@ describe('buildMemberUpsertPatch', () => {
       headline: 'IT Recruiter',
     });
   });
+
+  it('clears an extension icon that was previously stored as a member avatar', () => {
+    const existingMember = {
+      linkedinUrl: 'https://www.linkedin.com/in/olga-titienkova/',
+      linkedinUsername: 'olga-titienkova',
+      profileUrn: '',
+      memberNumericId: '',
+      displayName: 'Olga Titienkova',
+      headline: '',
+      profileImageUrl: 'chrome-extension://extension-id/icons/icon48.png',
+      company: '',
+      location: '',
+      connectionDegree: '2nd',
+      canMessage: false,
+      canFollow: false,
+      canConnect: true,
+      isFollowing: false,
+    };
+
+    expect(
+      buildMemberUpsertPatch(existingMember, {
+        linkedinUrl: existingMember.linkedinUrl,
+        linkedinUsername: existingMember.linkedinUsername,
+        displayName: existingMember.displayName,
+      })
+    ).toMatchObject({ profileImageUrl: '' });
+  });
+
+  it('does not overwrite a valid LinkedIn avatar with an extension icon', () => {
+    const validAvatar = 'https://media.licdn.com/dms/image/profile-displayphoto-shrink_100_100/olga';
+    const existingMember = {
+      linkedinUrl: 'https://www.linkedin.com/in/olga-titienkova/',
+      linkedinUsername: 'olga-titienkova',
+      profileUrn: '',
+      memberNumericId: '',
+      displayName: 'Olga Titienkova',
+      headline: '',
+      profileImageUrl: validAvatar,
+      company: '',
+      location: '',
+      connectionDegree: '2nd',
+      canMessage: false,
+      canFollow: false,
+      canConnect: true,
+      isFollowing: false,
+    };
+
+    expect(
+      buildMemberUpsertPatch(existingMember, {
+        linkedinUrl: existingMember.linkedinUrl,
+        linkedinUsername: existingMember.linkedinUsername,
+        displayName: existingMember.displayName,
+        profileImageUrl: 'chrome-extension://extension-id/icons/icon48.png',
+      })
+    ).not.toHaveProperty('profileImageUrl');
+  });
 });

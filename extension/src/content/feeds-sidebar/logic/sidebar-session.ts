@@ -13,8 +13,8 @@ interface SidebarSessionDeps {
   setSidebarOpen: (value: boolean) => void;
   setIsLoading: (value: boolean) => void;
   setIsInitializing: (value: boolean) => void;
-  getIsPremium: () => boolean;
   setIsPremium: (value: boolean) => void;
+  loadPlan: (force?: boolean) => Promise<void>;
   setAuthErrorMessage: (value: string) => void;
   getSidebarEl: () => HTMLElement | null;
   getTriggerBtn: () => HTMLElement | null;
@@ -46,7 +46,9 @@ async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: s
   }
 }
 
-export async function checkAuth(deps: Pick<SidebarSessionDeps, 'sendMsg' | 'setCurrentUser' | 'setAuthErrorMessage'>): Promise<void> {
+export async function checkAuth(
+  deps: Pick<SidebarSessionDeps, 'sendMsg' | 'setCurrentUser' | 'setAuthErrorMessage'>
+): Promise<void> {
   const resp = await deps.sendMsg({ type: 'FEEDS_GET_AUTH_STATE' });
   if (resp?.isAuthenticated) {
     deps.setAuthErrorMessage('');
@@ -55,6 +57,9 @@ export async function checkAuth(deps: Pick<SidebarSessionDeps, 'sendMsg' | 'setC
       displayName: (resp.displayName as string) || '',
       email: (resp.email as string) || '',
       photoURL: (resp.photoURL as string) || '',
+      authDisplayName: (resp.authDisplayName as string) || '',
+      authPhotoURL: (resp.authPhotoURL as string) || '',
+      billingCurrency: resp.billingCurrency === 'USD' ? 'USD' : 'EUR',
     });
   } else {
     deps.setCurrentUser(null);
@@ -74,10 +79,12 @@ export function handleExpiredSession(
     | 'setExpandedFeedId'
     | 'setSharedFeeds'
     | 'setActiveMemberEditor'
+    | 'setIsPremium'
   >
 ): void {
   deps.closeModal?.();
   deps.setCurrentUser(null);
+  deps.setIsPremium(false);
   deps.setFeeds([]);
   deps.setSharedFeeds?.([]);
   deps.setExpandedFeedId?.(null);
@@ -89,35 +96,71 @@ export function handleExpiredSession(
 }
 
 export async function handleSignIn(
-  deps: Pick<SidebarSessionDeps, 'sendMsg' | 'setIsLoading' | 'setAuthErrorMessage' | 'renderSidebarContent' | 'loadFeeds' | 'setCurrentUser'>
+  deps: Pick<
+    SidebarSessionDeps,
+    | 'sendMsg'
+    | 'setIsLoading'
+    | 'setAuthErrorMessage'
+    | 'renderSidebarContent'
+    | 'loadFeeds'
+    | 'loadPlan'
+    | 'setCurrentUser'
+  >
 ): Promise<void> {
   deps.setIsLoading(true);
   deps.setAuthErrorMessage('');
   deps.renderSidebarContent();
 
-  const resp = await deps.sendMsg({ type: 'FEEDS_SIGN_IN' });
-  if (resp?.success) {
-    await checkAuth(deps);
-    await deps.loadFeeds();
-  } else {
-    deps.setAuthErrorMessage((resp?.error as string) || 'Sign in failed');
-  }
+  try {
+    const resp = await deps.sendMsg({ type: 'FEEDS_SIGN_IN' });
+    if (!resp?.success) {
+      deps.setAuthErrorMessage((resp?.error as string) || 'Sign in failed');
+      return;
+    }
 
-  deps.setIsLoading(false);
-  deps.renderSidebarContent();
+    await withTimeout(
+      (async () => {
+        await checkAuth(deps);
+        await deps.loadPlan(true);
+        await deps.loadFeeds();
+      })(),
+      SIDEBAR_INIT_TIMEOUT_MS,
+      'Sign-in completed, but account data could not be loaded. Please try again.'
+    );
+  } catch (error) {
+    deps.setAuthErrorMessage(error instanceof Error ? error.message : 'Sign in failed');
+  } finally {
+    deps.setIsLoading(false);
+    deps.renderSidebarContent();
+  }
 }
 
 export async function handleSignOut(
-  deps: Pick<SidebarSessionDeps, 'sendMsg' | 'setCurrentUser' | 'setFeeds' | 'renderSidebarContent'>
+  deps: Pick<SidebarSessionDeps, 'sendMsg' | 'setCurrentUser' | 'setFeeds' | 'setIsPremium' | 'renderSidebarContent'>
 ): Promise<void> {
   await deps.sendMsg({ type: 'FEEDS_SIGN_OUT' });
   deps.setCurrentUser(null);
+  deps.setIsPremium(false);
   deps.setFeeds([]);
   deps.renderSidebarContent();
 }
 
 export function toggleSidebar(
-  deps: Pick<SidebarSessionDeps, 'getSidebarOpen' | 'setSidebarOpen' | 'getSidebarEl' | 'getTriggerBtn' | 'setIsInitializing' | 'renderSidebarContent' | 'setIsPremium' | 'getIsPremium' | 'getCurrentUser' | 'loadFeeds' | 'sendMsg' | 'setCurrentUser' | 'setAuthErrorMessage'>
+  deps: Pick<
+    SidebarSessionDeps,
+    | 'getSidebarOpen'
+    | 'setSidebarOpen'
+    | 'getSidebarEl'
+    | 'getTriggerBtn'
+    | 'setIsInitializing'
+    | 'renderSidebarContent'
+    | 'getCurrentUser'
+    | 'loadFeeds'
+    | 'loadPlan'
+    | 'sendMsg'
+    | 'setCurrentUser'
+    | 'setAuthErrorMessage'
+  >
 ): void {
   const nextOpen = !deps.getSidebarOpen();
   deps.setSidebarOpen(nextOpen);
@@ -130,30 +173,26 @@ export function toggleSidebar(
     deps.setIsInitializing(true);
     deps.setAuthErrorMessage('');
     deps.renderSidebarContent();
-    chrome.storage.local.get(['pf_userPlan'], (result) => {
-      deps.setIsPremium(result.pf_userPlan === 'premium');
-      void withTimeout(
-        (async () => {
-          await checkAuth(deps);
-          if (deps.getCurrentUser()) {
-            // A signed-in person opened the sidebar: a real extension entry.
-            reportExtensionUiEntered();
-            await deps.loadFeeds();
-          }
-        })(),
-        SIDEBAR_INIT_TIMEOUT_MS,
-        'Sidebar initialization timed out'
-      )
-        .catch((error) => {
-          deps.setAuthErrorMessage(
-            error instanceof Error ? error.message : 'Failed to initialize sidebar'
-          );
-        })
-        .finally(() => {
-          deps.setIsInitializing(false);
-          deps.renderSidebarContent();
-        });
-    });
+    void withTimeout(
+      (async () => {
+        await checkAuth(deps);
+        if (deps.getCurrentUser()) {
+          await deps.loadPlan(true);
+          // A signed-in person opened the sidebar: a real extension entry.
+          reportExtensionUiEntered();
+          await deps.loadFeeds();
+        }
+      })(),
+      SIDEBAR_INIT_TIMEOUT_MS,
+      'Sidebar initialization timed out'
+    )
+      .catch((error) => {
+        deps.setAuthErrorMessage(error instanceof Error ? error.message : 'Failed to initialize sidebar');
+      })
+      .finally(() => {
+        deps.setIsInitializing(false);
+        deps.renderSidebarContent();
+      });
   } else {
     deps.getSidebarEl()?.classList.remove('lfa-sidebar-open');
     deps.getTriggerBtn()?.classList.remove('lfa-trigger-hidden');
@@ -162,20 +201,12 @@ export function toggleSidebar(
   }
 }
 
-export function ensureInit(
-  deps: Pick<SidebarSessionDeps, 'setIsPremium' | 'init'>
-): void {
-  chrome.storage.local.get(['pf_userPlan'], (result) => {
-    deps.setIsPremium(result.pf_userPlan === 'premium');
-    deps.init();
-  });
+export function ensureInit(deps: Pick<SidebarSessionDeps, 'init'>): void {
+  deps.init();
 
   setTimeout(() => {
     if (document.getElementById('lfa-feeds-trigger-btn')) return;
-    chrome.storage.local.get(['pf_userPlan'], (result) => {
-      deps.setIsPremium(result.pf_userPlan === 'premium');
-      deps.init();
-    });
+    deps.init();
   }, 500);
 }
 

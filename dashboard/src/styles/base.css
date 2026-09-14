@@ -288,3 +288,20 @@ body {
   color: #64748b;
   font-size: 15px;
 }
+
+@media (max-width: 980px) {
+  .main-content {
+    margin-left: 0;
+    padding: 24px 18px 32px;
+  }
+
+  .sidebar {
+    position: static;
+    width: 100%;
+    height: auto;
+  }
+
+  .app-layout {
+    flex-direction: column;
+  }
+}

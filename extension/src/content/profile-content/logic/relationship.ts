@@ -4,6 +4,10 @@ import {
   hasFollowSignal,
   hasFollowingSignal,
 } from '../../shared/relationship-dom-signals';
+import {
+  findCurrentProfileRelationshipRoot,
+  getCurrentProfileRelationshipActions,
+} from '../../shared/current-profile-relationship-dom';
 
 interface RelationshipDeps {
   getCurrentProfileData: () => ProfileData | null;
@@ -87,23 +91,19 @@ function buildCurrentProfileRelationshipUpdates(
 
 export function detectCurrentProfileRelationship(currentProfileData: ProfileData | null): RelationshipState {
   const scope =
-    document.querySelector('section[componentkey*="Topcard"], section[componentkey*="topcard"]') ||
-    document.querySelector('.pv-top-card') ||
-    document.querySelector('.ph5.pb5') ||
-    document.body;
+    findCurrentProfileRelationshipRoot({
+      username: currentProfileData?.linkedinUsername,
+      displayName: currentProfileData?.displayName,
+    }) || document.body;
 
-  const connectionDegree =
-    (scope.querySelector('.dist-value')?.textContent?.trim() || currentProfileData?.connectionDegree || '').trim();
+  const connectionDegree = (
+    scope.querySelector('.dist-value')?.textContent?.trim() ||
+    currentProfileData?.connectionDegree ||
+    ''
+  ).trim();
 
-  const buttons = Array.from(new Set([
-    ...Array.from(scope.querySelectorAll('button')) as HTMLButtonElement[],
-    ...Array.from(
-      document.querySelectorAll<HTMLButtonElement>(
-        '[role="menu"] button, [role="menuitem"], .artdeco-dropdown__content button'
-      )
-    ),
-  ]));
-  const buttonText = buttons.map(getRelationshipButtonSignal);
+  const actions = getCurrentProfileRelationshipActions(scope);
+  const buttonText = actions.map(getRelationshipButtonSignal);
 
   const hasPending = buttonText.some(
     ({ text, label }) =>
@@ -155,7 +155,13 @@ export function detectCurrentProfileRelationship(currentProfileData: ProfileData
     hasFirstDegree ||
     (hasMessage && !hasConnect && !hasPremiumMessage && !hasFollow && !hasAuthoritativeFollowing && !hasNonFirstDegree)
   ) {
-    return { status: 'connected', connectionDegree: '1st', canMessage: true, canConnect: false, isPremium: isPremiumProfile ? true : undefined };
+    return {
+      status: 'connected',
+      connectionDegree: '1st',
+      canMessage: true,
+      canConnect: false,
+      isPremium: isPremiumProfile ? true : undefined,
+    };
   }
 
   if (hasConnect && hasAuthoritativeFollowing) {
@@ -240,10 +246,6 @@ export async function syncCurrentProfileMembershipStatuses(
       })
     )
   );
-
-  console.log(
-    `[LFS] synced current profile memberships: username=${currentProfileData.linkedinUsername}, status=${relationship.status || 'n/a'}, connectionDegree=${relationship.connectionDegree || 'n/a'}`
-  );
 }
 
 export async function syncCurrentProfileViewerStatus(deps: RelationshipDeps): Promise<void> {
@@ -258,15 +260,8 @@ export async function syncCurrentProfileViewerStatus(deps: RelationshipDeps): Pr
     return;
   }
 
-  updates.statusResolvedAt = Date.now();
-  updates.linkedinUsername = currentProfileData.linkedinUsername;
-  updates.linkedinUrl = currentProfileData.linkedinUrl;
-  updates.displayName = currentProfileData.displayName;
-  if (currentProfileData.profileUrn) {
-    updates.profileUrn = currentProfileData.profileUrn;
-  }
-  if (currentProfileData.memberNumericId || currentProfileData.memberId) {
-    updates.memberNumericId = currentProfileData.memberNumericId || currentProfileData.memberId;
+  if (relationship.status) {
+    updates.statusResolvedAt = Date.now();
   }
 
   try {
@@ -283,14 +278,7 @@ export async function syncCurrentProfileViewerStatus(deps: RelationshipDeps): Pr
       return;
     }
   } catch (error) {
-    console.warn(
-      `[LFS] failed to sync current profile viewer: username=${currentProfileData.linkedinUsername}`,
-      error
-    );
+    console.warn(`[LFS] failed to sync current profile viewer: username=${currentProfileData.linkedinUsername}`, error);
     return;
   }
-
-  console.log(
-    `[LFS] synced current profile viewer: username=${currentProfileData.linkedinUsername}, status=${relationship.status || 'n/a'}, connectionDegree=${relationship.connectionDegree || 'n/a'}`
-  );
 }

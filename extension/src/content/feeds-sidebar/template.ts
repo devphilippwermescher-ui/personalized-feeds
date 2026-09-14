@@ -2,15 +2,24 @@ import type { UserInfo } from './types';
 import { CONTENT_COPY, getSidebarEmptyCopy } from '../shared/copy';
 import { DASHBOARD_ENABLED } from 'shared/feature-flags';
 import type { UserFeatureSettings } from 'shared/types';
+import { renderPlanOutlineStarIcon } from '../shared/plan-star';
+import { escapeHtml } from '../shared/escape-html';
 
-function escapeHtml(text: string): string {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
-}
-
-function renderSupportFooter(): string {
+function renderSupportFooter(isPremium: boolean): string {
   return `
+    ${
+      isPremium
+        ? ''
+        : `
+          <div class="lfa-pro-footer">
+            <p class="lfa-pro-footer-copy">Pro removes limits across Profile Visitors, feeds &amp; more</p>
+            <button class="lfa-pro-footer-btn" id="lfa-footer-get-pro-btn" type="button">
+              ${renderPlanOutlineStarIcon()}
+              <span>Get Pro</span>
+            </button>
+          </div>
+        `
+    }
     <div class="lfa-support-footer">
       <span class="lfa-support-label">Support &amp; Feedback :</span>
       <a class="lfa-support-link" href="mailto:dev.philipp.wermescher@gmail.com">dev.philipp.wermescher@gmail.com</a>
@@ -43,19 +52,16 @@ export function renderSidebarHeader(params: {
   logoUrl: string;
   currentUser: UserInfo | null;
   isPremium: boolean;
+  isPlanLoading?: boolean;
   featureSettings: UserFeatureSettings;
 }): string {
-  const { logoUrl, currentUser, isPremium, featureSettings } = params;
+  const { logoUrl, currentUser, isPremium, isPlanLoading = false, featureSettings } = params;
 
-  const planToggleHtml = `
-    <button
-      class="lfa-header-control lfa-plan-toggle-btn${isPremium ? ' lfa-plan-toggle-btn--pro' : ' lfa-plan-toggle-btn--free'}"
-      id="lfa-plan-toggle-btn"
-      type="button"
-      title="${isPremium ? 'Switch to Free plan' : 'Switch to Pro plan'}"
-      aria-label="${isPremium ? 'Pro plan active — click to switch to Free' : 'Free plan active — click to switch to Pro'}"
-    >${isPremium ? 'Pro' : 'Free'}</button>
-  `;
+  const planBadgeHtml = currentUser
+    ? isPlanLoading
+      ? '<span class="lfa-header-control lfa-plan-badge lfa-plan-badge--loading" aria-hidden="true"></span>'
+      : `<span class="lfa-header-control lfa-plan-badge${isPremium ? ' lfa-plan-badge--pro' : ' lfa-plan-badge--free'}" aria-label="Current plan: ${isPremium ? 'Pro' : 'Free'}">${isPremium ? 'Pro' : 'Free'}</span>`
+    : '';
 
   const avatarHtml = currentUser
     ? currentUser.photoURL
@@ -87,10 +93,10 @@ export function renderSidebarHeader(params: {
       <span class="lfa-header-title">myFeedPilot</span>
     </div>
     <div class="lfa-header-right">
-      ${planToggleHtml}
+      ${planBadgeHtml}
       ${DASHBOARD_ENABLED ? '<button class="lfa-header-control lfa-header-dashboard-btn lfa-header-dashboard-control" id="lfa-header-dashboard-btn" type="button">Dashboard</button>' : ''}
       ${
-        currentUser && isPremium
+        currentUser
           ? `
       <div class="lfa-settings-menu-wrap">
         <button class="lfa-header-control lfa-settings-btn lfa-header-settings-control" id="lfa-settings-btn" type="button" aria-label="Settings">
@@ -149,18 +155,24 @@ export function renderSidebarHeader(params: {
             </div>
           </div>
           <div class="lfa-account-menu-divider"></div>
+          <button class="lfa-account-menu-link" id="lfa-profile-settings-btn" type="button">
+            <span class="lfa-account-menu-link-icon lfa-account-menu-link-icon--profile">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z"></path>
+                <path d="M4 21a8 8 0 0 1 16 0"></path>
+              </svg>
+            </span>
+            <span>Profile &amp; billing</span>
+          </button>
+          <button class="lfa-account-menu-link lfa-account-menu-link--plan" id="lfa-manage-plan-btn" type="button">
+            <span class="lfa-account-menu-link-icon lfa-account-menu-link-icon--plan">
+              ${renderPlanOutlineStarIcon({ className: 'lfa-plan-star-glyph' })}
+            </span>
+            <span>Manage plan</span>
+          </button>
           ${
             DASHBOARD_ENABLED
               ? `
-          <button class="lfa-account-menu-link" id="lfa-profile-settings-btn" type="button">
-            <span class="lfa-account-menu-link-icon">
-              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
-                <circle cx="12" cy="12" r="3"></circle>
-                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.01a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
-              </svg>
-            </span>
-            <span>${CONTENT_COPY.common.profileSettings}</span>
-          </button>
           <button class="lfa-account-menu-link" id="lfa-subscription-btn" type="button">
             <span class="lfa-account-menu-link-icon">
               <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
@@ -237,33 +249,6 @@ export function renderSidebarBody(params: SidebarBodyParams): string {
     `;
   }
 
-  if (!isPremium) {
-    return `
-      <div class="lfa-unauth">
-        <div class="lfa-unauth-icon">
-          <svg viewBox="0 0 24 24" width="56" height="56" fill="#d1d5db">
-            <path d="M12 2L15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2z"/>
-          </svg>
-        </div>
-        <h2 class="lfa-unauth-title">${CONTENT_COPY.sidebar.premiumTitle}</h2>
-        <p class="lfa-unauth-desc">${CONTENT_COPY.sidebar.premiumDescription}</p>
-        ${
-          DASHBOARD_ENABLED
-            ? `
-        <div class="lfa-sidebar-pro-promo">
-          <button class="lfa-sidebar-pro-btn" id="lfa-open-subscription-btn">Get Pro</button>
-          <p class="lfa-sidebar-pro-activate">
-            Already bought Pro?
-            <span class="lfa-sidebar-pro-link" id="lfa-open-subscription-activate">Activate here →</span>
-          </p>
-        </div>
-        `
-            : ''
-        }
-      </div>
-    `;
-  }
-
   if (!currentUser) {
     return `
       <div class="lfa-unauth">
@@ -316,7 +301,7 @@ export function renderSidebarBody(params: SidebarBodyParams): string {
           </div>`
         }
       </div>
-      ${renderSupportFooter()}
+      ${renderSupportFooter(isPremium)}
     </div>
     ${editorOverlayHtml}
   `;

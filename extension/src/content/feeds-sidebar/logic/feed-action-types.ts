@@ -1,5 +1,6 @@
 import type { Root } from 'react-dom/client';
 import type { FeedInfo, FeedMemberInfo } from '../types';
+import type { PlanModalContext } from '../../shared/plan-modal';
 
 export interface FeedActionDeps {
   sendMsg: (message: Record<string, unknown>) => Promise<Record<string, unknown>>;
@@ -18,4 +19,5 @@ export interface FeedActionDeps {
   setFeedMembersById: (membersById: Record<string, FeedMemberInfo[]>) => void;
   getModalState: () => { el: HTMLElement | null; root: Root | null };
   setModalState: (state: { el: HTMLElement | null; root: Root | null }) => void;
+  showPlanModal: (context: PlanModalContext) => void;
 }

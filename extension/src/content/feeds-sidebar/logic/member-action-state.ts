@@ -14,6 +14,7 @@ import {
   renderMessageButton,
 } from './member-action-render';
 import { escapeHtml } from './escape-html';
+import { SHOW_LINKEDIN_PREMIUM_ICONS } from '../constants';
 
 function replaceFeedMembers(
   current: Record<string, FeedMemberInfo[]>,
@@ -77,13 +78,10 @@ export function updateRenderedMemberState(
     }
   }
 
-  // Update premium icon inside the member name button.
-  // This is the only place that reflects isPremium after an in-place status refresh —
-  // the name button is not part of the message or status node swaps above.
   const nameButton = row.querySelector<HTMLElement>('.lfa-member-name');
   if (nameButton) {
     const escapedName = escapeHtml(member.displayName);
-    const premiumIconHtml = member.isPremium
+    const premiumIconHtml = SHOW_LINKEDIN_PREMIUM_ICONS && member.isPremium
       ? ' <span class="lfa-member-premium-icon" title="LinkedIn Premium" aria-label="LinkedIn Premium">✦</span>'
       : '';
     nameButton.innerHTML = `<span class="lfa-member-name-text">${escapedName}</span>${premiumIconHtml}`;
@@ -239,7 +237,7 @@ export async function handleMemberDelete(
 }
 
 export async function handleMemberSave(
-  deps: Pick<MemberActionDeps, 'sendMsg' | 'showToast' | 'getActiveMemberEditor' | 'setActiveMemberEditor' | 'getFeedMembersById' | 'setFeedMembersById' | 'loadFeeds' | 'renderSidebarContent' | 'setExpandedFeedId' | 'loadFeedMembers' | 'getFeeds'>
+  deps: Pick<MemberActionDeps, 'sendMsg' | 'showToast' | 'showPlanModal' | 'getActiveMemberEditor' | 'setActiveMemberEditor' | 'getFeedMembersById' | 'setFeedMembersById' | 'loadFeeds' | 'renderSidebarContent' | 'setExpandedFeedId' | 'loadFeedMembers' | 'getFeeds'>
 ): Promise<void> {
   const editorState = deps.getActiveMemberEditor();
   if (!editorState) {
@@ -282,6 +280,10 @@ export async function handleMemberSave(
     });
 
     if (!addResult?.success || !addResult.member) {
+      if (addResult?.code === 'PLAN_LIMIT_REACHED') {
+        deps.showPlanModal?.();
+        return;
+      }
       deps.showToast((addResult?.error as string) || 'Failed to move profile to another feed', 'error');
       return;
     }

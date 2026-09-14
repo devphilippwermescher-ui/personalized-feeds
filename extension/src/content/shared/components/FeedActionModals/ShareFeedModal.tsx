@@ -172,6 +172,7 @@ export function ShareFeedModal({
   return (
     <LfsModal
       title="Share my feed"
+      variant="tabs"
       centeredTitle
       size="lg"
       className="lfa-share-modal-shell"
@@ -198,9 +199,7 @@ export function ShareFeedModal({
 
         {activeTab === 'email' ? (
           <div className="lfa-share-panel">
-            <div className="lfa-share-panel-title">
-              Enter the email address they used to login to MyFeedIn:
-            </div>
+            <div className="lfa-share-panel-title">Enter the email address they used to login to MyFeedIn:</div>
             <div className="lfa-share-email-row">
               <input
                 ref={emailRef}
@@ -262,7 +261,17 @@ export function ShareFeedModal({
         {sharesState === 'ready' && shares.length === 0 ? (
           <div className="lfa-share-empty">
             <div className="lfa-share-empty-icon">
-              <svg viewBox="0 0 48 48" width="46" height="46" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <svg
+                viewBox="0 0 48 48"
+                width="46"
+                height="46"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.4"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
                 <circle cx="18" cy="15" r="7" />
                 <path d="M8 36c0-6.2 4.8-10 10-10s10 3.8 10 10" />
                 <circle cx="35" cy="17" r="7" />
@@ -327,7 +336,14 @@ export function ShareFeedModal({
                       {removingShareUid === share.targetUid ? (
                         <div className="lfa-spinner lfa-spinner--small" />
                       ) : (
-                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2">
+                        <svg
+                          viewBox="0 0 24 24"
+                          width="16"
+                          height="16"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                        >
                           <polyline points="3 6 5 6 21 6" />
                           <path d="M19 6l-1 14H6L5 6" />
                           <path d="M10 11v6" />
@@ -338,7 +354,9 @@ export function ShareFeedModal({
                     </button>
                   </div>
                   <div className="lfa-share-recipient-actions">
-                    {updatingShareUid === share.targetUid ? <div className="lfa-share-recipient-role-status">Saving...</div> : null}
+                    {updatingShareUid === share.targetUid ? (
+                      <div className="lfa-share-recipient-role-status">Saving...</div>
+                    ) : null}
                   </div>
                 </div>
               </div>

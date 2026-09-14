@@ -15,6 +15,7 @@ import {
 import { getFirebaseDb } from '../firebase-config';
 import {
   getUsernameFromLinkedInUrl,
+  isPersistableProfileViewerIdentity,
   isValidLinkedInProfileUsername,
   normalizeLinkedInUsername,
 } from '../linkedin-identity';
@@ -32,6 +33,7 @@ import type {
   ProfileViewerSearchInput,
   ProfileViewerSummary,
 } from '../types';
+import type { AppPlan } from '../plans';
 import {
   docToProfileViewer,
   docToProfileViewerSearch,
@@ -105,6 +107,7 @@ export async function upsertProfileViewers(
   options: {
     seenAt?: number;
     positionOffset?: number;
+    collectionPlan?: AppPlan;
   } = {}
 ): Promise<{
   savedCount: number;
@@ -128,10 +131,8 @@ export async function upsertProfileViewers(
     }))
     .filter(
       (entry) =>
-        entry.viewer.identityUncertain !== true &&
-        isValidLinkedInProfileUsername(entry.linkedinUsername) &&
-        Boolean(entry.viewer.linkedinUrl) &&
-        Boolean(entry.viewer.displayName.trim())
+        isPersistableProfileViewerIdentity(entry.viewer) &&
+        isValidLinkedInProfileUsername(entry.linkedinUsername)
     );
 
   if (validViewers.length > 500) {
@@ -149,6 +150,9 @@ export async function upsertProfileViewers(
         ? ''
         : existingViewer.profileImageUrl;
     const firstSeenAt = existingByUsername.has(linkedinUsername) ? existingViewer.firstSeenAt || now : now;
+    const collectedPlan = existingByUsername.has(linkedinUsername)
+      ? existingViewer.collectedPlan
+      : options.collectionPlan;
     const preservedRelationshipUpdates: Partial<ProfileViewer> = {};
     if (existingViewer.profileUrn) preservedRelationshipUpdates.profileUrn = existingViewer.profileUrn;
     if (existingViewer.memberNumericId) preservedRelationshipUpdates.memberNumericId = existingViewer.memberNumericId;
@@ -195,6 +199,7 @@ export async function upsertProfileViewers(
         lastSeenAt: now,
         lastSeenPosition,
         source: 'linkedin_profile_views',
+        ...(collectedPlan ? { collectedPlan } : {}),
       } satisfies Omit<ProfileViewer, 'id'>,
       { merge: true }
     );
@@ -211,6 +216,30 @@ export async function upsertProfileViewers(
   }
 
   return { savedCount, newCount, newProfileUsernames };
+}
+
+/**
+ * Keep only the newest Free-collected window. Legacy and Pro documents are
+ * intentionally preserved so an existing account regains them after upgrade.
+ */
+export async function pruneFreeCollectedProfileViewers(
+  userId: string,
+  maxFreeProfiles: number
+): Promise<number> {
+  const viewers = await getProfileViewers(userId);
+  const freeViewers = viewers.filter((viewer) => viewer.collectedPlan === 'free');
+  const staleFreeViewers = freeViewers.slice(Math.max(0, maxFreeProfiles));
+
+  if (staleFreeViewers.length === 0) {
+    return 0;
+  }
+
+  const batch = writeBatch(getFirebaseDb());
+  staleFreeViewers.forEach((viewer) => {
+    batch.delete(doc(profileViewersCollection(userId), viewer.linkedinUsername || viewer.id));
+  });
+  await batch.commit();
+  return staleFreeViewers.length;
 }
 
 export async function getProfileViewers(userId: string): Promise<ProfileViewer[]> {

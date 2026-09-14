@@ -4,11 +4,12 @@ Project guide for working in this repository with Codex / project-local agents.
 
 ## Project Overview
 
-`linkedin-feed-sorter` is a monorepo with three main areas:
+`linkedin-feed-sorter` is a monorepo with four main areas:
 
 - `extension/` - Chrome extension (Webpack, React, TypeScript, Manifest V3)
 - `dashboard/` - web dashboard (Vite, React, TypeScript)
 - `shared/` - shared Firebase config, Firestore helpers, and shared types
+- `functions/` - Firebase Cloud Functions (TypeScript)
 
 Primary product behavior:
 
@@ -24,6 +25,18 @@ Primary product behavior:
 - Before editing, identify whether the work belongs to `extension`, `dashboard`, or `shared`.
 - When changing shared types or Firestore behavior, review both app surfaces for compatibility.
 - Keep TypeScript strictness intact and avoid `any` unless there is no practical alternative.
+
+### Behavior-preserving refactor protocol
+
+Architecture work is a refactor unless the task explicitly requests product behavior changes.
+
+- Before moving or splitting code, record the relevant tests, type-check, and production build as a baseline.
+- Keep structural moves separate from behavior changes. If a behavior change becomes necessary, stop and make it explicit.
+- Preserve Firestore paths and fields, Chrome message types and payloads, storage keys, alarm names, manifest entries, LinkedIn request contracts, retry/pagination limits, and UI-visible behavior.
+- Move one feature at a time. Update its imports and tests, validate it, and only then start the next feature.
+- Prefer temporary compatibility re-exports over changing every consumer in one risky step.
+- Do not run repository-wide formatting during a focused refactor. Format only touched files.
+- Never remove a fallback, migration, retry, timeout, or compatibility path solely because static search shows no direct caller; first verify its runtime and persisted-data role.
 
 ## Architecture Rules
 
@@ -195,6 +208,16 @@ A file should normally belong to one category: entrypoint, component, controller
 - Production modules must never import from `testing/` or `__tests__/`.
 - Split large test files by scenario or behavior when they become difficult to navigate.
 - The number of tests is not a reason to merge or delete them.
+- Tests and test-only dependencies stay in source control and CI; they must not be imported by production entrypoints or included intentionally in production bundles.
+- Delete a test only when the protected production behavior is removed, or when it is an exact duplicate with no distinct scenario or contract coverage.
+
+### Dead code and logging
+
+- Treat code as removable only after checking static imports, dynamic imports, Webpack/Vite entries, the extension manifest, routes, Chrome message strings, alarms, storage keys, migrations, and compatibility exports.
+- Distinguish dormant roadmap code from dead code. Feature-flagged or currently unrouted code requires an explicit product decision before deletion.
+- Remove unused declarations and unreachable branches when the evidence is local and complete.
+- Do not mass-delete logs. Keep actionable lifecycle, warning, and error logs; remove duplicate or temporary debug noise when the same failure remains observable.
+- Never log tokens, cookies, authorization headers, full LinkedIn payloads, or unnecessary personal data.
 
 ### Incremental migration
 
@@ -252,6 +275,10 @@ From repo root:
 - `npm run build:extension`
 - `npm run build:dashboard`
 - `npm run type-check`
+- `npm run test`
+- `npm run test:extension`
+- `npm run test:dashboard`
+- `npm run test:functions`
 - `npm run lint`
 - `npm run format:check`
 

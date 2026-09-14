@@ -49,6 +49,7 @@ export function isWeakProfileViewerDisplayName(
   if (
     /^https?:\/\//i.test(value) ||
     value.includes('/') ||
+    /^\d+\s+notifications?\b/i.test(value) ||
     /linkedin.*(?:sign in|log in)|(?:sign in|log in).*linkedin/i.test(value) ||
     /^(offsetstart|offsetend|navigationurl|linkedin|sign in|log in)$/i.test(value)
   ) {

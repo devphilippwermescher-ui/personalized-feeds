@@ -150,6 +150,56 @@ export const CONTENT_CSS = `.lfa-sidebar-content {
     flex: 1;
     min-height: 0;
   }
+  .lfa-pro-footer {
+    flex-shrink: 0;
+    padding: 12px 14px 14px;
+    border-top: 1px solid #e5e7eb;
+    background: #ffffff;
+  }
+  .lfa-pro-footer-copy {
+    margin: 0 0 10px;
+    color: #6b7280;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.35;
+    text-align: center;
+  }
+  .lfa-pro-footer-btn {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 100%;
+    height: 42px;
+    margin: 0;
+    padding: 0 16px;
+    border: 1px solid rgba(217, 154, 0, 0.22);
+    border-radius: 12px;
+    background: linear-gradient(100deg, #ffe477 0%, #f6c93d 100%);
+    color: #201a0c;
+    box-shadow: 0 7px 16px rgba(199, 137, 8, 0.18);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 9px;
+    font-family: inherit;
+    font-size: 15px;
+    font-weight: 800;
+    line-height: 1;
+    cursor: pointer;
+    transition: box-shadow 0.16s ease, filter 0.16s ease;
+  }
+  .lfa-pro-footer-btn svg {
+    width: 21px;
+    height: 21px;
+    flex-shrink: 0;
+  }
+  .lfa-pro-footer-btn:hover {
+    filter: brightness(1.02);
+    box-shadow: 0 9px 20px rgba(199, 137, 8, 0.24);
+  }
+  .lfa-pro-footer-btn:focus-visible {
+    outline: 3px solid rgba(217, 154, 0, 0.24);
+    outline-offset: 2px;
+  }
   .lfa-support-footer {
     flex-shrink: 0;
     margin: 0;

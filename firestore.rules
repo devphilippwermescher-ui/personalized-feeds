@@ -116,6 +116,13 @@ service cloud.firestore {
       match /settings/{settingId} {
         allow read, write: if isOwner(userId);
       }
+
+      // Billing state is written only by trusted backend/webhook code. The
+      // extension may read its own subscription but can never promote itself.
+      match /billing/{billingId} {
+        allow read: if isOwner(userId);
+        allow write: if false;
+      }
     }
 
     match /emailIndex/{email} {
