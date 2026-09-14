@@ -52,12 +52,15 @@ export function renderSidebarHeader(params: {
   logoUrl: string;
   currentUser: UserInfo | null;
   isPremium: boolean;
+  isPlanLoading?: boolean;
   featureSettings: UserFeatureSettings;
 }): string {
-  const { logoUrl, currentUser, isPremium, featureSettings } = params;
+  const { logoUrl, currentUser, isPremium, isPlanLoading = false, featureSettings } = params;
 
   const planBadgeHtml = currentUser
-    ? `<span class="lfa-header-control lfa-plan-badge${isPremium ? ' lfa-plan-badge--pro' : ' lfa-plan-badge--free'}" aria-label="Current plan: ${isPremium ? 'Pro' : 'Free'}">${isPremium ? 'Pro' : 'Free'}</span>`
+    ? isPlanLoading
+      ? '<span class="lfa-header-control lfa-plan-badge lfa-plan-badge--loading" aria-hidden="true"></span>'
+      : `<span class="lfa-header-control lfa-plan-badge${isPremium ? ' lfa-plan-badge--pro' : ' lfa-plan-badge--free'}" aria-label="Current plan: ${isPremium ? 'Pro' : 'Free'}">${isPremium ? 'Pro' : 'Free'}</span>`
     : '';
 
   const avatarHtml = currentUser

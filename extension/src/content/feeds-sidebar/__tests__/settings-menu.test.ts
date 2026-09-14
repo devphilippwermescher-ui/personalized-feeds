@@ -116,6 +116,25 @@ describe('settings menu', () => {
     );
   });
 
+  it('does not flash a Free badge while the authenticated plan is loading', () => {
+    const html = renderSidebarHeader({
+      logoUrl: 'chrome-extension://test/icon.png',
+      currentUser: {
+        userId: 'user-1',
+        displayName: 'Test User',
+        email: 'test@example.com',
+        photoURL: '',
+      },
+      isPremium: false,
+      isPlanLoading: true,
+      featureSettings,
+    });
+
+    expect(html).toContain('lfa-plan-badge--loading');
+    expect(html).not.toContain('Current plan: Free');
+    expect(html).not.toContain('lfa-plan-badge--free');
+  });
+
   it('shows the normal feeds surface to authenticated Free users', () => {
     const html = renderSidebarBody({
       isLoading: false,

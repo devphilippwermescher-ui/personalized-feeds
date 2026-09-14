@@ -156,13 +156,15 @@ export const SHELL_CSS = `
     background: #f9fafb;
     color: #6b7280;
   }
+  .lfa-plan-badge--loading {
+    min-width: 48px;
+    visibility: hidden;
+  }
   .lfa-plan-badge--pro {
-    border: 1px solid rgba(217, 154, 0, 0.24);
-    background: linear-gradient(100deg, #ffe77f 0%, #ffd95a 48%, #f4b91f 100%);
+    border: 1px solid #f4c928;
+    background: #ffd95a;
     color: #3f2b00;
-    box-shadow:
-      0 4px 10px rgba(199, 137, 8, 0.28),
-      inset 0 1px 0 rgba(255, 255, 255, 0.38);
+    box-shadow: none;
   }
   .lfa-account-menu-wrap,
   .lfa-settings-menu-wrap {

@@ -60,6 +60,7 @@ export const createBillingCheckout = onCall(
         interval,
         userId: request.auth.uid,
         email: request.auth.token.email,
+        testMode: billingConfiguration.testMode,
       });
       return { url };
     } catch (error) {

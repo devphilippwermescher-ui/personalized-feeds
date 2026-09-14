@@ -25,6 +25,7 @@ interface RenderSidebarInnerParams {
     logoUrl: string;
     currentUser: UserInfo | null;
     isPremium: boolean;
+    isPlanLoading?: boolean;
     featureSettings: UserFeatureSettings;
   }) => string;
   renderSidebarBody: (params: {
@@ -146,6 +147,7 @@ export function renderSidebarInnerMarkup(params: RenderSidebarInnerParams): void
     logoUrl: getLogoUrl(),
     currentUser,
     isPremium,
+    isPlanLoading: isInitializing,
     featureSettings,
   });
   container.appendChild(header);
