@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseSubscriptionWebhook } from '../subscription-state.js';
+import { isSubscriptionEvent, parseSubscriptionWebhook } from '../subscription-state.js';
 import type { BillingConfiguration, LemonSqueezySubscriptionWebhook } from '../types.js';
 
 const configuration: BillingConfiguration = {
@@ -18,9 +18,12 @@ const configuration: BillingConfiguration = {
   testMode: true,
 };
 
-function createPayload(overrides: Partial<LemonSqueezySubscriptionWebhook['data']['attributes']> = {}) {
+function createPayload(
+  overrides: Partial<LemonSqueezySubscriptionWebhook['data']['attributes']> = {},
+  eventName = 'subscription_created'
+) {
   return {
-    meta: { event_name: 'subscription_created', custom_data: { user_id: 'firebase-user' } },
+    meta: { event_name: eventName, custom_data: { user_id: 'firebase-user' } },
     data: {
       type: 'subscriptions',
       id: 'subscription-1',
@@ -41,6 +44,16 @@ function createPayload(overrides: Partial<LemonSqueezySubscriptionWebhook['data'
 }
 
 describe('Lemon Squeezy subscription mapping', () => {
+  it('accepts the supported lifecycle events without exposing subscription pauses', () => {
+    expect(isSubscriptionEvent('subscription_created')).toBe(true);
+    expect(isSubscriptionEvent('subscription_updated')).toBe(true);
+    expect(isSubscriptionEvent('subscription_cancelled')).toBe(true);
+    expect(isSubscriptionEvent('subscription_resumed')).toBe(true);
+    expect(isSubscriptionEvent('subscription_expired')).toBe(true);
+    expect(isSubscriptionEvent('subscription_paused')).toBe(false);
+    expect(isSubscriptionEvent('subscription_unpaused')).toBe(false);
+  });
+
   it('links an allowed annual subscription to the Firebase user', () => {
     const result = parseSubscriptionWebhook(createPayload(), configuration, 100);
 
@@ -81,6 +94,22 @@ describe('Lemon Squeezy subscription mapping', () => {
     expect(result.subscription.cancelAtPeriodEnd).toBe(true);
     expect(result.subscription.endsAt).toBe(Date.parse('2026-09-29T12:00:00.000Z'));
     expect(result.subscription.currentPeriodEnd).toBe(result.subscription.endsAt);
+  });
+
+  it('applies a simulated lifecycle event even when Lemon Squeezy keeps the current provider status', () => {
+    const result = parseSubscriptionWebhook(
+      createPayload(
+        {
+          status: 'cancelled',
+          cancelled: true,
+          ends_at: '2026-09-29T12:00:00.000Z',
+        },
+        'subscription_expired'
+      ),
+      configuration
+    );
+
+    expect(result.subscription.status).toBe('expired');
   });
 
   it('rejects a variant that is not part of the Pro product', () => {

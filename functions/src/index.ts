@@ -5,6 +5,7 @@ import { defineSecret } from 'firebase-functions/params';
 import { HttpsError, onCall, onRequest } from 'firebase-functions/v2/https';
 import { setGlobalOptions } from 'firebase-functions/v2/options';
 import { getBillingConfiguration, isBillingCurrency, isBillingInterval } from './billing/config.js';
+import { hasCurrentProAccess } from './billing/access-policy.js';
 import { saveSubscription } from './billing/firestore-subscription-repository.js';
 import { createCheckout, getCustomerPortalUrl } from './billing/lemon-squeezy-api.js';
 import { isSubscriptionEvent, parseSubscriptionWebhook } from './billing/subscription-state.js';
@@ -16,13 +17,6 @@ setGlobalOptions({ region: 'us-central1', maxInstances: 10 });
 
 const lemonSqueezyApiKey = defineSecret('LEMON_SQUEEZY_API_KEY');
 const lemonSqueezyWebhookSecret = defineSecret('LEMON_SQUEEZY_WEBHOOK_SECRET');
-
-function hasCurrentProAccess(data: FirebaseFirestore.DocumentData | undefined, now = Date.now()): boolean {
-  if (data?.plan !== 'pro') return false;
-  if (data.status === 'active') return true;
-  const paidUntil = typeof data.endsAt === 'number' ? data.endsAt : data.currentPeriodEnd;
-  return data.status === 'cancelled' && typeof paidUntil === 'number' && paidUntil > now;
-}
 
 export const createBillingCheckout = onCall(
   { secrets: [lemonSqueezyApiKey] },

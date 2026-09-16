@@ -7,8 +7,6 @@ const SUBSCRIPTION_EVENTS = new Set([
   'subscription_cancelled',
   'subscription_resumed',
   'subscription_expired',
-  'subscription_paused',
-  'subscription_unpaused',
 ]);
 
 export interface SubscriptionWriteModel {
@@ -33,6 +31,19 @@ function parseProviderDate(value: string | null): number | undefined {
   if (!value) return undefined;
   const parsed = Date.parse(value);
   return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function resolveSubscriptionStatus(eventName: string, providerStatus: string): string {
+  switch (eventName) {
+    case 'subscription_cancelled':
+      return 'cancelled';
+    case 'subscription_resumed':
+      return 'active';
+    case 'subscription_expired':
+      return 'expired';
+    default:
+      return providerStatus;
+  }
 }
 
 export function isSubscriptionEvent(eventName: string): boolean {
@@ -66,6 +77,7 @@ export function parseSubscriptionWebhook(
   const renewsAt = parseProviderDate(attributes.renews_at);
   const endsAt = parseProviderDate(attributes.ends_at);
   const providerUpdatedAt = parseProviderDate(attributes.updated_at) ?? receivedAt;
+  const status = resolveSubscriptionStatus(payload.meta.event_name, attributes.status);
   const customUserId = payload.meta.custom_data?.user_id;
   const userId = typeof customUserId === 'string' && customUserId.length > 0 ? customUserId : null;
 
@@ -76,7 +88,7 @@ export function parseSubscriptionWebhook(
       plan: 'pro',
       source: 'lemon_squeezy',
       billingCurrency: storeConfiguration.currency,
-      status: attributes.status,
+      status,
       customerId: String(attributes.customer_id),
       subscriptionId: payload.data.id,
       variantId,

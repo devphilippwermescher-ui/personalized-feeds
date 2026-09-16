@@ -92,8 +92,10 @@ Use the same signing secret as `functions/.secret.local` and enable:
 - `subscription_cancelled`
 - `subscription_resumed`
 - `subscription_expired`
-- `subscription_paused`
-- `subscription_unpaused`
+
+Subscription pausing is not part of the myFeedPilot billing flow. Keep the Pause option disabled in the Lemon
+Squeezy Customer Portal. An unexpected `paused` status received through `subscription_updated` fails closed to the
+Free plan until the subscription becomes active again.
 
 Then:
 

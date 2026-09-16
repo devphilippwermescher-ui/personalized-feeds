@@ -54,7 +54,7 @@ export const PLAN_ENTITLEMENTS: Record<AppPlan, PlanEntitlements> = {
 
 export function resolveAppPlan(subscription: BillingSubscription | null | undefined, now = Date.now()): AppPlan {
   if (subscription?.plan !== 'pro') return 'free';
-  if (subscription.status === 'active') return 'pro';
+  if (subscription.status === 'active' || subscription.status === 'past_due') return 'pro';
 
   const paidUntil = subscription.endsAt ?? subscription.currentPeriodEnd;
   return subscription.status === 'cancelled' && typeof paidUntil === 'number' && paidUntil > now ? 'pro' : 'free';

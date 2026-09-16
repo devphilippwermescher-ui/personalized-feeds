@@ -11,6 +11,7 @@ import { renderPlanStarIcon } from './plan-star';
 import { closeProfilePreferencesModal, openProfilePreferencesModal } from '../profile-preferences/public';
 import { loadProfilePreferences } from '../profile-preferences/services/profile-preferences-service';
 import { injectPlanModalStyles } from './plan-modal-styles';
+import { requestPlanRefresh } from '../subscription/plan-refresh';
 
 export type PlanModalContext = 'manage' | 'feeds' | 'members';
 
@@ -102,6 +103,7 @@ async function waitForProActivation(overlay: HTMLElement, context: PlanModalCont
     try {
       const snapshot = await getPlanSnapshot(true);
       if (snapshot.success && snapshot.plan === 'pro') {
+        requestPlanRefresh();
         openPlanModal({ plan: 'pro', context });
         return;
       }

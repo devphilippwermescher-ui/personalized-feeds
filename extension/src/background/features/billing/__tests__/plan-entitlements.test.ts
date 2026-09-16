@@ -9,10 +9,12 @@ describe('plan entitlements', () => {
     expect(resolveAppPlan({ plan: 'free', status: 'active' })).toBe('free');
   });
 
-  it('enables Pro for active subscriptions without enabling an unconfigured trial', () => {
+  it('enables Pro for active and past-due subscriptions without enabling an unconfigured trial', () => {
     expect(resolveAppPlan({ plan: 'pro', status: 'active' })).toBe('pro');
+    expect(resolveAppPlan({ plan: 'pro', status: 'past_due' })).toBe('pro');
     expect(resolveAppPlan({ plan: 'pro', status: 'on_trial' })).toBe('free');
     expect(resolveAppPlan({ plan: 'pro', status: 'trialing' })).toBe('free');
+    expect(resolveAppPlan({ plan: 'pro', status: 'unpaid' })).toBe('free');
   });
 
   it('keeps Pro through a cancelled subscription paid period only', () => {

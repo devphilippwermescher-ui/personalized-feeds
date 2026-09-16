@@ -1,4 +1,4 @@
-import type { Firestore } from 'firebase-admin/firestore';
+import { FieldValue, type Firestore } from 'firebase-admin/firestore';
 import type { SubscriptionWriteModel } from './subscription-state.js';
 
 const SUBSCRIPTION_INDEX_COLLECTION = 'billingSubscriptions';
@@ -7,6 +7,15 @@ function assertValidUserId(userId: string): void {
   if (!userId || userId.length > 128 || userId.includes('/')) {
     throw new Error('Webhook contains an invalid Firebase user ID');
   }
+}
+
+export function createSubscriptionFirestoreUpdate(subscription: SubscriptionWriteModel) {
+  return {
+    ...subscription,
+    renewsAt: subscription.renewsAt ?? FieldValue.delete(),
+    endsAt: subscription.endsAt ?? FieldValue.delete(),
+    currentPeriodEnd: subscription.currentPeriodEnd ?? FieldValue.delete(),
+  };
 }
 
 export async function saveSubscription(params: {
@@ -37,7 +46,7 @@ export async function saveSubscription(params: {
       return 'ignored_stale';
     }
 
-    transaction.set(subscriptionRef, params.subscription, { merge: true });
+    transaction.set(subscriptionRef, createSubscriptionFirestoreUpdate(params.subscription), { merge: true });
     transaction.set(
       indexRef,
       {

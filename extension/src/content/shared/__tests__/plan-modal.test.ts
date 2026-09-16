@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { closePlanModal, openPlanModal } from '../plan-modal';
+import { PLAN_REFRESH_REQUESTED_EVENT } from '../../subscription/plan-refresh';
 
 const sendMessage = vi.fn();
 
@@ -129,5 +130,24 @@ describe('plan modal', () => {
       expect(document.querySelector('.mfp-plan-note')?.textContent).toContain('Billing management opened');
     });
     expect(sendMessage).toHaveBeenCalledWith({ type: 'BILLING_OPEN_PORTAL' });
+  });
+
+  it('requests an extension-wide plan refresh when checkout activation is confirmed', async () => {
+    vi.useFakeTimers();
+    const planRefreshListener = vi.fn();
+    document.addEventListener(PLAN_REFRESH_REQUESTED_EVENT, planRefreshListener, { once: true });
+
+    try {
+      openPlanModal({ plan: 'free', context: 'manage' });
+      document.querySelector<HTMLButtonElement>('.mfp-plan-cta')?.click();
+
+      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(5000);
+
+      expect(planRefreshListener).toHaveBeenCalledOnce();
+      expect(document.body.textContent).toContain('Your myFeedPilot Pro plan');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
