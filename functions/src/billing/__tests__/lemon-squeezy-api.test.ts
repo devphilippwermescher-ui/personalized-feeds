@@ -41,6 +41,9 @@ describe('Lemon Squeezy checkout creation', () => {
         attributes: {
           test_mode: true,
           expires_at: '2026-09-17T12:30:00.000Z',
+          product_options: {
+            enabled_variants: [2069645],
+          },
           checkout_data: {
             email: 'developer@example.com',
             custom: {
@@ -54,6 +57,26 @@ describe('Lemon Squeezy checkout creation', () => {
         },
       },
     });
+  });
+
+  it('rejects an invalid configured variant before calling Lemon Squeezy', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(
+      createCheckout({
+        apiKey: 'test-api-key',
+        configuration: {
+          ...configuration,
+          variants: { ...configuration.variants, monthly: 'invalid' },
+        },
+        interval: 'monthly',
+        checkoutSessionId: 'opaque-session-id',
+        expiresAt: Date.parse('2026-09-17T12:30:00.000Z'),
+        testMode: true,
+      })
+    ).rejects.toThrow('Lemon Squeezy variant ID must be a positive integer');
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('does not expose an editable standard checkout fallback after a transient API failure', async () => {

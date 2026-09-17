@@ -56,6 +56,10 @@ export async function createCheckout(params: {
   testMode: boolean;
 }): Promise<string> {
   const variantId = params.configuration.variants[params.interval];
+  const enabledVariantId = Number(variantId);
+  if (!Number.isSafeInteger(enabledVariantId) || enabledVariantId <= 0) {
+    throw new Error('Lemon Squeezy variant ID must be a positive integer');
+  }
   const response = await requestLemonSqueezy<LemonSqueezyResource<CheckoutAttributes>>(params.apiKey, '/checkouts', {
     method: 'POST',
     signal: AbortSignal.timeout(4_000),
@@ -65,6 +69,9 @@ export async function createCheckout(params: {
         attributes: {
           test_mode: params.testMode,
           expires_at: new Date(params.expiresAt).toISOString(),
+          product_options: {
+            enabled_variants: [enabledVariantId],
+          },
           checkout_data: {
             email: params.email || undefined,
             custom: {
