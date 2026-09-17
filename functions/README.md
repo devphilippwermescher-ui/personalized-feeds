@@ -62,22 +62,26 @@ Load `extension/dist` as an unpacked extension and sign in. The local build acce
 
 ### Fast webhook demo
 
-This path proves that signature verification, webhook mapping, Firestore persistence and the extension's Pro entitlement UI work together without contacting Lemon Squeezy.
+This path proves that opaque checkout-session binding, signature verification, runtime schema validation, webhook mapping, Firestore persistence and the extension's Pro entitlement UI work together without contacting Lemon Squeezy.
 
 1. Find the signed-in user's UID in the Authentication tab at `http://127.0.0.1:4000`.
 2. Keep the emulators and the billing-local extension build running.
-3. Send a correctly signed subscription event:
+3. Seed a short-lived opaque checkout session and send a correctly signed subscription event with one command:
 
 ```bash
 npm run simulate:billing-webhook -- --uid=YOUR_LOCAL_UID --interval=annual
 ```
 
-4. Verify `users/{uid}/billing/subscription` in the local Firestore tab.
+4. Verify the aggregate `users/{uid}/billing/subscription` and provider record `users/{uid}/billingSubscriptions/{subscriptionId}` in the local Firestore tab.
 5. Reopen **Manage plan**. It should show the Annual Pro subscription.
 
 ### Full Lemon Squeezy Test mode demo
 
-For the real checkout, `LEMON_SQUEEZY_API_KEY` must be a Test mode API key. Lemon Squeezy API keys are user-scoped, so one Test mode key can access both stores owned by that account. Clicking the modal's checkout button calls the local callable Function, which selects the allowlisted Store/Variant for the requested currency and includes the Firebase UID, interval and currency in Lemon Squeezy `custom_data`.
+For the real checkout, `LEMON_SQUEEZY_API_KEY` must be a Test mode API key. Lemon Squeezy API keys are user-scoped, so one Test mode key can access both stores owned by that account. Clicking the modal's checkout button calls the local callable Function, which selects the allowlisted Store/Variant and creates a random, short-lived server-owned checkout session. Only that opaque session ID is sent in Lemon Squeezy `custom_data`; the Firebase UID never appears in an editable checkout URL.
+
+The backend deliberately has no standard-link fallback. If the Lemon Squeezy checkout API is unavailable, checkout fails with a retryable user-facing error instead of opening a URL whose identity metadata can be edited. The Lemon Squeezy URL expires after 30 minutes; the server session allows a five-minute delivery grace so a payment completed immediately before expiry can still be linked. A completed session is deleted transactionally after the subscription ID is bound to its Firebase user. Abandoned sessions carry a `deleteAt` timestamp and should use a Firestore TTL policy in each deployed project.
+
+Before production, enable a Firestore TTL policy for collection group `billingCheckoutSessions` on field `deleteAt`. TTL deletion is storage cleanup only: the backend always checks numeric `expiresAt`, so an expired session cannot be used while Firestore is waiting to delete it.
 
 Lemon Squeezy needs a public HTTPS webhook URL. Run a temporary tunnel to local port `5001` with a tool such as Cloudflare Tunnel or ngrok. If the generated tunnel origin is `https://example.trycloudflare.com`, configure this Test mode webhook URL:
 
@@ -126,7 +130,7 @@ Build and deploy:
 npm run type-check
 npm run test:functions
 npm run build:functions
-firebase deploy --only functions --project staging
+firebase deploy --only functions,firestore:rules --project staging
 ```
 
 After deployment, configure the Test mode webhook URL:

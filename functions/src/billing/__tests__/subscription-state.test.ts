@@ -23,7 +23,10 @@ function createPayload(
   eventName = 'subscription_created'
 ) {
   return {
-    meta: { event_name: eventName, custom_data: { user_id: 'firebase-user' } },
+    meta: {
+      event_name: eventName,
+      custom_data: { checkout_session_id: '00000000-0000-4000-8000-000000000001' },
+    },
     data: {
       type: 'subscriptions',
       id: 'subscription-1',
@@ -54,14 +57,15 @@ describe('Lemon Squeezy subscription mapping', () => {
     expect(isSubscriptionEvent('subscription_unpaused')).toBe(false);
   });
 
-  it('links an allowed annual subscription to the Firebase user', () => {
+  it('links an allowed annual subscription through an opaque checkout session', () => {
     const result = parseSubscriptionWebhook(createPayload(), configuration, 100);
 
-    expect(result.userId).toBe('firebase-user');
+    expect(result.checkoutSessionId).toBe('00000000-0000-4000-8000-000000000001');
     expect(result.subscription).toMatchObject({
       plan: 'pro',
       billingCurrency: 'USD',
       billingInterval: 'annual',
+      storeId: '42',
       variantId: '2069645',
       status: 'active',
       cancelAtPeriodEnd: false,
@@ -76,8 +80,18 @@ describe('Lemon Squeezy subscription mapping', () => {
     expect(result.subscription).toMatchObject({
       billingCurrency: 'EUR',
       billingInterval: 'monthly',
+      storeId: '84',
       variantId: '3069629',
     });
+  });
+
+  it('does not trust a raw Firebase user ID from checkout custom data', () => {
+    const payload = createPayload();
+    payload.meta.custom_data = { user_id: 'attacker-controlled-user' };
+
+    const result = parseSubscriptionWebhook(payload, configuration);
+
+    expect(result.checkoutSessionId).toBeNull();
   });
 
   it('keeps the paid end date for a cancelled subscription', () => {

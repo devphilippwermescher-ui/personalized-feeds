@@ -123,6 +123,13 @@ service cloud.firestore {
         allow read: if isOwner(userId);
         allow write: if false;
       }
+
+      // Each provider subscription is stored separately so an old expired
+      // subscription cannot overwrite a newer active entitlement.
+      match /billingSubscriptions/{subscriptionId} {
+        allow read: if isOwner(userId);
+        allow write: if false;
+      }
     }
 
     match /emailIndex/{email} {

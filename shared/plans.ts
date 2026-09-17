@@ -14,6 +14,7 @@ export interface BillingSubscription {
   status?: string;
   source?: 'lemon_squeezy' | 'manual' | 'development';
   billingCurrency?: 'EUR' | 'USD';
+  storeId?: string;
   customerId?: string;
   subscriptionId?: string;
   variantId?: string;

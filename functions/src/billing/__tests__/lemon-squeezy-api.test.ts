@@ -13,7 +13,7 @@ afterEach(() => {
 });
 
 describe('Lemon Squeezy checkout creation', () => {
-  it('uses the allowlisted variant and attaches the Firebase user identity', async () => {
+  it('uses the allowlisted variant and attaches only the opaque checkout session', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({ data: { attributes: { url: 'https://example.lemonsqueezy.com/checkout' } } }),
@@ -24,7 +24,8 @@ describe('Lemon Squeezy checkout creation', () => {
       apiKey: 'test-api-key',
       configuration,
       interval: 'annual',
-      userId: 'firebase-user',
+      checkoutSessionId: 'opaque-session-id',
+      expiresAt: Date.parse('2026-09-17T12:30:00.000Z'),
       email: 'developer@example.com',
       testMode: true,
     });
@@ -39,12 +40,11 @@ describe('Lemon Squeezy checkout creation', () => {
       data: {
         attributes: {
           test_mode: true,
+          expires_at: '2026-09-17T12:30:00.000Z',
           checkout_data: {
             email: 'developer@example.com',
             custom: {
-              user_id: 'firebase-user',
-              billing_interval: 'annual',
-              billing_currency: 'USD',
+              checkout_session_id: 'opaque-session-id',
             },
           },
         },
@@ -56,36 +56,24 @@ describe('Lemon Squeezy checkout creation', () => {
     });
   });
 
-  it('falls back to the standard checkout link when checkout creation has a transient failure', async () => {
+  it('does not expose an editable standard checkout fallback after a transient API failure', async () => {
     const fetchMock = vi
       .fn()
-      .mockResolvedValueOnce({ ok: false, status: 500, text: async () => '{"message":"Internal Server Error"}' })
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ data: { attributes: { slug: 'my-store' } } }),
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ data: { attributes: { slug: 'variant-checkout-id' } } }),
-      });
+      .mockResolvedValue({ ok: false, status: 500, text: async () => '{"message":"Internal Server Error"}' });
     vi.stubGlobal('fetch', fetchMock);
 
-    const url = await createCheckout({
-      apiKey: 'test-api-key',
-      configuration,
-      interval: 'monthly',
-      userId: 'firebase-user',
-      email: 'developer@example.com',
-      testMode: true,
-    });
-
-    const checkoutUrl = new URL(url);
-    expect(checkoutUrl.origin).toBe('https://my-store.lemonsqueezy.com');
-    expect(checkoutUrl.pathname).toBe('/checkout/buy/variant-checkout-id');
-    expect(checkoutUrl.searchParams.get('checkout[email]')).toBe('developer@example.com');
-    expect(checkoutUrl.searchParams.get('checkout[custom][user_id]')).toBe('firebase-user');
-    expect(checkoutUrl.searchParams.get('checkout[custom][billing_interval]')).toBe('monthly');
-    expect(checkoutUrl.searchParams.get('checkout[custom][billing_currency]')).toBe('USD');
+    await expect(
+      createCheckout({
+        apiKey: 'test-api-key',
+        configuration,
+        interval: 'monthly',
+        checkoutSessionId: 'opaque-session-id',
+        expiresAt: Date.parse('2026-09-17T12:30:00.000Z'),
+        email: 'developer@example.com',
+        testMode: true,
+      })
+    ).rejects.toThrow('Lemon Squeezy request failed (500)');
+    expect(fetchMock).toHaveBeenCalledOnce();
   });
 
   it('does not hide a non-transient checkout API error behind the fallback', async () => {
@@ -99,7 +87,8 @@ describe('Lemon Squeezy checkout creation', () => {
         apiKey: 'test-api-key',
         configuration,
         interval: 'monthly',
-        userId: 'firebase-user',
+        checkoutSessionId: 'opaque-session-id',
+        expiresAt: Date.parse('2026-09-17T12:30:00.000Z'),
         testMode: true,
       })
     ).rejects.toThrow('Lemon Squeezy request failed (422)');

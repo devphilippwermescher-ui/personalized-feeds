@@ -1,4 +1,4 @@
-import { createHmac } from 'node:crypto';
+import { createHmac, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -69,14 +69,44 @@ const now = new Date();
 const renewsAt = new Date(now);
 if (interval === 'annual') renewsAt.setUTCFullYear(renewsAt.getUTCFullYear() + 1);
 else renewsAt.setUTCMonth(renewsAt.getUTCMonth() + 1);
+const checkoutSessionId = randomUUID();
+const checkoutExpiresAt = now.getTime() + 30 * 60 * 1000;
+const checkoutSessionExpiresAt = checkoutExpiresAt + 5 * 60 * 1000;
+const firestoreHost = process.env.FIRESTORE_EMULATOR_HOST || '127.0.0.1:8080';
+const projectId = getArgument('project', 'myfeedpilot-dev');
+const checkoutSessionUrl =
+  `http://${firestoreHost}/v1/projects/${encodeURIComponent(projectId)}` +
+  `/databases/(default)/documents/billingCheckoutSessions/${encodeURIComponent(checkoutSessionId)}`;
+const checkoutSessionResponse = await fetch(checkoutSessionUrl, {
+  method: 'PATCH',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({
+    fields: {
+      userId: { stringValue: uid },
+      storeId: { stringValue: String(storeId) },
+      variantId: { stringValue: String(variantId) },
+      currency: { stringValue: 'USD' },
+      interval: { stringValue: interval },
+      testMode: { booleanValue: true },
+      createdAt: { integerValue: String(now.getTime()) },
+      checkoutExpiresAt: { integerValue: String(checkoutExpiresAt) },
+      expiresAt: { integerValue: String(checkoutSessionExpiresAt) },
+      deleteAt: { timestampValue: new Date(checkoutSessionExpiresAt).toISOString() },
+    },
+  }),
+});
+if (!checkoutSessionResponse.ok) {
+  throw new Error(
+    `Could not seed the local checkout session (${checkoutSessionResponse.status}): ` +
+      (await checkoutSessionResponse.text())
+  );
+}
 
 const payload = JSON.stringify({
   meta: {
     event_name: 'subscription_created',
     custom_data: {
-      user_id: uid,
-      billing_interval: interval,
-      billing_currency: 'USD',
+      checkout_session_id: checkoutSessionId,
     },
   },
   data: {
@@ -102,6 +132,7 @@ const response = await fetch(endpoint, {
   method: 'POST',
   headers: {
     'content-type': 'application/json',
+    'x-event-name': 'subscription_created',
     'x-signature': signature,
   },
   body: payload,
@@ -111,4 +142,4 @@ if (!response.ok) {
   throw new Error(`Local webhook returned ${response.status}: ${responseBody}`);
 }
 
-console.log(`Simulated ${interval} subscription for ${uid}: ${responseBody}`);
+console.log(`Simulated ${interval} subscription for ${uid} through an opaque checkout session: ${responseBody}`);

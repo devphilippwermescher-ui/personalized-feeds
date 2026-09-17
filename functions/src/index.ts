@@ -4,13 +4,19 @@ import { logger } from 'firebase-functions';
 import { defineSecret } from 'firebase-functions/params';
 import { HttpsError, onCall, onRequest } from 'firebase-functions/v2/https';
 import { setGlobalOptions } from 'firebase-functions/v2/options';
+import { createCheckoutSession, deleteCheckoutSession } from './billing/checkout-session-repository.js';
 import { getBillingConfiguration, isBillingCurrency, isBillingInterval } from './billing/config.js';
 import { hasCurrentProAccess } from './billing/access-policy.js';
 import { saveSubscription } from './billing/firestore-subscription-repository.js';
 import { createCheckout, getCustomerPortalUrl } from './billing/lemon-squeezy-api.js';
 import { isSubscriptionEvent, parseSubscriptionWebhook } from './billing/subscription-state.js';
-import type { LemonSqueezySubscriptionWebhook } from './billing/types.js';
 import { verifyWebhookSignature } from './billing/webhook-security.js';
+import {
+  formatWebhookValidationError,
+  isWebhookValidationError,
+  parseSubscriptionWebhookPayload,
+  parseWebhookEnvelope,
+} from './billing/webhook-schema.js';
 
 initializeApp();
 setGlobalOptions({ region: 'us-central1', maxInstances: 10 });
@@ -42,24 +48,52 @@ export const createBillingCheckout = onCall(
       );
     }
 
-    const existingSubscription = await getFirestore().doc(`users/${request.auth.uid}/billing/subscription`).get();
+    const db = getFirestore();
+    const existingSubscription = await db.doc(`users/${request.auth.uid}/billing/subscription`).get();
     if (hasCurrentProAccess(existingSubscription.data())) {
       throw new HttpsError('already-exists', 'Your Pro subscription is already active.');
     }
 
+    const startedAt = Date.now();
+    let checkoutSessionId: string | null = null;
+
     try {
+      const checkoutSession = await createCheckoutSession({
+        db,
+        userId: request.auth.uid,
+        configuration: storeConfiguration,
+        interval,
+        testMode: billingConfiguration.testMode,
+      });
+      checkoutSessionId = checkoutSession.sessionId;
       const url = await createCheckout({
         apiKey: lemonSqueezyApiKey.value(),
         configuration: storeConfiguration,
         interval,
-        userId: request.auth.uid,
+        checkoutSessionId,
+        expiresAt: checkoutSession.session.checkoutExpiresAt,
         email: request.auth.token.email,
         testMode: billingConfiguration.testMode,
       });
+      logger.info('Created Lemon Squeezy checkout', {
+        currency,
+        interval,
+        durationMs: Date.now() - startedAt,
+      });
       return { url };
     } catch (error) {
-      logger.error('Failed to create Lemon Squeezy checkout', error);
-      throw new HttpsError('internal', 'Unable to open checkout right now.');
+      if (checkoutSessionId) {
+        await deleteCheckoutSession(db, checkoutSessionId).catch((cleanupError) => {
+          logger.warn('Failed to remove an unused billing checkout session', { cleanupError });
+        });
+      }
+      logger.error('Failed to create Lemon Squeezy checkout', {
+        currency,
+        interval,
+        durationMs: Date.now() - startedAt,
+        error,
+      });
+      throw new HttpsError('internal', 'Unable to open checkout right now. Please try again.');
     }
   }
 );
@@ -90,24 +124,45 @@ export const lemonSqueezyWebhook = onRequest({ secrets: [lemonSqueezyWebhookSecr
     return;
   }
 
+  const contentType = request.header('content-type')?.split(';', 1)[0]?.trim().toLowerCase();
+  if (contentType !== 'application/json') {
+    response.status(415).send('Content-Type must be application/json');
+    return;
+  }
+
   const signature = request.header('x-signature');
   if (!signature || !verifyWebhookSignature(request.rawBody, signature, lemonSqueezyWebhookSecret.value())) {
     response.status(401).send('Invalid signature');
     return;
   }
 
-  const payload = request.body as LemonSqueezySubscriptionWebhook;
-  const eventName = payload?.meta?.event_name;
+  let envelope;
+  try {
+    envelope = parseWebhookEnvelope(request.body);
+  } catch (error) {
+    logger.warn('Rejected an invalid Lemon Squeezy webhook envelope', {
+      validationErrors: formatWebhookValidationError(error),
+    });
+    response.status(400).send('Invalid webhook payload');
+    return;
+  }
+
+  const eventName = envelope.meta.event_name;
+  if (request.header('x-event-name') !== eventName) {
+    response.status(400).send('Webhook event header does not match the payload');
+    return;
+  }
   if (!eventName || !isSubscriptionEvent(eventName)) {
     response.status(200).json({ received: true, processed: false });
     return;
   }
 
   try {
+    const payload = parseSubscriptionWebhookPayload(request.body);
     const parsed = parseSubscriptionWebhook(payload, getBillingConfiguration());
     const result = await saveSubscription({
       db: getFirestore(),
-      customUserId: parsed.userId,
+      checkoutSessionId: parsed.checkoutSessionId,
       subscription: parsed.subscription,
     });
     if (result === 'missing_user') {
@@ -115,9 +170,19 @@ export const lemonSqueezyWebhook = onRequest({ secrets: [lemonSqueezyWebhookSecr
         subscriptionId: parsed.subscription.subscriptionId,
         eventName,
       });
+      response.status(500).send('Subscription identity could not be resolved');
+      return;
     }
     response.status(200).json({ received: true, processed: result === 'updated', result });
   } catch (error) {
+    if (isWebhookValidationError(error)) {
+      logger.warn('Rejected an invalid Lemon Squeezy subscription webhook', {
+        eventName,
+        validationErrors: formatWebhookValidationError(error),
+      });
+      response.status(400).send('Invalid subscription webhook payload');
+      return;
+    }
     logger.error('Failed to process Lemon Squeezy webhook', { eventName, error });
     response.status(500).send('Webhook processing failed');
   }

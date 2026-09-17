@@ -13,6 +13,7 @@ export interface SubscriptionWriteModel {
   plan: 'pro';
   source: 'lemon_squeezy';
   billingCurrency: 'EUR' | 'USD';
+  storeId: string;
   status: string;
   customerId: string;
   subscriptionId: string;
@@ -54,7 +55,7 @@ export function parseSubscriptionWebhook(
   payload: LemonSqueezySubscriptionWebhook,
   configuration: BillingConfiguration,
   receivedAt = Date.now()
-): { userId: string | null; subscription: SubscriptionWriteModel } {
+): { checkoutSessionId: string | null; subscription: SubscriptionWriteModel } {
   const attributes = payload.data.attributes;
   if (payload.data.type !== 'subscriptions') {
     throw new Error(`Unexpected webhook resource type: ${payload.data.type}`);
@@ -78,16 +79,18 @@ export function parseSubscriptionWebhook(
   const endsAt = parseProviderDate(attributes.ends_at);
   const providerUpdatedAt = parseProviderDate(attributes.updated_at) ?? receivedAt;
   const status = resolveSubscriptionStatus(payload.meta.event_name, attributes.status);
-  const customUserId = payload.meta.custom_data?.user_id;
-  const userId = typeof customUserId === 'string' && customUserId.length > 0 ? customUserId : null;
+  const customCheckoutSessionId = payload.meta.custom_data?.checkout_session_id;
+  const checkoutSessionId =
+    typeof customCheckoutSessionId === 'string' && customCheckoutSessionId.length > 0 ? customCheckoutSessionId : null;
 
   const currentPeriodEnd = endsAt ?? renewsAt;
   return {
-    userId,
+    checkoutSessionId,
     subscription: {
       plan: 'pro',
       source: 'lemon_squeezy',
       billingCurrency: storeConfiguration.currency,
+      storeId,
       status,
       customerId: String(attributes.customer_id),
       subscriptionId: payload.data.id,

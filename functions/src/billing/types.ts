@@ -25,6 +25,18 @@ export interface LemonSqueezySubscriptionWebhook {
   };
 }
 
+export interface LemonSqueezyWebhookEnvelope {
+  meta: {
+    event_name: string;
+    custom_data?: Record<string, unknown>;
+  };
+  data: {
+    type: string;
+    id: string;
+    attributes: unknown;
+  };
+}
+
 export interface BillingStoreConfiguration {
   currency: BillingCurrency;
   storeId: string;

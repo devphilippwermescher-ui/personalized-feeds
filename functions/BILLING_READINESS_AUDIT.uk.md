@@ -19,15 +19,15 @@
 - підтверджена checkout-активація оновлює відкритий sidebar і запускає Pro Profile Visitors collection без reload;
 - customer portal відкривається через свіжий signed URL;
 - USD/EUR та Monthly/Annual підтримуються як окремі конфігурації;
-- unit-тести billing-модулів проходять: 21 Functions tests; повний Extension suite — 664 tests.
+- unit-тести billing-модулів проходять: 31 Functions tests; повний Extension suite — 664 tests.
 
-Однак production release зараз слід вважати **заблокованим** до виправлення щонайменше трьох проблем:
+Три попередні архітектурні блокери вже закрито в коді:
 
-1. Один Firestore-документ на користувача не захищає від кількох підписок: webhook старої підписки може перезаписати нову активну підписку.
-2. Fallback на стандартний checkout URL передає Firebase UID у змінному query parameter; прив’язку покупки треба робити через server-side checkout session, а не довіряти UID з URL.
-3. CI перевіряє extension, але не встановлює, не тестує і не збирає `functions/`; billing backend може зламатися, а PR залишиться зеленим.
+1. Кожна provider subscription має окремий документ, а aggregate entitlement вибирається з усіх підписок користувача.
+2. Небезпечний standard-link fallback прибрано; checkout прив'язується через короткоживу opaque server-owned session.
+3. Webhook payload проходить runtime Zod validation, а CI встановлює, перевіряє, тестує та збирає `functions/`.
 
-Додатково до production потрібні Live products/variants, Live API key, Live webhooks, production secrets/env, моніторинг, reconciliation job, правила для refunds/disputes та приватний smoke test реальною карткою.
+Production release усе ще заблокований до налаштування Live products/variants, Live API key, Live webhooks, production secrets/env, моніторингу, reconciliation job, правил для refunds/disputes та приватного smoke test реальною карткою.
 
 ## 1. Зафіксована архітектура
 
@@ -192,17 +192,20 @@ API key не можна зберігати в GitHub або client-side code; Le
 - [x] Client передає лише `interval` і `currency` з вузького enum.
 - [x] Backend вибирає Store/Variant із власної allowlist.
 - [x] Backend перевіряє наявний Pro перед новим checkout.
-- [x] Email лише prefill, а Firebase UID є зв’язком з account.
+- [x] Email лише prefill, а identity визначається через server-owned checkout session.
 - [x] Checkout відкривається у новій HTTPS tab.
 - [x] API key ніколи не передається extension.
 
-### Потрібно виправити
+### Уже виправлено в поточній гілці
 
-- [ ] **Прибрати небезпечний standard-link fallback із raw `user_id`.** Query `checkout[custom][user_id]` може бути змінений до покупки. HMAC підтвердить, що webhook прийшов від Lemon Squeezy, але не доведе, що UID був призначений backend.
-- [ ] Створювати `billingCheckoutSessions/{randomOpaqueId}` на backend із `uid`, store, variant, interval, currency, createdAt, expiresAt, consumedAt.
-- [ ] Передавати в checkout лише opaque `checkout_session_id`, а webhook має діставати UID із server-owned session.
-- [ ] Позначати session consumed транзакційно й не дозволяти прив’язку до іншого subscription/customer.
-- [ ] Встановити `expires_at` для API checkout, наприклад 15–30 хвилин. Без `expires_at` checkout URL може використовуватися необмежено.^12
+- [x] Небезпечний standard-link fallback із raw `user_id` прибрано.
+- [x] Backend створює `billingCheckoutSessions/{randomOpaqueId}` із UID, store, variant, interval, currency та строком дії.
+- [x] У checkout передається лише opaque `checkout_session_id`, а webhook дістає UID із server-owned session.
+- [x] Session видаляється в тій самій транзакції після створення незмінної прив'язки `subscriptionId → uid`.
+
+### Ще потрібно
+
+- [x] API checkout має 30-хвилинний `expires_at`, а server-owned session — додаткові 5 хвилин лише для доставки webhook.^12
 - [ ] Заборонити новий checkout не тільки для `active` і cancelled grace, а також для `past_due`; замість нього відкрити update-payment/customer portal.
 - [ ] Вирішити поведінку для `unpaid`: update payment/resubscribe, не створюючи дві паралельні підписки без закриття старої.
 - [ ] Додати per-UID rate limit/cooldown та abuse monitoring.
@@ -221,10 +224,10 @@ Custom data офіційно призначена для зв’язування
 - [x] Приймати тільки `POST`; інші methods → 405.
 - [x] Читати `request.rawBody`, а не повторно serialized JSON.
 - [x] Перевіряти HMAC SHA-256 через timing-safe comparison.
-- [ ] Перевіряти `Content-Type: application/json`.
+- [x] Перевіряти `Content-Type: application/json`.
 - [ ] Обмежити допустимий body size.
-- [ ] Перевіряти, що `X-Event-Name` дорівнює `meta.event_name`.
-- [ ] Runtime schema validation для `meta`, `data.type`, `id`, attributes і дат. Зараз body лише TypeScript-cast, який не захищає runtime.
+- [x] Перевіряти, що `X-Event-Name` дорівнює `meta.event_name`.
+- [x] Runtime schema validation для `meta`, `data.type`, `id`, attributes, статусів і дат.
 - [ ] Невідомий event → 200 + audit `ignored_unknown_event`, а не тихе зникнення.
 - [ ] Невідомий store/variant/test_mode mismatch → quarantine + alert із sanitized IDs.
 - [ ] Не логувати raw payload, card data, email чи secrets.
@@ -235,15 +238,16 @@ Custom data офіційно призначена для зв’язування
 - [ ] Повтор тієї самої події не повинен створювати повторний invoice/history/action.
 - [ ] Зберігати event fingerprint/status у `billingWebhookEvents`.
 - [ ] Обробити рівні `updated_at`: зараз guard використовує `>`, тому дві події з однаковим timestamp можуть застосуватися в порядку доставки.
-- [ ] Не порівнювати timestamp різних subscription IDs як одну часову шкалу.
-- [ ] Додати deterministic tie-breaker/aggregation rule.
-- [ ] Тестувати duplicate, out-of-order та concurrent deliveries.
+- [x] Не порівнювати timestamp різних subscription IDs як одну часову шкалу.
+- [x] Додати deterministic entitlement aggregation rule.
+- [x] Тестувати сценарій, у якому новіший `expired` старої підписки не перекриває іншу active.
+- [ ] Тестувати duplicate, однакові timestamps та concurrent deliveries.
 
 ### Durability
 
 - [ ] Спочатку durable-записати verified event, швидко повернути 200, потім обробити асинхронно/транзакційно.
 - [ ] Зберігати sanitized payload або достатню projection для replay/debug.
-- [ ] `missing_user` не повинен просто логуватися й отримувати успішний 200 без recovery path.
+- [x] `missing_user` не підтверджується успішним 200; Lemon Squeezy може повторити delivery.
 - [ ] Dead-letter/quarantine для invalid mapping, missing checkout session, unknown variant та processing failures.
 - [ ] Admin replay command із idempotency.
 - [ ] Scheduled reconciliation: порівняти незавершені локальні subscriptions з Lemon Squeezy API й виправити пропущені webhooks.
@@ -252,26 +256,28 @@ Lemon Squeezy радить локально зберігати webhook events, �
 
 ## 7. Правильна Firestore-модель
 
-### Проблема поточної моделі
+### Реалізована модель
 
-Зараз кожен користувач має лише:
-
-`users/{uid}/billing/subscription`
-
-Якщо користувач випадково купить дві підписки, останній webhook перезаписує документ. Подальший cancel/expire старої підписки може забрати Pro, навіть якщо інша активна. Такий сценарій уже можливий через повторний checkout, різні stores або payment recovery.
-
-### Рекомендована модель
+Кожен provider subscription має власний документ, а сумісний aggregate-документ залишається джерелом entitlement для extension:
 
 ```text
 billingCheckoutSessions/{sessionId}
-  uid, storeId, variantId, interval, currency, expiresAt, consumedAt
+  userId, storeId, variantId, interval, currency,
+  checkoutExpiresAt, expiresAt, deleteAt
 
 billingSubscriptions/{subscriptionId}
-  uid, customerId, storeId, variantId, status, dates, testMode, providerUpdatedAt
+  userId, updatedAt
 
-users/{uid}/billing/entitlement
-  plan, effectiveStatus, validUntil, sourceSubscriptionId, updatedAt
+users/{uid}/billingSubscriptions/{subscriptionId}
+  customerId, storeId, variantId, status, dates, testMode, providerUpdatedAt
 
+users/{uid}/billing/subscription
+  aggregate entitlement projection of the best current subscription
+```
+
+Майбутні reliability-модулі:
+
+```text
 billingWebhookEvents/{fingerprint}
   eventName, resourceType, resourceId, providerUpdatedAt,
   receivedAt, processingStatus, attempts, sanitizedError
@@ -315,9 +321,9 @@ Firebase рекомендує автоматично тестувати Rules ч
 
 - [x] Correct store/variant/custom data.
 - [x] 422 не приховується fallback.
-- [x] 500/429 fallback test існує.
-- [ ] Після redesign fallback більше не приймає raw UID.
-- [ ] Checkout session created/expired/consumed.
+- [x] 500/429 не відкриває unsafe fallback.
+- [x] Standard fallback більше не приймає raw UID, бо його видалено.
+- [x] Checkout session створюється, перевіряється та одноразово видаляється після binding.
 - [ ] API timeout, invalid JSON, missing URL, unsafe hostname.
 - [ ] 401/403/404/422/429/5xx мають правильну user-facing категорію.
 - [ ] Email відсутній/неверифікований.
@@ -618,12 +624,12 @@ Checklist:
 
 - [x] `past_due` → Pro entitlement і unit test.
 - [ ] Додати payment failure warning/recovery action та end-to-end dunning tests.
-- [ ] Перейти від одного subscription doc до per-subscription records + aggregated entitlement.
+- [x] Перейти від одного subscription doc до per-subscription records + aggregated entitlement.
 - [ ] Закрити duplicate subscription сценарій.
-- [ ] Замінити raw UID standard checkout fallback на opaque server-owned checkout session або прибрати fallback.
-- [ ] Додати functions install/type-check/test/build у CI.
+- [x] Замінити raw UID standard checkout fallback на opaque server-owned checkout session і прибрати fallback.
+- [x] Додати functions install/type-check/test/build у CI.
 - [ ] Створити production non-secret config + Live secrets + Live webhooks.
-- [ ] Runtime webhook schema validation.
+- [x] Runtime webhook schema validation.
 
 ### P1 — до публічного production launch
 

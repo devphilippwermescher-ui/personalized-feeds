@@ -8,10 +8,12 @@
 - якщо EUR Store ще не налаштований, EUR checkout блокується без перенаправлення на USD;
 - Annual вибрано за замовчуванням як вигідніший тариф;
 - безпечне створення checkout через Firebase callable Function;
-- Firebase UID, email, інтервал і валюта передаються в Lemon Squeezy як checkout metadata;
+- у Lemon Squeezy передається лише випадковий checkout session ID; Firebase UID зберігається тільки на backend;
+- небезпечний standard checkout fallback із редагованим UID прибрано;
 - webhook перевіряється через HMAC-підпис;
-- обробляються створення, оновлення, скасування, поновлення, завершення та пауза підписки;
-- стан підписки записується в `users/{uid}/billing/subscription`;
+- webhook payload проходить runtime schema validation;
+- обробляються створення, оновлення, скасування, поновлення та завершення підписки; pause не підтримується;
+- кожна підписка пишеться в `users/{uid}/billingSubscriptions/{subscriptionId}`, а чинний entitlement — у `users/{uid}/billing/subscription`;
 - extension читає Firestore і вмикає Pro тільки за серверним станом;
 - для активного Pro в модалці показуються тариф, дата поновлення/завершення і кнопка **Manage billing**;
 - Customer Portal URL отримується через захищену Firebase Function;
