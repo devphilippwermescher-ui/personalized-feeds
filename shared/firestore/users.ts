@@ -19,18 +19,22 @@ export async function createUserProfile(profile: UserProfile): Promise<void> {
   const createdAt = existing.exists()
     ? ((existing.data() as UserProfile).createdAt || profile.createdAt)
     : profile.createdAt;
+  const normalizedProfile: UserProfile = {
+    ...profile,
+    photoURL: profile.photoURL || '',
+  };
 
   await setDoc(userRef, {
-    ...profile,
+    ...normalizedProfile,
     createdAt,
   });
 
-  if (profile.email.trim()) {
-    await setDoc(doc(emailIndexCollection(), normalizeEmail(profile.email)), {
-      uid: profile.uid,
-      email: profile.email.trim(),
-      displayName: profile.displayName,
-      photoURL: profile.photoURL || '',
+  if (normalizedProfile.email.trim()) {
+    await setDoc(doc(emailIndexCollection(), normalizeEmail(normalizedProfile.email)), {
+      uid: normalizedProfile.uid,
+      email: normalizedProfile.email.trim(),
+      displayName: normalizedProfile.displayName,
+      photoURL: normalizedProfile.photoURL,
       updatedAt: Date.now(),
     });
   }

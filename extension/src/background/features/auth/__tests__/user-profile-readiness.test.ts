@@ -47,6 +47,20 @@ describe('authenticated user profile readiness', () => {
     });
   });
 
+  it('uses an empty photo URL when an email account has no avatar', async () => {
+    mocks.getUserProfile.mockResolvedValue(null);
+
+    await ensureAuthenticatedUserProfile({ ...authUser, photoURL: null } as User);
+
+    expect(mocks.createUserProfile).toHaveBeenCalledWith({
+      uid: 'user-1',
+      email: 'user@example.com',
+      displayName: 'Example User',
+      photoURL: '',
+      createdAt: expect.any(Number),
+    });
+  });
+
   it('does not rewrite an existing user document or recheck it in the same worker session', async () => {
     mocks.getUserProfile.mockResolvedValue({ uid: 'user-1' });
 

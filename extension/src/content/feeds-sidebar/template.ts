@@ -1,11 +1,14 @@
-import type { UserInfo } from './types';
+import type { SidebarAuthMode, UserInfo } from './types';
 import { CONTENT_COPY, getSidebarEmptyCopy } from '../shared/copy';
 import { DASHBOARD_ENABLED } from 'shared/feature-flags';
 import type { UserFeatureSettings } from 'shared/types';
 import { renderPlanOutlineStarIcon } from '../shared/plan-star';
 import { escapeHtml } from '../shared/escape-html';
+import { renderSidebarAuthForm } from './components/AuthForm/AuthForm';
 
 function renderSupportFooter(isPremium: boolean): string {
+  const supportLabel = isPremium ? 'Help us improve' : 'Support &amp; Feedback';
+
   return `
     ${
       isPremium
@@ -21,7 +24,7 @@ function renderSupportFooter(isPremium: boolean): string {
         `
     }
     <div class="lfa-support-footer">
-      <span class="lfa-support-label">Support &amp; Feedback :</span>
+      <span class="lfa-support-label">${supportLabel} :</span>
       <a class="lfa-support-link" href="mailto:dev.philipp.wermescher@gmail.com">dev.philipp.wermescher@gmail.com</a>
     </div>
   `;
@@ -209,6 +212,7 @@ interface SidebarBodyParams {
   isPremium: boolean;
   currentUser: UserInfo | null;
   authErrorMessage: string;
+  authMode?: SidebarAuthMode;
   sidebarSearchQuery: string;
   activeFeedTab: 'owned' | 'shared';
   feedsListCount: number;
@@ -223,6 +227,7 @@ export function renderSidebarBody(params: SidebarBodyParams): string {
     isPremium,
     currentUser,
     authErrorMessage,
+    authMode = 'sign-in',
     sidebarSearchQuery,
     activeFeedTab,
     feedsListCount,
@@ -250,6 +255,7 @@ export function renderSidebarBody(params: SidebarBodyParams): string {
   }
 
   if (!currentUser) {
+    const authTitle = authMode === 'sign-up' ? 'Create your account' : CONTENT_COPY.sidebar.signInTitle;
     return `
       <div class="lfa-unauth">
         <div class="lfa-unauth-icon">
@@ -257,10 +263,9 @@ export function renderSidebarBody(params: SidebarBodyParams): string {
             <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
           </svg>
         </div>
-        <h2 class="lfa-unauth-title">${CONTENT_COPY.sidebar.signInTitle}</h2>
+        <h2 class="lfa-unauth-title">${authTitle}</h2>
         <p class="lfa-unauth-desc">${CONTENT_COPY.sidebar.signInDescription}</p>
-        <button class="lfa-signin-btn" id="lfa-signin-btn">${CONTENT_COPY.sidebar.signInButton}</button>
-        <p class="lfa-unauth-hint">${CONTENT_COPY.sidebar.signInHint}</p>
+        ${renderSidebarAuthForm(authMode)}
         ${DASHBOARD_ENABLED ? `<a class="lfa-open-dashboard-link" id="lfa-open-dashboard-btn">${CONTENT_COPY.common.openDashboard}</a>` : ''}
         ${authErrorMessage ? `<p class="lfa-auth-error">${escapeHtml(authErrorMessage)}</p>` : ''}
       </div>

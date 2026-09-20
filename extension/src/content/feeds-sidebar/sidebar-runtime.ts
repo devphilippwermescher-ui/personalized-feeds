@@ -90,37 +90,38 @@ export function startFeedsSidebar(): void {
     return currentPlan;
   }
 
-  const { sendMsg, checkAuth, handleSignIn, handleSignOut } = createSidebarAuthController({
-    closeModal: () => feedActionsController?.closeModal(),
-    setCurrentUser: (user) => {
-      currentUser = user;
-    },
-    setFeeds: (feeds) => {
-      feedsList = feeds;
-    },
-    resetSignedOutState: resetSignedOutSidebarState,
-    setExpandedFeedId: (feedId) => {
-      expandedFeedId = feedId;
-    },
-    clearActiveMemberEditor: () => {
-      activeMemberEditor = null;
-    },
-    setAuthErrorMessage: (message) => {
-      authErrorMessage = message;
-    },
-    setIsLoading: (value) => {
-      isLoading = value;
-    },
-    setIsInitializing: (value) => {
-      isInitializing = value;
-    },
-    renderSidebarContent,
-    loadFeeds,
-    loadPlan: loadCurrentPlan,
-    setIsPremium: (value) => {
-      currentPlan = value ? 'pro' : 'free';
-    },
-  });
+  const { sendMsg, checkAuth, handleSignIn, handleEmailSignIn, handleEmailSignUp, handleSignOut } =
+    createSidebarAuthController({
+      closeModal: () => feedActionsController?.closeModal(),
+      setCurrentUser: (user) => {
+        currentUser = user;
+      },
+      setFeeds: (feeds) => {
+        feedsList = feeds;
+      },
+      resetSignedOutState: resetSignedOutSidebarState,
+      setExpandedFeedId: (feedId) => {
+        expandedFeedId = feedId;
+      },
+      clearActiveMemberEditor: () => {
+        activeMemberEditor = null;
+      },
+      setAuthErrorMessage: (message) => {
+        authErrorMessage = message;
+      },
+      setIsLoading: (value) => {
+        isLoading = value;
+      },
+      setIsInitializing: (value) => {
+        isInitializing = value;
+      },
+      renderSidebarContent,
+      loadFeeds,
+      loadPlan: loadCurrentPlan,
+      setIsPremium: (value) => {
+        currentPlan = value ? 'pro' : 'free';
+      },
+    });
 
   const { handlePendingSharedFeedLink, schedulePendingShareRetries } = createSharedFeedLinkController({
     getCurrentUser: () => currentUser,
@@ -289,6 +290,8 @@ export function startFeedsSidebar(): void {
     loadFeeds,
     refreshSharedFeeds,
     handleSignIn,
+    handleEmailSignIn,
+    handleEmailSignUp,
     handleSignOut,
     checkAuth,
     loadPlan: loadCurrentPlan,

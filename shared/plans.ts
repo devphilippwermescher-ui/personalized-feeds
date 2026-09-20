@@ -37,7 +37,7 @@ export interface UserPlanSnapshot {
 export const PLAN_ENTITLEMENTS: Record<AppPlan, PlanEntitlements> = {
   free: {
     maxCustomFeeds: 3,
-    maxMembersPerFeed: 15,
+    maxMembersPerFeed: 10,
     maxVisibleProfileViewers: 10,
     collectAllVisibleProfileViewers: false,
     collectPrivateProfileViewers: false,

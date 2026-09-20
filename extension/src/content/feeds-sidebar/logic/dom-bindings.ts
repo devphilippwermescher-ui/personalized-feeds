@@ -1,12 +1,23 @@
 import { bindLfsDropdowns } from '../../../shared/ui';
-import type { FeedInfo, FeedMemberInfo, MemberEditorState } from '../types';
+import type {
+  EmailPasswordSignInInput,
+  EmailPasswordSignUpInput,
+  FeedInfo,
+  FeedMemberInfo,
+  MemberEditorState,
+} from '../types';
 import type { UserFeatureSettings } from 'shared/types';
 import { getFeedScrollContainer } from './feed-expansion-motion';
 import { bindMemberActionButtons } from './member-actions';
+import { bindSidebarAuthForm } from './auth-form-bindings';
 
 interface SidebarDomBindingsDeps {
   toggleSidebar: () => void;
   handleSignIn: () => void;
+  handleEmailSignIn: (input: EmailPasswordSignInInput) => void;
+  handleEmailSignUp: (input: EmailPasswordSignUpInput) => void;
+  showSignIn: () => void;
+  showSignUp: () => void;
   handleSignOut: () => void;
   showCreateFeedForm: () => void;
   selectFeedTab: (tab: 'owned' | 'shared') => void;
@@ -48,7 +59,13 @@ export function bindSidebarDom(container: HTMLElement, deps: SidebarDomBindingsD
   container.querySelector('#lfa-toolbar-dashboard-btn')?.addEventListener('click', deps.openDashboard);
   container.querySelector('#lfa-open-subscription-btn')?.addEventListener('click', deps.openSubscription);
   container.querySelector('#lfa-open-subscription-activate')?.addEventListener('click', deps.openSubscription);
-  container.querySelector('#lfa-signin-btn')?.addEventListener('click', deps.handleSignIn);
+  bindSidebarAuthForm(container, {
+    handleGoogleSignIn: deps.handleSignIn,
+    handleEmailSignIn: deps.handleEmailSignIn,
+    handleEmailSignUp: deps.handleEmailSignUp,
+    showSignIn: deps.showSignIn,
+    showSignUp: deps.showSignUp,
+  });
   container.querySelector('#lfa-account-signout-btn')?.addEventListener('click', deps.handleSignOut);
   container.querySelector('#lfa-manage-plan-btn')?.addEventListener('click', () => {
     container.querySelector('#lfa-account-menu')?.classList.remove('lfa-account-menu--open');

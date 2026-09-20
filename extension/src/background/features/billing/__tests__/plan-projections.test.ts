@@ -38,7 +38,7 @@ describe('plan projections', () => {
     const projected = projectFeedsForPlan(feeds, getPlanEntitlements('free'));
 
     expect(projected).toHaveLength(3);
-    expect(projected.map((feed) => feed.memberCount)).toEqual([15, 15, 15]);
+    expect(projected.map((feed) => feed.memberCount)).toEqual([10, 10, 10]);
     expect(feeds).toHaveLength(5);
     expect(feeds[0].memberCount).toBe(25);
   });
@@ -51,11 +51,11 @@ describe('plan projections', () => {
     expect(projectFeedMembersForPlan(members, getPlanEntitlements('pro'))).toEqual(members);
   });
 
-  it('shows only the newest 15 persisted feed members to Free users', () => {
+  it('shows only the newest 10 persisted feed members to Free users', () => {
     const members = Array.from({ length: 20 }, (_, index) => makeMember(index));
     const projected = projectFeedMembersForPlan(members, getPlanEntitlements('free'));
 
-    expect(projected.map((member) => member.id)).toEqual(members.slice(0, 15).map((member) => member.id));
+    expect(projected.map((member) => member.id)).toEqual(members.slice(0, 10).map((member) => member.id));
     expect(members).toHaveLength(20);
   });
 });

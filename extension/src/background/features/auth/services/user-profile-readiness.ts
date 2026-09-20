@@ -10,7 +10,7 @@ function createProfileFromAuthUser(user: User): Promise<void> {
     uid: user.uid,
     email: user.email || '',
     displayName: user.displayName || '',
-    photoURL: user.photoURL || undefined,
+    photoURL: user.photoURL || '',
     createdAt: Date.now(),
   });
 }

@@ -181,7 +181,33 @@ describe('settings menu', () => {
     });
 
     expect(html).not.toContain('id="lfa-footer-get-pro-btn"');
+    expect(html).toContain('Help us improve');
+    expect(html).not.toContain('Support &amp; Feedback');
+    expect(html).toContain('dev.philipp.wermescher@gmail.com');
+  });
+
+  it('keeps the current support label and email for authenticated Free users', () => {
+    const html = renderSidebarBody({
+      isLoading: false,
+      isInitializing: false,
+      isPremium: false,
+      currentUser: {
+        userId: 'user-1',
+        displayName: 'Test User',
+        email: 'test@example.com',
+        photoURL: '',
+      },
+      authErrorMessage: '',
+      sidebarSearchQuery: '',
+      activeFeedTab: 'owned',
+      feedsListCount: 0,
+      feedsHtml: '',
+      editorOverlayHtml: '',
+    });
+
     expect(html).toContain('Support &amp; Feedback');
+    expect(html).not.toContain('Help us improve');
+    expect(html).toContain('dev.philipp.wermescher@gmail.com');
   });
 
   it('invites signed-out users to start with the Free plan', () => {

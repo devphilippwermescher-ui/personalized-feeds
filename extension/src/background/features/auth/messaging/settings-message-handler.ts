@@ -1,17 +1,11 @@
-import { signInWithGoogleTokens, signOutUser } from '../../../../services/auth';
+import { signOutUser } from '../../../../services/auth';
 import {
   getUserFeatureSettings,
-  getUserProfilePreferences,
   updateUserFeatureSettings,
   updateUserProfilePreferences,
 } from 'shared/firestore-service';
-import { DASHBOARD_ANALYTICS_SYNC_ENABLED } from 'shared/feature-flags';
 import type { UserFeatureSettings, UserProfilePreferences } from 'shared/types';
-import {
-  DEFAULT_USER_PROFILE_PREFERENCES,
-  isBillingCurrency,
-  normalizeUserProfilePreferences,
-} from 'shared/user-profile-preferences';
+import { isBillingCurrency, normalizeUserProfilePreferences } from 'shared/user-profile-preferences';
 import {
   clearStoredFeedsAuthTokens,
   closeOffscreenDocument,
@@ -20,42 +14,26 @@ import {
   formatUserInfo,
   getAuthenticatedFeedsUser,
   getStoredFeatureSettings,
-  getStoredUserProfilePreferences,
   normalizeFeatureSettings,
   persistFeatureSettingsToStorage,
   persistUserProfilePreferencesToStorage,
   PROFILE_PREFERENCES_STORAGE_KEY,
   removeStorageValue,
   resolvePendingOffscreenAuth,
-  setStoredFeedsAuthTokens,
   startOffscreenAuth,
 } from '../services/authenticated-user';
-import {
-  ensureAuthenticatedUserProfile,
-  resetAuthenticatedUserProfileReadiness,
-} from '../services/user-profile-readiness';
-import {
-  appendProfileViewersWakeEvent,
-  clearProfileViewersAlarm,
-} from '../../profile-viewers/profile-viewers-coordinator-storage';
-import { queueProfileViewersFirstSurfaceSync } from '../../profile-viewers/profile-viewers-coordinator';
-import { queueProfileViewersStatusSync } from '../../profile-viewers/profile-viewers-status-sync';
-import { queueProfileAnalyticsSync } from '../../profile-analytics/profile-analytics-sync-coordinator';
+import { resetAuthenticatedUserProfileReadiness } from '../services/user-profile-readiness';
+import { clearProfileViewersAlarm } from '../../profile-viewers/profile-viewers-coordinator-storage';
 import { normalizeFeedsError } from '../../feeds/errors/feeds-error';
+import {
+  authenticateFeedsWithEmail,
+  authenticateFeedsWithGoogle,
+  registerFeedsWithEmail,
+  resolveUserProfilePreferences,
+  schedulePostSignInWork,
+} from '../services/authenticated-session';
 
 const MAX_PROFILE_AVATAR_DATA_URL_LENGTH = 300_000;
-
-async function resolveUserProfilePreferences(userId: string): Promise<UserProfilePreferences> {
-  const stored = await getStoredUserProfilePreferences(userId);
-  try {
-    const preferences = await getUserProfilePreferences(userId);
-    await persistUserProfilePreferencesToStorage(userId, preferences);
-    return preferences;
-  } catch (error) {
-    console.warn('[profile-preferences] Remote preferences could not be loaded:', error);
-    return stored || DEFAULT_USER_PROFILE_PREFERENCES;
-  }
-}
 
 function validateProfilePreferences(value: unknown): UserProfilePreferences {
   if (!value || typeof value !== 'object') {
@@ -133,49 +111,58 @@ export function registerAuthSettingsMessageHandler(): void {
             return;
           }
 
-          const user = await signInWithGoogleTokens(result.idToken, result.accessToken);
-          await ensureAuthenticatedUserProfile(user);
-
-          await setStoredFeedsAuthTokens({
+          const user = await authenticateFeedsWithGoogle({
             idToken: result.idToken,
             accessToken: result.accessToken,
-            updatedAt: Date.now(),
           });
-
-          chrome.storage.local.set({
-            feedsUserInfo: formatUserInfo(
-              {
-                uid: user.uid,
-                displayName: user.displayName || '',
-                email: user.email || '',
-                photoURL: user.photoURL || '',
-              },
-              await resolveUserProfilePreferences(user.uid)
-            ),
-          });
+          if (message.deferPostAuthWork !== true) {
+            schedulePostSignInWork();
+          }
           sendResponse({ success: true, userId: user.uid });
-          void appendProfileViewersWakeEvent({
-            event: 'sign_in',
-            trigger: 'sign_in',
-          });
-          // Prepare the first surface the user sees before Profile Analytics can
-          // acquire the one-time Connections-history lock. The forced viewer run
-          // still respects its cooldown and request-token budget.
-          void queueProfileViewersFirstSurfaceSync('sign_in').finally(() => {
-            void queueProfileViewersStatusSync({ trigger: 'sign_in', urgent: true });
-            // Signing in from the Sidebar is itself the first authenticated
-            // extension entry. The analytics coordinator records that fact but
-            // remains gated until Profile Visitors and its summary are complete.
-            if (DASHBOARD_ANALYTICS_SYNC_ENABLED) {
-              void queueProfileAnalyticsSync('first_extension_entry');
-            }
-          });
         })
         .catch((error) => {
           console.error('[feeds-auth] Sign-in error:', error);
           sendResponse({ success: false, error: normalizeFeedsError(error, 'Sign in failed') });
         });
       return true;
+    }
+
+    if (message.type === 'FEEDS_EMAIL_SIGN_IN') {
+      Promise.resolve()
+        .then(async () => {
+          const user = await authenticateFeedsWithEmail(message as Record<string, unknown>);
+          if (message.deferPostAuthWork !== true) {
+            schedulePostSignInWork();
+          }
+          sendResponse({ success: true, userId: user.uid });
+        })
+        .catch((error) => {
+          console.error('[feeds-auth] Email sign-in error:', error);
+          sendResponse({ success: false, error: normalizeFeedsError(error, 'Sign in failed') });
+        });
+      return true;
+    }
+
+    if (message.type === 'FEEDS_EMAIL_SIGN_UP') {
+      Promise.resolve()
+        .then(async () => {
+          const user = await registerFeedsWithEmail(message as Record<string, unknown>);
+          if (message.deferPostAuthWork !== true) {
+            schedulePostSignInWork();
+          }
+          sendResponse({ success: true, userId: user.uid });
+        })
+        .catch((error) => {
+          console.error('[feeds-auth] Email registration error:', error);
+          sendResponse({ success: false, error: normalizeFeedsError(error, 'Account creation failed') });
+        });
+      return true;
+    }
+
+    if (message.type === 'FEEDS_AUTH_SURFACE_READY') {
+      schedulePostSignInWork();
+      sendResponse({ success: true });
+      return false;
     }
 
     if (message.type === 'FEEDS_SIGN_OUT') {

@@ -1,6 +1,19 @@
 import type { ProfileViewersCollectionProgress } from '../../shared/profile-viewers-progress';
 import type { BillingCurrency } from 'shared/types';
 
+export type SidebarAuthMode = 'sign-in' | 'sign-up';
+
+export interface EmailPasswordSignInInput {
+  email: string;
+  password: string;
+}
+
+export interface EmailPasswordSignUpInput extends EmailPasswordSignInInput {
+  firstName: string;
+  lastName: string;
+  acceptedPersonalData: boolean;
+}
+
 export interface UserInfo {
   userId: string;
   displayName: string;

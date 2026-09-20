@@ -20,6 +20,30 @@ export function normalizeFeedsError(error: unknown, fallback = 'Something went w
     return 'Session expired, please sign in again.';
   }
 
+  if (
+    normalized.includes('auth/invalid-credential') ||
+    normalized.includes('auth/wrong-password') ||
+    normalized.includes('auth/user-not-found')
+  ) {
+    return 'Incorrect email or password.';
+  }
+
+  if (normalized.includes('auth/email-already-in-use')) {
+    return 'An account with this email already exists.';
+  }
+
+  if (normalized.includes('auth/invalid-email')) {
+    return 'Enter a valid email address.';
+  }
+
+  if (normalized.includes('auth/weak-password') || normalized.includes('auth/password-does-not-meet-requirements')) {
+    return 'Password does not meet the security requirements.';
+  }
+
+  if (normalized.includes('auth/too-many-requests')) {
+    return 'Too many attempts. Please try again later.';
+  }
+
   if (normalized.includes('permission-denied') || normalized.includes('missing or insufficient permissions')) {
     return 'Firestore permission denied. Make sure Firestore rules are deployed (firebase deploy --only firestore:rules).';
   }

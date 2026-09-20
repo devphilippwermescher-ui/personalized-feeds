@@ -169,100 +169,6 @@ export function injectPlanModalStyles(modalId: string, styleId: string): void {
     #${modalId} .mfp-plan-about strong {
       color: #fffaf0 !important;
     }
-    #${modalId} .mfp-plan-billing {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 10px;
-      margin: 0 22px 18px;
-    }
-    #${modalId} .mfp-plan-currency-note {
-      margin: -9px 22px 18px;
-      color: #9f9278;
-      text-align: center;
-      font-size: 11px;
-      line-height: 1.45;
-    }
-    #${modalId} .mfp-plan-currency-link {
-      padding: 0;
-      border: 0;
-      color: #c7bda7;
-      background: transparent;
-      font: inherit;
-      font-weight: 700;
-      text-decoration: underline;
-      text-underline-offset: 2px;
-      cursor: pointer;
-    }
-    #${modalId} .mfp-plan-currency-link:hover,
-    #${modalId} .mfp-plan-currency-link:focus-visible {
-      color: #fff8e5;
-      outline: none;
-    }
-    #${modalId} .mfp-plan-billing-option {
-      position: relative;
-      min-width: 0;
-      padding: 14px 13px 13px;
-      border: 1px solid rgba(255, 219, 104, .16);
-      border-radius: 16px;
-      color: #e4d8bd;
-      background: rgba(255, 248, 226, .045);
-      text-align: left;
-      cursor: pointer;
-      transition: border-color .16s ease, background .16s ease, box-shadow .16s ease, transform .16s ease;
-    }
-    #${modalId} .mfp-plan-billing-option:hover,
-    #${modalId} .mfp-plan-billing-option:focus-visible {
-      border-color: rgba(255, 217, 90, .48);
-      background: rgba(255, 217, 90, .08);
-      outline: none;
-    }
-    #${modalId} .mfp-plan-billing-option.is-selected {
-      border-color: #ffd95a;
-      color: #fff8e5;
-      background: linear-gradient(145deg, rgba(255, 217, 90, .17), rgba(255, 191, 31, .07));
-      box-shadow: 0 10px 28px rgba(190, 128, 0, .16), 0 0 0 1px rgba(255, 217, 90, .08) inset;
-    }
-    #${modalId} .mfp-plan-billing-name {
-      display: block;
-      margin-bottom: 7px;
-      font-size: 12px;
-      font-weight: 800;
-      letter-spacing: .04em;
-      text-transform: uppercase;
-    }
-    #${modalId} .mfp-plan-billing-price {
-      display: flex;
-      align-items: baseline;
-      gap: 4px;
-      color: #fffaf0;
-    }
-    #${modalId} .mfp-plan-billing-price strong {
-      font-size: 25px;
-      line-height: 1;
-    }
-    #${modalId} .mfp-plan-billing-price span,
-    #${modalId} .mfp-plan-billing-detail {
-      color: #bcae91;
-      font-size: 11px;
-    }
-    #${modalId} .mfp-plan-billing-detail {
-      display: block;
-      margin-top: 6px;
-    }
-    #${modalId} .mfp-plan-billing-save {
-      position: absolute;
-      top: -8px;
-      right: 9px;
-      padding: 3px 7px;
-      border-radius: 999px;
-      color: #4a3100;
-      background: #ffd95a;
-      box-shadow: 0 5px 12px rgba(183, 122, 0, .22);
-      font-size: 9px;
-      font-weight: 900;
-      letter-spacing: .04em;
-      text-transform: uppercase;
-    }
     #${modalId} .mfp-plan-current {
       margin: 0 22px 18px;
       padding: 15px 16px;
@@ -321,4 +227,3 @@ export function injectPlanModalStyles(modalId: string, styleId: string): void {
   `;
   document.head.appendChild(style);
 }
-

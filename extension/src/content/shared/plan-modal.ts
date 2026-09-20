@@ -2,44 +2,31 @@ import { createElement } from 'react';
 import { flushSync } from 'react-dom';
 import { createRoot, type Root } from 'react-dom/client';
 import type { AppPlan, BillingSubscription } from 'shared/plans';
-import type { BillingCurrency } from 'shared/types';
-import { DEFAULT_BILLING_CURRENCY } from 'shared/user-profile-preferences';
-import type { ProBillingInterval } from 'shared/subscription-config';
 import { Modal } from 'shared/ui/modal';
-import { getPlanSnapshot, openCheckout, openCustomerPortal } from '../subscription/services/billing-service';
+import { getPlanSnapshot, openCustomerPortal } from '../subscription/services/billing-service';
+import { openPricingPage } from '../subscription/services/pricing-page';
 import { renderPlanStarIcon } from './plan-star';
-import { closeProfilePreferencesModal, openProfilePreferencesModal } from '../profile-preferences/public';
-import { loadProfilePreferences } from '../profile-preferences/services/profile-preferences-service';
+import { closeProfilePreferencesModal } from '../profile-preferences/public';
 import { injectPlanModalStyles } from './plan-modal-styles';
-import { requestPlanRefresh } from '../subscription/plan-refresh';
 
-export type PlanModalContext = 'manage' | 'feeds' | 'members';
+export type PlanModalContext = 'feeds' | 'members';
 
 const MODAL_ID = 'mfp-plan-modal-overlay';
 const MODAL_HOST_ID = 'mfp-plan-modal-react-root';
-const ACTIVATION_POLL_INTERVAL_MS = 5000;
-const ACTIVATION_POLL_ATTEMPTS = 24;
 let planModalRoot: Root | null = null;
 let planModalHost: HTMLElement | null = null;
 
 function getContextCopy(context: PlanModalContext): { title: string; description: string } {
-  if (context === 'feeds') {
-    return {
-      title: 'Create unlimited feeds with Pro',
-      description: 'The Free plan includes up to 3 custom feeds. Upgrade to keep organizing without limits.',
-    };
-  }
-
   if (context === 'members') {
     return {
       title: 'Add unlimited people with Pro',
-      description: 'The Free plan includes up to 15 people in each feed. Upgrade to keep growing this feed.',
+      description: 'The Free plan includes up to 10 people in each feed. Upgrade to keep growing this feed.',
     };
   }
 
   return {
-    title: 'Get more from LinkedIn with Pro',
-    description: 'Unlock complete visitor history and unlimited personalized feeds.',
+    title: 'Create unlimited feeds with Pro',
+    description: 'The Free plan includes up to 3 custom feeds. Upgrade to keep organizing without limits.',
   };
 }
 
@@ -95,38 +82,6 @@ async function hydrateSubscriptionSummary(overlay: HTMLElement): Promise<void> {
   }
 }
 
-async function waitForProActivation(overlay: HTMLElement, context: PlanModalContext): Promise<void> {
-  for (let attempt = 0; attempt < ACTIVATION_POLL_ATTEMPTS && overlay.isConnected; attempt += 1) {
-    await new Promise((resolve) => window.setTimeout(resolve, ACTIVATION_POLL_INTERVAL_MS));
-    if (!overlay.isConnected) return;
-
-    try {
-      const snapshot = await getPlanSnapshot(true);
-      if (snapshot.success && snapshot.plan === 'pro') {
-        requestPlanRefresh();
-        openPlanModal({ plan: 'pro', context });
-        return;
-      }
-    } catch {
-      // A later poll can recover from a transient auth or Firestore failure.
-    }
-  }
-}
-
-function applyBillingCurrency(overlay: HTMLElement, currency: BillingCurrency): void {
-  const symbol = currency === 'EUR' ? '€' : '$';
-  const values: Record<string, string> = {
-    monthly: `${symbol}19`,
-    annualMonthly: `${symbol}13`,
-    annualTotal: `${symbol}156 billed yearly`,
-  };
-
-  Object.entries(values).forEach(([key, value]) => {
-    const element = overlay.querySelector<HTMLElement>(`[data-plan-price="${key}"]`);
-    if (element) element.textContent = value;
-  });
-}
-
 export function openPlanModal(options: { plan: AppPlan; context: PlanModalContext }): void {
   injectPlanModalStyles(MODAL_ID, 'mfp-plan-modal-styles');
   closePlanModal();
@@ -139,30 +94,6 @@ export function openPlanModal(options: { plan: AppPlan; context: PlanModalContex
           description: 'Review your plan here, then open secure billing management when needed.',
         }
       : getContextCopy(options.context);
-  let selectedBillingInterval: ProBillingInterval = 'annual';
-  let selectedBillingCurrency: BillingCurrency = DEFAULT_BILLING_CURRENCY;
-  const billingSelector =
-    options.plan === 'free'
-      ? `
-      <div class="mfp-plan-billing" role="group" aria-label="Choose billing period">
-        <button class="mfp-plan-billing-option" type="button" data-billing-interval="monthly" aria-pressed="false">
-          <span class="mfp-plan-billing-name">Monthly</span>
-          <span class="mfp-plan-billing-price"><strong data-plan-price="monthly">€19</strong><span>/ month</span></span>
-          <span class="mfp-plan-billing-detail">Billed monthly</span>
-        </button>
-        <button class="mfp-plan-billing-option is-selected" type="button" data-billing-interval="annual" aria-pressed="true">
-          <span class="mfp-plan-billing-save">Save 32%</span>
-          <span class="mfp-plan-billing-name">Annual</span>
-          <span class="mfp-plan-billing-price"><strong data-plan-price="annualMonthly">€13</strong><span>/ month</span></span>
-          <span class="mfp-plan-billing-detail" data-plan-price="annualTotal">€156 billed yearly</span>
-        </button>
-      </div>
-      <p class="mfp-plan-currency-note">
-        Prices are shown in your preferred currency. Change it in
-        <button class="mfp-plan-currency-link" type="button">Profile &amp; billing</button>.
-      </p>
-    `
-      : '';
   const bodyHtml = `
         <div class="mfp-plan-hero">
           <div class="mfp-plan-star-wrap">
@@ -171,7 +102,6 @@ export function openPlanModal(options: { plan: AppPlan; context: PlanModalContex
           <h2 id="mfp-plan-title">${copy.title}</h2>
           <p class="mfp-plan-description">${copy.description}</p>
         </div>
-        ${billingSelector}
         ${options.plan === 'pro' ? '<div class="mfp-plan-current"><strong>Pro plan active</strong><span>Loading billing details…</span></div>' : ''}
         <div class="mfp-plan-benefits">
           <div class="mfp-plan-benefit"><div class="mfp-plan-benefit-icon">◎</div><div><strong>Complete Profile Visitors</strong><span>Collect all visible visitors, private-mode views, and recruiter insights available from LinkedIn.</span></div></div>
@@ -251,44 +181,26 @@ export function openPlanModal(options: { plan: AppPlan; context: PlanModalContex
     if (event.key === 'Escape') close();
   });
   overlay.querySelector('.mfp-plan-close')?.addEventListener('click', close);
-  overlay.querySelector('.mfp-plan-currency-link')?.addEventListener('click', () => {
-    closePlanModal();
-    void openProfilePreferencesModal().catch(() => openPlanModal(options));
-  });
   const cta = overlay.querySelector<HTMLButtonElement>('.mfp-plan-cta');
-  overlay.querySelectorAll<HTMLButtonElement>('[data-billing-interval]').forEach((button) => {
-    button.addEventListener('click', () => {
-      const interval = button.dataset.billingInterval;
-      if (interval !== 'monthly' && interval !== 'annual') return;
-
-      selectedBillingInterval = interval;
-      overlay.querySelectorAll<HTMLButtonElement>('[data-billing-interval]').forEach((option) => {
-        const isSelected = option.dataset.billingInterval === selectedBillingInterval;
-        option.classList.toggle('is-selected', isSelected);
-        option.setAttribute('aria-pressed', String(isSelected));
-      });
-    });
-  });
   cta?.addEventListener('click', () => {
     const note = overlay.querySelector<HTMLElement>('.mfp-plan-note');
     if (!cta || cta.disabled) return;
+
+    if (options.plan === 'free') {
+      openPricingPage();
+      if (note) note.textContent = 'Pricing opened in a new tab.';
+      return;
+    }
+
     const originalLabel = cta.textContent || '';
     cta.disabled = true;
-    cta.textContent = options.plan === 'pro' ? 'Opening billing…' : 'Opening secure checkout…';
+    cta.textContent = 'Opening billing…';
 
-    void (
-      options.plan === 'pro' ? openCustomerPortal() : openCheckout(selectedBillingInterval, selectedBillingCurrency)
-    )
+    void openCustomerPortal()
       .then(() => {
         if (!overlay.isConnected) return;
         if (note) {
-          note.textContent =
-            options.plan === 'pro'
-              ? 'Billing management opened in a new tab.'
-              : 'Checkout opened. Pro activates automatically after payment is confirmed.';
-        }
-        if (options.plan === 'free') {
-          void waitForProActivation(overlay, options.context);
+          note.textContent = 'Billing management opened in a new tab.';
         }
       })
       .catch((error) => {
@@ -303,18 +215,6 @@ export function openPlanModal(options: { plan: AppPlan; context: PlanModalContex
         }
       });
   });
-
-  if (options.plan === 'free') {
-    void loadProfilePreferences()
-      .then(({ preferences }) => {
-        if (!overlay.isConnected) return;
-        selectedBillingCurrency = preferences.billingCurrency;
-        applyBillingCurrency(overlay, selectedBillingCurrency);
-      })
-      .catch(() => {
-        selectedBillingCurrency = DEFAULT_BILLING_CURRENCY;
-      });
-  }
 
   if (options.plan === 'pro') void hydrateSubscriptionSummary(overlay);
   overlay.querySelector<HTMLElement>('.mfp-plan-close')?.focus();

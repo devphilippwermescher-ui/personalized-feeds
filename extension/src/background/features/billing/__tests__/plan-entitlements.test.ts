@@ -27,7 +27,7 @@ describe('plan entitlements', () => {
   it('defines the complete Free limits and unrestricted Pro behavior', () => {
     expect(getPlanEntitlements('free')).toEqual({
       maxCustomFeeds: 3,
-      maxMembersPerFeed: 15,
+      maxMembersPerFeed: 10,
       maxVisibleProfileViewers: 10,
       collectAllVisibleProfileViewers: false,
       collectPrivateProfileViewers: false,

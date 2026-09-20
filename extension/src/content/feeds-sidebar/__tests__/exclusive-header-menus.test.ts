@@ -36,4 +36,29 @@ describe('sidebar header menus', () => {
     expect(container.querySelector('#lfa-account-menu')?.classList.contains('lfa-account-menu--open')).toBe(false);
     expect(container.querySelector('#lfa-settings-menu')?.classList.contains('lfa-settings-menu--open')).toBe(true);
   });
+
+  it('uses the same pricing action for Manage plan and Get Pro', () => {
+    document.body.innerHTML = `
+      <div id="sidebar-test-root">
+        <div id="lfa-account-menu" class="lfa-account-menu--open"></div>
+        <button id="lfa-manage-plan-btn" type="button">Manage plan</button>
+        <button id="lfa-footer-get-pro-btn" type="button">Get Pro</button>
+      </div>
+    `;
+    const container = document.querySelector<HTMLElement>('#sidebar-test-root');
+    if (!container) throw new Error('Test container is missing');
+
+    const openManagePlan = vi.fn();
+    const stub = vi.fn();
+    const deps = new Proxy(
+      { memberActionDeps: {}, openManagePlan },
+      { get: (target, key) => Reflect.get(target, key) ?? stub }
+    ) as unknown as Parameters<typeof bindSidebarDom>[1];
+
+    bindSidebarDom(container, deps);
+    container.querySelector<HTMLButtonElement>('#lfa-manage-plan-btn')?.click();
+    container.querySelector<HTMLButtonElement>('#lfa-footer-get-pro-btn')?.click();
+
+    expect(openManagePlan).toHaveBeenCalledTimes(2);
+  });
 });

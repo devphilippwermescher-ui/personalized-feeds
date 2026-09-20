@@ -1,4 +1,4 @@
-import type { UserInfo } from '../types';
+import type { EmailPasswordSignInInput, EmailPasswordSignUpInput, UserInfo } from '../types';
 import { reportExtensionUiEntered } from '../../../runtime/extension-entry';
 
 interface SidebarSessionDeps {
@@ -95,7 +95,8 @@ export function handleExpiredSession(
   deps.renderSidebarContent();
 }
 
-export async function handleSignIn(
+async function handleAuthentication(
+  message: Record<string, unknown>,
   deps: Pick<
     SidebarSessionDeps,
     | 'sendMsg'
@@ -107,12 +108,14 @@ export async function handleSignIn(
     | 'setCurrentUser'
   >
 ): Promise<void> {
+  const deferredMessage = { ...message, deferPostAuthWork: true };
+  let authenticatedSurfaceReady = false;
   deps.setIsLoading(true);
   deps.setAuthErrorMessage('');
   deps.renderSidebarContent();
 
   try {
-    const resp = await deps.sendMsg({ type: 'FEEDS_SIGN_IN' });
+    const resp = await deps.sendMsg(deferredMessage);
     if (!resp?.success) {
       deps.setAuthErrorMessage((resp?.error as string) || 'Sign in failed');
       return;
@@ -127,12 +130,66 @@ export async function handleSignIn(
       SIDEBAR_INIT_TIMEOUT_MS,
       'Sign-in completed, but account data could not be loaded. Please try again.'
     );
+    authenticatedSurfaceReady = true;
   } catch (error) {
     deps.setAuthErrorMessage(error instanceof Error ? error.message : 'Sign in failed');
   } finally {
     deps.setIsLoading(false);
     deps.renderSidebarContent();
   }
+
+  if (authenticatedSurfaceReady) {
+    void deps.sendMsg({ type: 'FEEDS_AUTH_SURFACE_READY' }).catch((error) => {
+      console.warn('[feeds-auth] Failed to start post-authentication work:', error);
+    });
+  }
+}
+
+export function handleSignIn(
+  deps: Pick<
+    SidebarSessionDeps,
+    | 'sendMsg'
+    | 'setIsLoading'
+    | 'setAuthErrorMessage'
+    | 'renderSidebarContent'
+    | 'loadFeeds'
+    | 'loadPlan'
+    | 'setCurrentUser'
+  >
+): Promise<void> {
+  return handleAuthentication({ type: 'FEEDS_SIGN_IN' }, deps);
+}
+
+export function handleEmailSignIn(
+  input: EmailPasswordSignInInput,
+  deps: Pick<
+    SidebarSessionDeps,
+    | 'sendMsg'
+    | 'setIsLoading'
+    | 'setAuthErrorMessage'
+    | 'renderSidebarContent'
+    | 'loadFeeds'
+    | 'loadPlan'
+    | 'setCurrentUser'
+  >
+): Promise<void> {
+  return handleAuthentication({ type: 'FEEDS_EMAIL_SIGN_IN', ...input }, deps);
+}
+
+export function handleEmailSignUp(
+  input: EmailPasswordSignUpInput,
+  deps: Pick<
+    SidebarSessionDeps,
+    | 'sendMsg'
+    | 'setIsLoading'
+    | 'setAuthErrorMessage'
+    | 'renderSidebarContent'
+    | 'loadFeeds'
+    | 'loadPlan'
+    | 'setCurrentUser'
+  >
+): Promise<void> {
+  return handleAuthentication({ type: 'FEEDS_EMAIL_SIGN_UP', ...input }, deps);
 }
 
 export async function handleSignOut(
