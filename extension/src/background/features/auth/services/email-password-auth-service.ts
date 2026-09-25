@@ -1,4 +1,10 @@
-import { createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile, type User } from 'firebase/auth';
+import {
+  createUserWithEmailAndPassword,
+  sendEmailVerification,
+  signInWithEmailAndPassword,
+  updateProfile,
+  type User,
+} from 'firebase/auth';
 import { getFirebaseAuth } from 'shared/firebase-config';
 
 export async function signInWithEmailPassword(email: string, password: string): Promise<User> {
@@ -15,5 +21,8 @@ export async function registerWithEmailPassword(params: {
   const displayName = `${params.firstName.trim()} ${params.lastName.trim()}`.trim();
   const result = await createUserWithEmailAndPassword(getFirebaseAuth(), params.email.trim(), params.password);
   await updateProfile(result.user, { displayName });
+  await sendEmailVerification(result.user).catch((error) => {
+    console.warn('[feeds-auth] Verification email could not be sent:', error);
+  });
   return result.user;
 }

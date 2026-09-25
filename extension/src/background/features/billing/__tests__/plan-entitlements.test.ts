@@ -28,6 +28,10 @@ describe('plan entitlements', () => {
     expect(getPlanEntitlements('free')).toEqual({
       maxCustomFeeds: 3,
       maxMembersPerFeed: 10,
+      maxOutgoingShareRecipients: 1,
+      maxOutgoingSharedFeeds: 3,
+      maxIncomingShareOwners: 1,
+      maxIncomingSharedFeeds: 3,
       maxVisibleProfileViewers: 10,
       collectAllVisibleProfileViewers: false,
       collectPrivateProfileViewers: false,
@@ -36,6 +40,10 @@ describe('plan entitlements', () => {
     expect(getPlanEntitlements('pro')).toEqual({
       maxCustomFeeds: null,
       maxMembersPerFeed: null,
+      maxOutgoingShareRecipients: null,
+      maxOutgoingSharedFeeds: null,
+      maxIncomingShareOwners: null,
+      maxIncomingSharedFeeds: null,
       maxVisibleProfileViewers: null,
       collectAllVisibleProfileViewers: true,
       collectPrivateProfileViewers: true,

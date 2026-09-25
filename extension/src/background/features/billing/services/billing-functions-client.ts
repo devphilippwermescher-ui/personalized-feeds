@@ -1,25 +1,33 @@
-import { connectFunctionsEmulator, getFunctions, httpsCallable, type Functions } from 'firebase/functions';
-import { FIREBASE_EMULATOR_HOST, FIREBASE_EMULATOR_PORTS, shouldUseFirebaseEmulators } from 'shared/app-environment';
-import { getFirebaseApp } from 'shared/firebase-config';
-import { BILLING_FUNCTION_NAMES, BILLING_FUNCTION_REGION, type ProBillingInterval } from 'shared/subscription-config';
+import { httpsCallable } from 'firebase/functions';
+import {
+  BILLING_FUNCTION_NAMES,
+  BILLING_FUNCTION_REGION,
+  PRICING_PAGE_URL,
+  type ProBillingInterval,
+} from 'shared/subscription-config';
 import type { BillingCurrency } from 'shared/types';
 import { waitForAuthReady } from '../../../../services/auth';
+import { getCallableFunctions } from '../../../platform/firebase/callable-functions';
 
 interface BillingUrlResponse {
   url: string;
 }
 
-let billingFunctions: Functions | null = null;
-
-function getBillingFunctions(): Functions {
-  if (billingFunctions) return billingFunctions;
-
-  billingFunctions = getFunctions(getFirebaseApp(), BILLING_FUNCTION_REGION);
-  if (shouldUseFirebaseEmulators()) {
-    connectFunctionsEmulator(billingFunctions, FIREBASE_EMULATOR_HOST, FIREBASE_EMULATOR_PORTS.functions);
-  }
-  return billingFunctions;
+interface BillingHandoffResponse {
+  token: string;
+  expiresAt: number;
 }
+
+interface BillingClaimResponse {
+  claimedCount: number;
+  verificationRequired: boolean;
+}
+
+const HANDOFF_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
+
+let pendingGuestClaim: Promise<BillingClaimResponse> | null = null;
+let lastGuestClaim: { result: BillingClaimResponse; checkedAt: number } | null = null;
+const GUEST_CLAIM_DEDUPE_MS = 5_000;
 
 function assertHttpsUrl(value: unknown): string {
   if (typeof value !== 'string') throw new Error('Billing service did not return a URL');
@@ -39,7 +47,7 @@ export async function createBillingCheckoutUrl(
 ): Promise<string> {
   await requireAuthenticatedUser();
   const createCheckout = httpsCallable<{ interval: ProBillingInterval; currency: BillingCurrency }, BillingUrlResponse>(
-    getBillingFunctions(),
+    getCallableFunctions(BILLING_FUNCTION_REGION),
     BILLING_FUNCTION_NAMES.createCheckout
   );
   const result = await createCheckout({ interval, currency });
@@ -49,9 +57,50 @@ export async function createBillingCheckoutUrl(
 export async function getBillingPortalUrl(): Promise<string> {
   await requireAuthenticatedUser();
   const getPortal = httpsCallable<Record<string, never>, BillingUrlResponse>(
-    getBillingFunctions(),
+    getCallableFunctions(BILLING_FUNCTION_REGION),
     BILLING_FUNCTION_NAMES.getPortal
   );
   const result = await getPortal({});
   return assertHttpsUrl(result.data.url);
+}
+
+export async function createBillingPricingUrl(): Promise<string> {
+  await requireAuthenticatedUser();
+  const createHandoff = httpsCallable<Record<string, never>, BillingHandoffResponse>(
+    getCallableFunctions(BILLING_FUNCTION_REGION),
+    BILLING_FUNCTION_NAMES.createHandoff
+  );
+  const result = await createHandoff({});
+  if (!HANDOFF_TOKEN_PATTERN.test(result.data.token) || !Number.isFinite(result.data.expiresAt)) {
+    throw new Error('Billing service did not return a valid pricing handoff.');
+  }
+  return `${PRICING_PAGE_URL}#handoff=${result.data.token}`;
+}
+
+export async function claimGuestBillingSubscription(): Promise<BillingClaimResponse> {
+  if (pendingGuestClaim) return pendingGuestClaim;
+  if (lastGuestClaim && Date.now() - lastGuestClaim.checkedAt < GUEST_CLAIM_DEDUPE_MS) {
+    return lastGuestClaim.result;
+  }
+  pendingGuestClaim = (async () => {
+    const user = await waitForAuthReady();
+    if (!user) throw new Error('Sign in to claim your subscription.');
+    await user.getIdToken(true);
+    const claimSubscription = httpsCallable<Record<string, never>, BillingClaimResponse>(
+      getCallableFunctions(BILLING_FUNCTION_REGION),
+      BILLING_FUNCTION_NAMES.claimGuestSubscription
+    );
+    const result = await claimSubscription({});
+    const normalized = {
+      claimedCount: Number.isSafeInteger(result.data.claimedCount) ? result.data.claimedCount : 0,
+      verificationRequired: result.data.verificationRequired === true,
+    };
+    lastGuestClaim = { result: normalized, checkedAt: Date.now() };
+    return normalized;
+  })();
+  try {
+    return await pendingGuestClaim;
+  } finally {
+    pendingGuestClaim = null;
+  }
 }

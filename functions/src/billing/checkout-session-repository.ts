@@ -7,7 +7,8 @@ const CHECKOUT_SESSION_LIFETIME_MS = 30 * 60 * 1000;
 const WEBHOOK_DELIVERY_GRACE_MS = 5 * 60 * 1000;
 
 export interface CheckoutSessionWriteModel {
-  userId: string;
+  identityType: 'user' | 'guest';
+  userId?: string;
   storeId: string;
   variantId: string;
   currency: 'EUR' | 'USD';
@@ -39,6 +40,7 @@ export async function createCheckoutSession(params: {
   const checkoutExpiresAt = now + CHECKOUT_SESSION_LIFETIME_MS;
   const sessionExpiresAt = checkoutExpiresAt + WEBHOOK_DELIVERY_GRACE_MS;
   const session: CheckoutSessionWriteModel = {
+    identityType: 'user',
     userId: params.userId,
     storeId: params.configuration.storeId,
     variantId: params.configuration.variants[params.interval],
@@ -51,6 +53,33 @@ export async function createCheckoutSession(params: {
     deleteAt: Timestamp.fromMillis(sessionExpiresAt),
   };
 
+  await params.db.collection(CHECKOUT_SESSION_COLLECTION).doc(sessionId).set(session);
+  return { sessionId, session };
+}
+
+export async function createGuestCheckoutSession(params: {
+  db: Firestore;
+  configuration: BillingStoreConfiguration;
+  interval: BillingInterval;
+  testMode: boolean;
+  now?: number;
+}): Promise<{ sessionId: string; session: CheckoutSessionWriteModel }> {
+  const now = params.now ?? Date.now();
+  const sessionId = randomUUID();
+  const checkoutExpiresAt = now + CHECKOUT_SESSION_LIFETIME_MS;
+  const sessionExpiresAt = checkoutExpiresAt + WEBHOOK_DELIVERY_GRACE_MS;
+  const session: CheckoutSessionWriteModel = {
+    identityType: 'guest',
+    storeId: params.configuration.storeId,
+    variantId: params.configuration.variants[params.interval],
+    currency: params.configuration.currency,
+    interval: params.interval,
+    testMode: params.testMode,
+    createdAt: now,
+    checkoutExpiresAt,
+    expiresAt: sessionExpiresAt,
+    deleteAt: Timestamp.fromMillis(sessionExpiresAt),
+  };
   await params.db.collection(CHECKOUT_SESSION_COLLECTION).doc(sessionId).set(session);
   return { sessionId, session };
 }

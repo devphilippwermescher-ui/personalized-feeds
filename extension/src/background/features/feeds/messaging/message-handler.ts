@@ -1,11 +1,4 @@
-import {
-  deleteFeed,
-  getProfileFeedMemberships,
-  removeMemberFromFeed,
-  reorderFeeds,
-  updateFeed,
-  updateMemberInFeed,
-} from 'shared/firestore-service';
+import { deleteFeed, getProfileFeedMemberships, reorderFeeds, updateFeed } from 'shared/firestore-service';
 import type { LinkedInProfileData } from 'shared/types';
 import { getAuthenticatedFeedsUser } from '../../auth/services/authenticated-user';
 import { getFeedsAuthErrorResponse, normalizeFeedsError } from '../errors/feeds-error';
@@ -15,6 +8,8 @@ import {
   createOwnedFeedForPlan,
   getFeedMembersForPlan,
   getOwnedFeedsForPlan,
+  removeFeedMemberForPlan,
+  updateFeedMemberForPlan,
 } from '../../billing/services/plan-enforcement-service';
 
 function sendFeedsError(
@@ -54,6 +49,9 @@ export function registerFeedsMessageHandler(): void {
                 description: f.description,
                 color: f.color,
                 memberCount: f.memberCount,
+                activeMemberCount: f.activeMemberCount,
+                lockedMemberCount: f.lockedMemberCount,
+                isLockedByPlan: f.isLockedByPlan,
                 sortOrder: f.sortOrder,
               })),
             });
@@ -127,14 +125,17 @@ export function registerFeedsMessageHandler(): void {
             return;
           }
 
-          return removeMemberFromFeed((message.ownerId as string) || user.uid, message.feedId, message.memberId).then(
-            () => {
-              sendResponse({ success: true });
-            }
-          );
+          return removeFeedMemberForPlan(
+            user.uid,
+            (message.ownerId as string) || user.uid,
+            message.feedId,
+            message.memberId
+          ).then(() => {
+            sendResponse({ success: true });
+          });
         })
         .catch((error) => {
-          sendResponse({ success: false, error: normalizeFeedsError(error, 'Failed to remove member') });
+          sendFeedsError(sendResponse, error, 'Failed to remove member');
         });
       return true;
     }
@@ -147,7 +148,8 @@ export function registerFeedsMessageHandler(): void {
             return;
           }
 
-          return updateMemberInFeed(
+          return updateFeedMemberForPlan(
+            user.uid,
             (message.ownerId as string) || user.uid,
             message.feedId,
             message.memberId,
@@ -157,7 +159,7 @@ export function registerFeedsMessageHandler(): void {
           });
         })
         .catch((error) => {
-          sendResponse({ success: false, error: normalizeFeedsError(error, 'Failed to update member') });
+          sendFeedsError(sendResponse, error, 'Failed to update member');
         });
       return true;
     }

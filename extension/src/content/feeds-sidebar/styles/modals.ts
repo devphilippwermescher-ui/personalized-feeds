@@ -361,6 +361,56 @@ export const MODALS_CSS = `.lfa-share-modal {
   .lfa-followed-modal-owner--secondary {
     margin-top: 6px;
   }
+
+  .lfa-sharing-limit-modal,
+  .lfa-share-notification-modal {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+    padding: 8px 4px 4px;
+    color: var(--lfs-text-secondary, #5f6b7a);
+    text-align: center;
+    line-height: 1.55;
+  }
+
+  .lfa-sharing-limit-modal p,
+  .lfa-share-notification-modal p {
+    margin: 0;
+  }
+
+  .lfa-sharing-limit-modal-icon {
+    display: grid;
+    width: 52px;
+    height: 52px;
+    place-items: center;
+    border-radius: 50%;
+    color: #8a5a00;
+    background: #fff2cc;
+    font-size: 27px;
+    font-weight: 800;
+  }
+
+  .lfa-share-notification-feed {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 12px 14px;
+    border: 1px solid #e5e9ef;
+    border-radius: 12px;
+    color: #17233c;
+    background: #f8fafc;
+    font-weight: 700;
+  }
+
+  .lfa-share-notification-error {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 10px 12px;
+    border-radius: 9px;
+    color: #a12622;
+    background: #fff0ef;
+    font-size: 13px;
+  }
   .lfa-member-icon-btn:hover {
     background: #eef2ff;
     color: #334155;

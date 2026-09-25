@@ -30,6 +30,9 @@ export interface FeedInfo {
   description?: string;
   color: string;
   memberCount: number;
+  activeMemberCount?: number;
+  lockedMemberCount?: number;
+  isLockedByPlan?: boolean;
   sortOrder?: number;
   ownerId?: string;
   isShared?: boolean;
@@ -78,6 +81,7 @@ export interface FeedMemberInfo {
   status?: 'connected' | 'pending' | 'connect' | 'following' | 'withdrawn' | 'unavailable' | 'loading';
   transientAction?: 'connect' | 'follow';
   addedAt: number;
+  isLockedByPlan?: boolean;
 }
 
 export interface MemberEditorState {

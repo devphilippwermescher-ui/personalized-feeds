@@ -24,6 +24,7 @@ interface SidebarFeedsControllerDeps {
   ensureProfileViewersFeed: () => void;
   loadFeedMembers: (feedId: string) => Promise<void>;
   handlePendingSharedFeedLink: () => Promise<void>;
+  handlePendingShareNotification: () => Promise<void>;
   handleSharedFeedRoleChanges: (feeds: FeedInfo[]) => Promise<void>;
 }
 
@@ -44,6 +45,7 @@ export function createSidebarFeedsController(deps: SidebarFeedsControllerDeps): 
       await setNormalizedSharedFeeds(await deps.sendMsg({ type: 'FEEDS_GET_SHARED_ALL' }));
     },
     loadFeeds: async () => {
+      const previousFeeds = [...deps.getFeeds(), ...deps.getSharedFeeds()];
       const [ownedResponse, sharedResponse, profileViewersResponse, settings] = await Promise.all([
         deps.sendMsg({ type: 'FEEDS_GET_ALL' }),
         deps.sendMsg({ type: 'FEEDS_GET_SHARED_ALL' }),
@@ -67,10 +69,25 @@ export function createSidebarFeedsController(deps: SidebarFeedsControllerDeps): 
       }
       await setNormalizedSharedFeeds(sharedResponse);
 
-      const staleFeedIds = getStaleFeedMemberCacheIds(
-        [...deps.getFeeds(), ...deps.getSharedFeeds()],
-        deps.getFeedMembersById()
-      );
+      const planProjectionChangedIds = [...deps.getFeeds(), ...deps.getSharedFeeds()]
+        .filter((feed) => {
+          const previous = previousFeeds.find(
+            (item) => item.id === feed.id && (item.ownerId || '') === (feed.ownerId || '')
+          );
+          return (
+            previous &&
+            (previous.isLockedByPlan !== feed.isLockedByPlan ||
+              previous.activeMemberCount !== feed.activeMemberCount ||
+              previous.lockedMemberCount !== feed.lockedMemberCount)
+          );
+        })
+        .map((feed) => feed.id);
+      const staleFeedIds = [
+        ...new Set([
+          ...getStaleFeedMemberCacheIds([...deps.getFeeds(), ...deps.getSharedFeeds()], deps.getFeedMembersById()),
+          ...planProjectionChangedIds,
+        ]),
+      ];
       if (staleFeedIds.length > 0) {
         const nextFeedMembersById = { ...deps.getFeedMembersById() };
         staleFeedIds.forEach((feedId) => {
@@ -85,6 +102,7 @@ export function createSidebarFeedsController(deps: SidebarFeedsControllerDeps): 
       }
 
       await deps.handlePendingSharedFeedLink();
+      await deps.handlePendingShareNotification();
     },
   };
 }

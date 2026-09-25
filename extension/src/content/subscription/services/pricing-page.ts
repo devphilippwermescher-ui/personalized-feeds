@@ -1,5 +1,5 @@
-export const PRICING_PAGE_URL = 'https://myfeedpilot.com/pricing';
+export { PRICING_PAGE_URL } from 'shared/subscription-config';
 
 export function openPricingPage(): void {
-  window.open(PRICING_PAGE_URL, '_blank', 'noopener,noreferrer');
+  void chrome.runtime.sendMessage({ type: 'BILLING_OPEN_PRICING' });
 }

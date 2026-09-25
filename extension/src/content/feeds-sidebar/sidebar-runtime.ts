@@ -7,6 +7,8 @@ import {
   showDuplicateSharedFeedModal,
   showEditFeedModal,
   showShareFeedModal,
+  showShareNotificationModal,
+  showSharingLimitModal,
   showSharedFeedFollowedModal,
   unfollowSharedFeed,
 } from './logic/feed-actions';
@@ -15,7 +17,7 @@ import { renderFeedPreview as renderFeedPreviewMarkup } from './logic/feed-membe
 import { showCreateFeedForm as showCreateFeedFormLogic } from './logic/create-feed-form';
 import { DEFAULT_FEATURE_SETTINGS } from '../feature-settings';
 import { showToast } from '../shared/toast';
-import type { UserFeatureSettings } from 'shared/types';
+import type { ShareNotification, UserFeatureSettings } from 'shared/types';
 import { createSidebarAuthController } from './logic/sidebar-auth-controller';
 import { createSharedFeedLinkController } from './logic/shared-feed-link-controller';
 import { createSidebarMemberController } from './logic/sidebar-member-controller';
@@ -28,6 +30,7 @@ import { createSidebarFeedsController } from './controllers/sidebar-feeds-contro
 import { createSidebarFeedActionsController } from './controllers/sidebar-feed-actions-controller';
 import { createSidebarProfileViewersController } from './controllers/sidebar-profile-viewers-controller';
 import { registerPlanRuntimeController } from './controllers/plan-runtime-controller';
+import { createShareNotificationController } from './controllers/share-notification-controller';
 
 export function startFeedsSidebar(): void {
   const DASHBOARD_URL = getDashboardOrigin();
@@ -48,6 +51,7 @@ export function startFeedsSidebar(): void {
   let feedsController: ReturnType<typeof createSidebarFeedsController> | null = null;
   let feedActionsController: ReturnType<typeof createSidebarFeedActionsController> | null = null;
   let profileViewersController: ReturnType<typeof createSidebarProfileViewersController> | null = null;
+  let shareNotificationController: ReturnType<typeof createShareNotificationController> | null = null;
 
   async function syncSharedFeedRoleChanges(nextSharedFeeds: FeedInfo[]): Promise<void> {
     const changedFeed = await findChangedSharedFeedRole(currentUser?.userId, nextSharedFeeds);
@@ -139,7 +143,17 @@ export function startFeedsSidebar(): void {
     showFollowedModal: (sharedFeed) => {
       showSharedFeedFollowedModal(sharedFeed.name, sharedFeed.ownerDisplayName || 'Unknown user', getFeedActionDeps());
     },
+    showSharingLimit: (details) => {
+      showSharingLimitModal(details, 'link', getFeedActionDeps());
+    },
   });
+
+  async function showPendingShareNotification(): Promise<void> {
+    if (!currentUser) return;
+    shareNotificationController?.start();
+    const response = await sendMsg({ type: 'FEEDS_GET_SHARE_NOTIFICATIONS' });
+    shareNotificationController?.handleLoadedNotifications(response?.notifications);
+  }
 
   async function openFeedPosts(feedId: string): Promise<void> {
     await feedActionsController?.openFeedPosts(feedId);
@@ -196,6 +210,15 @@ export function startFeedsSidebar(): void {
       sharedFeedsList = feeds;
     },
     getActiveFeedTab: () => activeFeedTab,
+    selectFeedTab: (tab) => {
+      if (sidebarUiController) {
+        sidebarUiController.selectFeedTab(tab);
+        return;
+      }
+      activeFeedTab = tab;
+      expandedFeedId = null;
+      activeMemberEditor = null;
+    },
     getExpandedFeedId: () => expandedFeedId,
     setExpandedFeedId: (feedId) => {
       expandedFeedId = feedId;
@@ -206,6 +229,22 @@ export function startFeedsSidebar(): void {
     },
     getCurrentPlan: () => currentPlan,
     updateRenderedMemberState: updateRenderedMemberStateLocal,
+    onModalClosed: () => shareNotificationController?.handleModalClosed(),
+  });
+
+  shareNotificationController = createShareNotificationController({
+    sendMsg,
+    hasOpenModal: () => feedActionsController?.hasOpenModal() === true,
+    showNotification: (notification: ShareNotification) => {
+      if (notification.kind === 'incoming_share_added') {
+        void refreshSharedFeeds()
+          .then(renderSidebarContent)
+          .catch((error) => {
+            console.warn('[feed-sharing] Could not refresh newly shared feed', error);
+          });
+      }
+      showShareNotificationModal(notification, getFeedActionDeps());
+    },
   });
 
   profileViewersController = createSidebarProfileViewersController({
@@ -248,6 +287,7 @@ export function startFeedsSidebar(): void {
     ensureProfileViewersFeed: profileViewersController.ensureFeed,
     loadFeedMembers,
     handlePendingSharedFeedLink,
+    handlePendingShareNotification: showPendingShareNotification,
     handleSharedFeedRoleChanges: syncSharedFeedRoleChanges,
   });
 
@@ -332,6 +372,7 @@ export function startFeedsSidebar(): void {
 
   feedActionsController.attachFeedSyncListeners();
   registerPlanRuntimeController({
+    getPlan: () => currentPlan,
     refreshPlan: () => refreshCurrentPlan(true),
     setPlan: (plan) => {
       currentPlan = plan;
@@ -357,4 +398,5 @@ export function startFeedsSidebar(): void {
     },
   });
   sidebarUiController.start();
+  shareNotificationController.start();
 }

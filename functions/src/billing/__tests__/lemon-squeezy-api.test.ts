@@ -28,6 +28,7 @@ describe('Lemon Squeezy checkout creation', () => {
       expiresAt: Date.parse('2026-09-17T12:30:00.000Z'),
       email: 'developer@example.com',
       testMode: true,
+      redirectUrl: 'https://myfeedpilot.com/checkout/success',
     });
 
     expect(url).toBe('https://example.lemonsqueezy.com/checkout');
@@ -43,6 +44,7 @@ describe('Lemon Squeezy checkout creation', () => {
           expires_at: '2026-09-17T12:30:00.000Z',
           product_options: {
             enabled_variants: [2069645],
+            redirect_url: 'https://myfeedpilot.com/checkout/success',
           },
           checkout_data: {
             email: 'developer@example.com',

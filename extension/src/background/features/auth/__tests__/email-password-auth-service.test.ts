@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   auth: { name: 'test-auth' },
   createUserWithEmailAndPassword: vi.fn(),
+  sendEmailVerification: vi.fn(),
   signInWithEmailAndPassword: vi.fn(),
   updateProfile: vi.fn(),
 }));
@@ -14,6 +15,7 @@ vi.mock('shared/firebase-config', () => ({
 
 vi.mock('firebase/auth', () => ({
   createUserWithEmailAndPassword: mocks.createUserWithEmailAndPassword,
+  sendEmailVerification: mocks.sendEmailVerification,
   signInWithEmailAndPassword: mocks.signInWithEmailAndPassword,
   updateProfile: mocks.updateProfile,
 }));
@@ -38,6 +40,7 @@ describe('email/password Firebase auth service', () => {
   it('creates an account and stores the combined display name in Firebase Auth', async () => {
     mocks.createUserWithEmailAndPassword.mockResolvedValue({ user });
     mocks.updateProfile.mockResolvedValue(undefined);
+    mocks.sendEmailVerification.mockResolvedValue(undefined);
 
     await expect(
       registerWithEmailPassword({
@@ -54,5 +57,6 @@ describe('email/password Firebase auth service', () => {
       'analytical-engine'
     );
     expect(mocks.updateProfile).toHaveBeenCalledWith(user, { displayName: 'Ada Lovelace' });
+    expect(mocks.sendEmailVerification).toHaveBeenCalledWith(user);
   });
 });

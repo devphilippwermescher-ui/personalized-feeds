@@ -10,6 +10,7 @@ import { queueProfileViewersStatusSync } from '../features/profile-viewers/profi
 import { migrateToIndependentLinkedInSync } from './migrations/migrate-linkedin-sync-state';
 import { queueDashboardAnalyticsWhenEnabled } from './dashboard-analytics-runtime';
 import { reinjectLinkedInContentRuntimeIntoOpenTabs } from './reinject-linkedin-content-runtime';
+import { registerFeedSharesRuntime, registerShareNotificationRuntime } from '../features/feed-sharing/public';
 
 export function startBackgroundRuntime(): void {
   void appendProfileViewersWakeEvent({
@@ -20,6 +21,8 @@ export function startBackgroundRuntime(): void {
   // does not reliably deliver onInstalled. Restore content UI in already-open
   // LinkedIn tabs from the worker lifecycle itself as well.
   void reinjectLinkedInContentRuntimeIntoOpenTabs();
+  registerShareNotificationRuntime();
+  registerFeedSharesRuntime();
   // Acceptance Rate is now reconciled by the shared Profile Analytics alarm.
   // Remove the legacy standalone invitation-status alarm after upgrading.
   void chrome.alarms?.clear(CONNECTION_INVITES_STATUS_ALARM_NAME);

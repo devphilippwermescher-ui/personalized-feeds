@@ -65,6 +65,66 @@ describe('renderFeedRow', () => {
     expect(html).not.toContain('lfa-feed-grip--hidden');
   });
 
+  it('shows persisted overflow without making a locked feed draggable', () => {
+    const html = renderFeedRow({
+      feed: makeFeed({
+        name: 'Legacy feed',
+        memberCount: 16,
+        activeMemberCount: 0,
+        lockedMemberCount: 16,
+        isLockedByPlan: true,
+      }),
+      expanded: false,
+      previewHtml: '',
+    });
+
+    expect(html).toContain('lfa-feed-item--locked');
+    expect(html).toContain('draggable="false"');
+    expect(html).toContain('>0 / 16</span>');
+    expect(html).toContain('0 active profiles and 16 locked');
+    expect(html).toContain('Upgrade to Pro to unlock all profiles.');
+    expect(html).toContain('lfa-feed-plan-lock');
+  });
+
+  it('uses a compact active/locked count with the Profile Visitors tooltip style', () => {
+    const html = renderFeedRow({
+      feed: makeFeed({
+        name: 'Limited feed',
+        memberCount: 16,
+        activeMemberCount: 10,
+        lockedMemberCount: 6,
+      }),
+      expanded: false,
+      previewHtml: '',
+    });
+
+    expect(html).toContain('>10 / 6</span>');
+    expect(html).toContain('10 active profiles and 6 locked');
+    expect(html).toContain('lfa-profile-viewer-count-tooltip');
+    expect(html).toContain('lfa-feed-group--plan-limited');
+    expect(html).toContain('Upgrade to Pro to unlock all profiles.');
+    expect(html).not.toContain('The feed owner needs Pro');
+    expect(html).not.toContain('10 active · 6 locked');
+  });
+
+  it('refers to the owner only when another user is viewing a shared feed', () => {
+    const html = renderFeedRow({
+      feed: makeFeed({
+        name: 'Shared limited feed',
+        isShared: true,
+        ownerDisplayName: 'Owner',
+        memberCount: 16,
+        activeMemberCount: 10,
+        lockedMemberCount: 6,
+      }),
+      expanded: false,
+      previewHtml: '',
+    });
+
+    expect(html).toContain('The feed owner needs Pro to unlock all profiles.');
+    expect(html).not.toContain('Upgrade to Pro to unlock all profiles.');
+  });
+
   it('shows collection progress only while Profile Visitors is actively syncing', () => {
     const collectingHtml = renderFeedRow({
       feed: makeFeed({

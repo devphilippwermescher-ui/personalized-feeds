@@ -6,8 +6,10 @@ import { HttpsError, onCall, onRequest } from 'firebase-functions/v2/https';
 import { setGlobalOptions } from 'firebase-functions/v2/options';
 import { createCheckoutSession, deleteCheckoutSession } from './billing/checkout-session-repository.js';
 import { getBillingConfiguration, isBillingCurrency, isBillingInterval } from './billing/config.js';
+import { normalizeBillingEmail } from './billing/email-identity.js';
 import { hasCurrentProAccess } from './billing/access-policy.js';
-import { saveSubscription } from './billing/firestore-subscription-repository.js';
+import { claimPendingSubscriptions, saveSubscription } from './billing/firestore-subscription-repository.js';
+import { createBillingHandoff as createBillingHandoffRecord } from './billing/handoff-repository.js';
 import { createCheckout, getCustomerPortalUrl } from './billing/lemon-squeezy-api.js';
 import { isSubscriptionEvent, parseSubscriptionWebhook } from './billing/subscription-state.js';
 import { verifyWebhookSignature } from './billing/webhook-security.js';
@@ -17,6 +19,17 @@ import {
   parseSubscriptionWebhookPayload,
   parseWebhookEnvelope,
 } from './billing/webhook-schema.js';
+import { createWebsiteCheckoutHttpHandler } from './billing/website-checkout.js';
+
+export {
+  acceptSharedFeedNotification,
+  cleanupDeletedFeedShares,
+  followSharedFeedLink,
+  getFeedPlanPolicies,
+  removeSharedFeedAccess,
+  shareFeedWithEmail,
+  unfollowSharedFeed,
+} from './sharing/callables.js';
 
 initializeApp();
 setGlobalOptions({ region: 'us-central1', maxInstances: 10 });
@@ -74,6 +87,7 @@ export const createBillingCheckout = onCall(
         expiresAt: checkoutSession.session.checkoutExpiresAt,
         email: request.auth.token.email,
         testMode: billingConfiguration.testMode,
+        redirectUrl: billingConfiguration.checkoutSuccessUrl,
       });
       logger.info('Created Lemon Squeezy checkout', {
         currency,
@@ -96,6 +110,60 @@ export const createBillingCheckout = onCall(
       throw new HttpsError('internal', 'Unable to open checkout right now. Please try again.');
     }
   }
+);
+
+export const createBillingHandoff = onCall(async (request): Promise<{ token: string; expiresAt: number }> => {
+  if (!request.auth) {
+    throw new HttpsError('unauthenticated', 'Sign in to view subscription plans.');
+  }
+  try {
+    return await createBillingHandoffRecord({
+      db: getFirestore(),
+      userId: request.auth.uid,
+      email: normalizeBillingEmail(request.auth.token.email) ?? undefined,
+    });
+  } catch (error) {
+    logger.error('Failed to create a billing handoff', { error });
+    throw new HttpsError('internal', 'Unable to open pricing right now.');
+  }
+});
+
+export const claimGuestBillingSubscription = onCall(
+  async (request): Promise<{ claimedCount: number; verificationRequired: boolean }> => {
+    if (!request.auth) {
+      throw new HttpsError('unauthenticated', 'Sign in to claim your subscription.');
+    }
+    const normalizedEmail = normalizeBillingEmail(request.auth.token.email);
+    if (!normalizedEmail) {
+      throw new HttpsError('failed-precondition', 'Your account does not have a valid email address.');
+    }
+    if (request.auth.token.email_verified !== true) {
+      return { claimedCount: 0, verificationRequired: true };
+    }
+    try {
+      const claimedCount = await claimPendingSubscriptions({
+        db: getFirestore(),
+        userId: request.auth.uid,
+        normalizedEmail,
+      });
+      if (claimedCount > 0) {
+        logger.info('Claimed guest billing subscriptions', { claimedCount });
+      }
+      return { claimedCount, verificationRequired: false };
+    } catch (error) {
+      logger.error('Failed to claim guest billing subscriptions', { error });
+      throw new HttpsError('internal', 'Unable to check for an existing subscription right now.');
+    }
+  }
+);
+
+export const createWebsiteCheckout = onRequest(
+  { secrets: [lemonSqueezyApiKey] },
+  createWebsiteCheckoutHttpHandler({
+    db: getFirestore(),
+    getApiKey: () => lemonSqueezyApiKey.value(),
+    logError: (message, context) => logger.error(message, context),
+  })
 );
 
 export const getBillingPortal = onCall({ secrets: [lemonSqueezyApiKey] }, async (request): Promise<{ url: string }> => {
@@ -163,6 +231,7 @@ export const lemonSqueezyWebhook = onRequest({ secrets: [lemonSqueezyWebhookSecr
     const result = await saveSubscription({
       db: getFirestore(),
       checkoutSessionId: parsed.checkoutSessionId,
+      customerEmail: parsed.customerEmail,
       subscription: parsed.subscription,
     });
     if (result === 'missing_user') {
@@ -173,7 +242,11 @@ export const lemonSqueezyWebhook = onRequest({ secrets: [lemonSqueezyWebhookSecr
       response.status(500).send('Subscription identity could not be resolved');
       return;
     }
-    response.status(200).json({ received: true, processed: result === 'updated', result });
+    response.status(200).json({
+      received: true,
+      processed: result === 'updated' || result === 'pending_claim',
+      result,
+    });
   } catch (error) {
     if (isWebhookValidationError(error)) {
       logger.warn('Rejected an invalid Lemon Squeezy subscription webhook', {

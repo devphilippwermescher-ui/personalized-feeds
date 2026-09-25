@@ -43,6 +43,7 @@ describe('Lemon Squeezy billing configuration', () => {
         },
       },
       testMode: true,
+      checkoutSuccessUrl: 'https://myfeedpilot.com/checkout/success',
     });
   });
 

@@ -1,6 +1,6 @@
 import type { Firestore } from 'firebase-admin/firestore';
 import { describe, expect, it, vi } from 'vitest';
-import { createCheckoutSession } from '../checkout-session-repository.js';
+import { createCheckoutSession, createGuestCheckoutSession } from '../checkout-session-repository.js';
 
 describe('billing checkout sessions', () => {
   it('stores the Firebase identity only in a short-lived server-owned document', async () => {
@@ -27,6 +27,7 @@ describe('billing checkout sessions', () => {
     expect(doc).toHaveBeenCalledWith(result.sessionId);
     expect(set).toHaveBeenCalledWith(
       expect.objectContaining({
+        identityType: 'user',
         userId: 'firebase-user',
         storeId: '84',
         variantId: 'annual-variant',
@@ -39,5 +40,33 @@ describe('billing checkout sessions', () => {
       })
     );
     expect(result.session.deleteAt.toMillis()).toBe(2_101_000);
+  });
+
+  it('creates a guest session without storing a guessed Firebase identity', async () => {
+    const set = vi.fn().mockResolvedValue(undefined);
+    const doc = vi.fn().mockReturnValue({ set });
+    const collection = vi.fn().mockReturnValue({ doc });
+    const db = { collection } as unknown as Firestore;
+
+    await createGuestCheckoutSession({
+      db,
+      configuration: {
+        currency: 'USD',
+        storeId: '42',
+        variants: { monthly: 'monthly-variant', annual: 'annual-variant' },
+      },
+      interval: 'monthly',
+      testMode: true,
+      now: 1_000,
+    });
+
+    expect(set).toHaveBeenCalledWith(
+      expect.objectContaining({
+        identityType: 'guest',
+        storeId: '42',
+        variantId: 'monthly-variant',
+      })
+    );
+    expect(set.mock.calls[0]?.[0]).not.toHaveProperty('userId');
   });
 });

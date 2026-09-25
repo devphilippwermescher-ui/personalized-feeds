@@ -37,8 +37,11 @@ describe('plan projections', () => {
     const feeds = Array.from({ length: 5 }, (_, index) => makeFeed(index, 25));
     const projected = projectFeedsForPlan(feeds, getPlanEntitlements('free'));
 
-    expect(projected).toHaveLength(3);
-    expect(projected.map((feed) => feed.memberCount)).toEqual([10, 10, 10]);
+    expect(projected).toHaveLength(5);
+    expect(projected.map((feed) => feed.memberCount)).toEqual([25, 25, 25, 25, 25]);
+    expect(projected.map((feed) => feed.activeMemberCount)).toEqual([10, 10, 10, 0, 0]);
+    expect(projected.map((feed) => feed.lockedMemberCount)).toEqual([15, 15, 15, 25, 25]);
+    expect(projected.map((feed) => feed.isLockedByPlan)).toEqual([false, false, false, true, true]);
     expect(feeds).toHaveLength(5);
     expect(feeds[0].memberCount).toBe(25);
   });
@@ -51,11 +54,20 @@ describe('plan projections', () => {
     expect(projectFeedMembersForPlan(members, getPlanEntitlements('pro'))).toEqual(members);
   });
 
-  it('shows only the newest 10 persisted feed members to Free users', () => {
+  it('keeps overflow members visible but marks everything after the newest 10 as locked', () => {
     const members = Array.from({ length: 20 }, (_, index) => makeMember(index));
     const projected = projectFeedMembersForPlan(members, getPlanEntitlements('free'));
 
-    expect(projected.map((member) => member.id)).toEqual(members.slice(0, 10).map((member) => member.id));
+    expect(projected).toHaveLength(20);
+    expect(projected.slice(0, 10).every((member) => member.isLockedByPlan === false)).toBe(true);
+    expect(projected.slice(10).every((member) => member.isLockedByPlan === true)).toBe(true);
     expect(members).toHaveLength(20);
+  });
+
+  it('locks every member when the entire feed is outside the owner plan window', () => {
+    const members = Array.from({ length: 4 }, (_, index) => makeMember(index));
+    const projected = projectFeedMembersForPlan(members, getPlanEntitlements('free'), true);
+
+    expect(projected.every((member) => member.isLockedByPlan)).toBe(true);
   });
 });

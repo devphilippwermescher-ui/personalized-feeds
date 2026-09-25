@@ -19,12 +19,14 @@ interface SidebarFeedActionsControllerDeps {
   getSharedFeeds: () => FeedInfo[];
   setSharedFeeds: (feeds: FeedInfo[]) => void;
   getActiveFeedTab: () => 'owned' | 'shared';
+  selectFeedTab: (tab: 'owned' | 'shared') => void;
   getExpandedFeedId: () => string | null;
   setExpandedFeedId: (feedId: string | null) => void;
   getFeedMembersById: () => Record<string, FeedMemberInfo[]>;
   setFeedMembersById: (membersById: Record<string, FeedMemberInfo[]>) => void;
   getCurrentPlan: () => AppPlan;
   updateRenderedMemberState: (feedId: string, member: FeedMemberInfo) => boolean;
+  onModalClosed: () => void;
 }
 
 export function createSidebarFeedActionsController(deps: SidebarFeedActionsControllerDeps): {
@@ -32,6 +34,7 @@ export function createSidebarFeedActionsController(deps: SidebarFeedActionsContr
   openFeedPosts: (feedId: string) => Promise<void>;
   attachFeedSyncListeners: () => void;
   closeModal: () => void;
+  hasOpenModal: () => boolean;
 } {
   let modalEl: HTMLElement | null = null;
   let modalRoot: Root | null = null;
@@ -47,6 +50,7 @@ export function createSidebarFeedActionsController(deps: SidebarFeedActionsContr
     getSharedFeeds: deps.getSharedFeeds,
     setSharedFeeds: deps.setSharedFeeds,
     getActiveFeedTab: deps.getActiveFeedTab,
+    selectFeedTab: deps.selectFeedTab,
     getExpandedFeedId: deps.getExpandedFeedId,
     setExpandedFeedId: deps.setExpandedFeedId,
     getFeedMembersById: deps.getFeedMembersById,
@@ -55,6 +59,7 @@ export function createSidebarFeedActionsController(deps: SidebarFeedActionsContr
     setModalState: (state) => {
       modalEl = state.el;
       modalRoot = state.root;
+      if (!state.el) queueMicrotask(deps.onModalClosed);
     },
     showPlanModal: (context: PlanModalContext) => {
       openPlanModal({ plan: deps.getCurrentPlan(), context });
@@ -63,6 +68,7 @@ export function createSidebarFeedActionsController(deps: SidebarFeedActionsContr
 
   return {
     getFeedActionDeps,
+    hasOpenModal: () => Boolean(modalEl),
     closeModal: () => {
       modalRoot?.unmount();
       modalEl?.remove();
@@ -77,6 +83,7 @@ export function createSidebarFeedActionsController(deps: SidebarFeedActionsContr
         resolveProfileUrn,
         renderSidebarContent: deps.renderSidebarContent,
         showToast,
+        showPlanModal: () => openPlanModal({ plan: deps.getCurrentPlan(), context: 'feeds' }),
       }),
     attachFeedSyncListeners: () => {
       attachFeedSyncListeners({

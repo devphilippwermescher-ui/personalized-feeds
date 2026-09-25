@@ -3,15 +3,21 @@ import { LfsButton, LfsDropdown, LfsModal } from '../../../../shared/ui';
 import { getMemberInitials } from '../../../feeds-sidebar/utils';
 import { CONTENT_COPY } from '../../copy';
 import type { FeedShareRecipient } from './types';
+import type { SharingLimitDetails } from 'shared/types';
 
 interface ShareFeedModalProps {
   onClose: () => void;
   onLoadShares: () => Promise<FeedShareRecipient[]>;
-  onShareByEmail: (email: string, role: 'reader' | 'editor') => Promise<{ success: boolean; error?: string }>;
+  onWatchShares: (onShares: (shares: FeedShareRecipient[]) => void) => () => void;
+  onShareByEmail: (
+    email: string,
+    role: 'reader' | 'editor'
+  ) => Promise<{ success: boolean; error?: string; sharingLimit?: SharingLimitDetails }>;
   onUpdateShareRole: (targetUid: string, role: 'reader' | 'editor') => Promise<{ success: boolean; error?: string }>;
   onRemoveShare: (targetUid: string) => Promise<{ success: boolean; error?: string }>;
   onGetLink: () => Promise<{ success: boolean; url?: string; error?: string }>;
   onNotify?: (message: string, tone?: 'success' | 'error') => void;
+  onSharingLimit: (details: SharingLimitDetails) => void;
 }
 
 type ShareTab = 'email' | 'link';
@@ -20,11 +26,13 @@ type ShareListState = 'loading' | 'ready' | 'error';
 export function ShareFeedModal({
   onClose,
   onLoadShares,
+  onWatchShares,
   onShareByEmail,
   onUpdateShareRole,
   onRemoveShare,
   onGetLink,
   onNotify,
+  onSharingLimit,
 }: ShareFeedModalProps) {
   const [activeTab, setActiveTab] = useState<ShareTab>('email');
   const [email, setEmail] = useState('');
@@ -38,13 +46,18 @@ export function ShareFeedModal({
   const [updatingShareUid, setUpdatingShareUid] = useState('');
   const [removingShareUid, setRemovingShareUid] = useState('');
   const emailRef = useRef<HTMLInputElement | null>(null);
+  const realtimeSharesVersionRef = useRef(0);
 
   const loadShares = async (preservePendingRole = false) => {
+    const realtimeVersionAtStart = realtimeSharesVersionRef.current;
     setSharesState((current) => (preservePendingRole && shares.length > 0 ? current : 'loading'));
 
     try {
       const nextShares = await onLoadShares();
       setShares((current) => {
+        if (realtimeSharesVersionRef.current !== realtimeVersionAtStart) {
+          return current;
+        }
         if (!preservePendingRole || !updatingShareUid) {
           return nextShares;
         }
@@ -56,6 +69,10 @@ export function ShareFeedModal({
       });
       setSharesState('ready');
     } catch {
+      if (realtimeSharesVersionRef.current !== realtimeVersionAtStart) {
+        setSharesState('ready');
+        return;
+      }
       setShares([]);
       setSharesState('error');
     }
@@ -64,6 +81,16 @@ export function ShareFeedModal({
   useEffect(() => {
     void loadShares();
   }, [onLoadShares]);
+
+  useEffect(
+    () =>
+      onWatchShares((nextShares) => {
+        realtimeSharesVersionRef.current += 1;
+        setShares(nextShares);
+        setSharesState('ready');
+      }),
+    [onWatchShares]
+  );
 
   useEffect(() => {
     if (activeTab === 'email') {
@@ -101,6 +128,10 @@ export function ShareFeedModal({
     setSubmitting(false);
 
     if (!result.success) {
+      if (result.sharingLimit) {
+        onSharingLimit(result.sharingLimit);
+        return;
+      }
       setError(result.error || 'Failed to share this feed');
       return;
     }

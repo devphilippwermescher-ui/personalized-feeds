@@ -31,6 +31,7 @@ import { onFeatureSettingsChange } from '../../feature-settings';
 import type { FeedActionDeps } from './feed-actions';
 import type { MemberActionDeps } from './member-actions';
 import { openPricingPage } from '../../subscription/services/pricing-page';
+import { openPlanModal } from '../../shared/plan-modal';
 import { openProfilePreferencesModal, PROFILE_PREFERENCES_UPDATED_EVENT } from '../../profile-preferences/public';
 
 interface SidebarUiControllerDeps {
@@ -92,6 +93,7 @@ export function createSidebarUiController(deps: SidebarUiControllerDeps): {
   getSidebarEl: () => HTMLElement | null;
   isOpen: () => boolean;
   openSidebar: () => void;
+  selectFeedTab: (tab: 'owned' | 'shared') => void;
 } {
   let sidebarOpen = false;
   let sidebarEl: HTMLElement | null = null;
@@ -198,21 +200,7 @@ export function createSidebarUiController(deps: SidebarUiControllerDeps): {
         },
         handleSignOut: deps.handleSignOut,
         showCreateFeedForm: deps.showCreateFeedForm,
-        selectFeedTab: (tab) => {
-          deps.setActiveFeedTab(tab);
-          deps.setExpandedFeedId(null);
-          deps.setActiveMemberEditor(null);
-          sidebarSearchQuery = '';
-          renderSidebarContent();
-
-          if (tab === 'shared') {
-            void deps.refreshSharedFeeds().then(() => {
-              if (deps.getActiveFeedTab() === 'shared') {
-                renderSidebarContent();
-              }
-            });
-          }
-        },
+        selectFeedTab,
         openProfileSettings: () => {
           void openProfilePreferencesModal().catch((error) => {
             deps.showToast(
@@ -222,7 +210,13 @@ export function createSidebarUiController(deps: SidebarUiControllerDeps): {
           });
         },
         openSubscription: () => window.open(`${deps.dashboardUrl}/subscription`, '_blank'),
-        openManagePlan: openPricingPage,
+        openManagePlan: () => {
+          if (deps.getIsPremium()) {
+            openPlanModal({ plan: 'pro', context: 'feeds' });
+            return;
+          }
+          openPricingPage();
+        },
         updateFeatureSetting: async (key, value) => {
           const response = await deps.sendMsg({
             type: 'SETTINGS_UPDATE',
@@ -279,6 +273,22 @@ export function createSidebarUiController(deps: SidebarUiControllerDeps): {
   function renderSidebarContent(): void {
     if (sidebarEl) {
       renderSidebarInner(sidebarEl);
+    }
+  }
+
+  function selectFeedTab(tab: 'owned' | 'shared'): void {
+    deps.setActiveFeedTab(tab);
+    deps.setExpandedFeedId(null);
+    deps.setActiveMemberEditor(null);
+    sidebarSearchQuery = '';
+    renderSidebarContent();
+
+    if (tab === 'shared') {
+      void deps.refreshSharedFeeds().then(() => {
+        if (deps.getActiveFeedTab() === 'shared') {
+          renderSidebarContent();
+        }
+      });
     }
   }
 
@@ -358,6 +368,7 @@ export function createSidebarUiController(deps: SidebarUiControllerDeps): {
     renderSidebarContent,
     getSidebarEl: () => sidebarEl,
     isOpen: () => sidebarOpen,
+    selectFeedTab,
     openSidebar: () => {
       if (!sidebarEl) {
         init();

@@ -54,6 +54,7 @@ export async function createCheckout(params: {
   expiresAt: number;
   email?: string;
   testMode: boolean;
+  redirectUrl?: string;
 }): Promise<string> {
   const variantId = params.configuration.variants[params.interval];
   const enabledVariantId = Number(variantId);
@@ -71,6 +72,7 @@ export async function createCheckout(params: {
           expires_at: new Date(params.expiresAt).toISOString(),
           product_options: {
             enabled_variants: [enabledVariantId],
+            ...(params.redirectUrl ? { redirect_url: params.redirectUrl } : {}),
           },
           checkout_data: {
             email: params.email || undefined,

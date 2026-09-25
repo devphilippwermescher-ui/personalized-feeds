@@ -3,6 +3,10 @@ export type AppPlan = 'free' | 'pro';
 export interface PlanEntitlements {
   maxCustomFeeds: number | null;
   maxMembersPerFeed: number | null;
+  maxOutgoingShareRecipients: number | null;
+  maxOutgoingSharedFeeds: number | null;
+  maxIncomingShareOwners: number | null;
+  maxIncomingSharedFeeds: number | null;
   maxVisibleProfileViewers: number | null;
   collectAllVisibleProfileViewers: boolean;
   collectPrivateProfileViewers: boolean;
@@ -38,6 +42,10 @@ export const PLAN_ENTITLEMENTS: Record<AppPlan, PlanEntitlements> = {
   free: {
     maxCustomFeeds: 3,
     maxMembersPerFeed: 10,
+    maxOutgoingShareRecipients: 1,
+    maxOutgoingSharedFeeds: 3,
+    maxIncomingShareOwners: 1,
+    maxIncomingSharedFeeds: 3,
     maxVisibleProfileViewers: 10,
     collectAllVisibleProfileViewers: false,
     collectPrivateProfileViewers: false,
@@ -46,6 +54,10 @@ export const PLAN_ENTITLEMENTS: Record<AppPlan, PlanEntitlements> = {
   pro: {
     maxCustomFeeds: null,
     maxMembersPerFeed: null,
+    maxOutgoingShareRecipients: null,
+    maxOutgoingSharedFeeds: null,
+    maxIncomingShareOwners: null,
+    maxIncomingSharedFeeds: null,
     maxVisibleProfileViewers: null,
     collectAllVisibleProfileViewers: true,
     collectPrivateProfileViewers: true,

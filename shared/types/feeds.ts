@@ -9,6 +9,10 @@ export interface Feed {
   memberCount: number;
   ownerId: string;
   shareToken?: string;
+  /** Total persisted members remain available after a downgrade. */
+  activeMemberCount?: number;
+  lockedMemberCount?: number;
+  isLockedByPlan?: boolean;
 }
 
 export type FeedShareRole = 'reader' | 'editor';
@@ -17,6 +21,43 @@ export interface FeedShareAccess {
   targetUid: string;
   targetEmail: string;
   role: FeedShareRole;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export type SharingLimitDirection = 'outgoing' | 'incoming';
+export type SharingLimitDimension = 'people' | 'feeds';
+export type SharingBlockedParty = 'current_user' | 'counterparty';
+
+export interface SharingLimitDetails {
+  code: 'SHARING_LIMIT_REACHED';
+  direction: SharingLimitDirection;
+  dimension: SharingLimitDimension;
+  blockedParty: SharingBlockedParty;
+  limit: 1 | 3;
+  counterpartDisplayName?: string;
+  notificationCreated: boolean;
+}
+
+export type ShareNotificationKind =
+  | 'incoming_share_added'
+  | 'incoming_share_blocked'
+  | 'link_follow_blocked_owner'
+  | 'link_follow_blocked_recipient';
+
+export interface ShareNotification {
+  id: string;
+  kind: ShareNotificationKind;
+  status: 'pending' | 'unread' | 'accepted' | 'dismissed' | 'expired';
+  ownerId: string;
+  recipientId: string;
+  feedId: string;
+  feedName: string;
+  ownerDisplayName: string;
+  recipientDisplayName: string;
+  role: FeedShareRole;
+  limitDirection?: SharingLimitDirection;
+  limitDimension?: SharingLimitDimension;
   createdAt: number;
   updatedAt: number;
 }
@@ -61,6 +102,13 @@ export interface FeedMember {
   connectionDegree?: string;
   status?: 'connected' | 'pending' | 'connect' | 'following' | 'withdrawn' | 'unavailable';
   addedAt: number;
+  isLockedByPlan?: boolean;
+}
+
+export interface FeedPlanPolicy {
+  ownerPlan: 'free' | 'pro';
+  isFeedLocked: boolean;
+  maxMembersPerFeed: number | null;
 }
 
 export interface LinkedInProfileData {

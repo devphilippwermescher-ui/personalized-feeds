@@ -1,6 +1,11 @@
 import { FieldValue, type Firestore } from 'firebase-admin/firestore';
 import { describe, expect, it } from 'vitest';
-import { createSubscriptionFirestoreUpdate, saveSubscription } from '../firestore-subscription-repository.js';
+import {
+  claimPendingSubscriptions,
+  createSubscriptionFirestoreUpdate,
+  saveSubscription,
+} from '../firestore-subscription-repository.js';
+import { hashBillingEmail } from '../email-identity.js';
 import type { SubscriptionWriteModel } from '../subscription-state.js';
 
 function createSubscription(overrides: Partial<SubscriptionWriteModel> = {}): SubscriptionWriteModel {
@@ -61,6 +66,7 @@ describe('subscription Firestore updates', () => {
       const data = documents.get(path);
       return {
         id: path.slice(path.lastIndexOf('/') + 1),
+        ref: createDocumentReference(path),
         exists: data !== undefined,
         data: () => data,
         get: (field: string) => data?.[field],
@@ -82,6 +88,9 @@ describe('subscription Firestore updates', () => {
       },
       delete: (reference: { path: string }) => {
         documents.delete(reference.path);
+      },
+      update: (reference: { path: string }, data: Record<string, unknown>) => {
+        documents.set(reference.path, { ...documents.get(reference.path), ...data });
       },
     };
     const db = {
@@ -108,14 +117,25 @@ describe('subscription Firestore updates', () => {
     addSession(sessionA, subscriptionA);
     addSession(sessionB, subscriptionB);
 
-    await saveSubscription({ db, checkoutSessionId: sessionA, subscription: subscriptionA });
-    await saveSubscription({ db, checkoutSessionId: sessionB, subscription: subscriptionB });
+    await saveSubscription({
+      db,
+      checkoutSessionId: sessionA,
+      customerEmail: 'customer@example.com',
+      subscription: subscriptionA,
+    });
+    await saveSubscription({
+      db,
+      checkoutSessionId: sessionB,
+      customerEmail: 'customer@example.com',
+      subscription: subscriptionB,
+    });
 
     expect(documents.has(`billingCheckoutSessions/${sessionA}`)).toBe(false);
     expect(documents.has(`billingCheckoutSessions/${sessionB}`)).toBe(false);
     const result = await saveSubscription({
       db,
       checkoutSessionId: sessionA,
+      customerEmail: 'customer@example.com',
       subscription: createSubscription({
         subscriptionId: 'subscription-a',
         status: 'expired',
@@ -130,5 +150,91 @@ describe('subscription Firestore updates', () => {
       subscriptionId: 'subscription-b',
       status: 'active',
     });
+  });
+
+  it('holds a guest subscription by hashed email and claims it for a verified Firebase user', async () => {
+    const documents = new Map<string, Record<string, unknown>>();
+    const createDocumentReference = (path: string) => ({ kind: 'document', path });
+    const createCollectionReference = (path: string) => ({
+      kind: 'collection',
+      path,
+      doc: (id: string) => createDocumentReference(`${path}/${id}`),
+    });
+    const createSnapshot = (path: string) => {
+      const data = documents.get(path);
+      return {
+        id: path.slice(path.lastIndexOf('/') + 1),
+        ref: createDocumentReference(path),
+        exists: data !== undefined,
+        data: () => data,
+        get: (field: string) => data?.[field],
+      };
+    };
+    const transaction = {
+      get: async (reference: { kind: string; path: string }) => {
+        if (reference.kind === 'document') return createSnapshot(reference.path);
+        const prefix = `${reference.path}/`;
+        return {
+          docs: [...documents.keys()]
+            .filter((path) => path.startsWith(prefix) && !path.slice(prefix.length).includes('/'))
+            .map(createSnapshot),
+        };
+      },
+      set: (reference: { path: string }, data: Record<string, unknown>, options?: { merge?: boolean }) => {
+        const previous = options?.merge ? documents.get(reference.path) : undefined;
+        documents.set(reference.path, { ...previous, ...data });
+      },
+      delete: (reference: { path: string }) => documents.delete(reference.path),
+    };
+    const db = {
+      doc: createDocumentReference,
+      collection: createCollectionReference,
+      runTransaction: async <T>(callback: (value: typeof transaction) => Promise<T>) => callback(transaction),
+    } as unknown as Firestore;
+    const subscription = createSubscription({ subscriptionId: 'guest-subscription' });
+    const checkoutSessionId = '00000000-0000-4000-8000-000000000003';
+    documents.set(`billingCheckoutSessions/${checkoutSessionId}`, {
+      identityType: 'guest',
+      storeId: subscription.storeId,
+      variantId: subscription.variantId,
+      currency: subscription.billingCurrency,
+      interval: subscription.billingInterval,
+      testMode: subscription.testMode,
+      expiresAt: Date.now() + 60_000,
+    });
+
+    const saved = await saveSubscription({
+      db,
+      checkoutSessionId,
+      customerEmail: 'Customer@Example.com',
+      subscription,
+    });
+    const emailHash = hashBillingEmail('customer@example.com');
+
+    expect(saved).toBe('pending_claim');
+    expect(documents.get(`billingSubscriptions/${subscription.subscriptionId}`)).toMatchObject({
+      pendingEmailHash: emailHash,
+    });
+    expect(
+      documents.get(`billingPendingClaims/${emailHash}/billingSubscriptions/${subscription.subscriptionId}`)
+    ).toMatchObject({ status: 'active' });
+
+    const claimedCount = await claimPendingSubscriptions({
+      db,
+      userId: 'firebase-user',
+      normalizedEmail: 'customer@example.com',
+    });
+
+    expect(claimedCount).toBe(1);
+    expect(documents.get('users/firebase-user/billing/subscription')).toMatchObject({
+      subscriptionId: 'guest-subscription',
+      status: 'active',
+    });
+    expect(documents.get('billingSubscriptions/guest-subscription')).toMatchObject({
+      userId: 'firebase-user',
+    });
+    expect(documents.has(`billingPendingClaims/${emailHash}/billingSubscriptions/${subscription.subscriptionId}`)).toBe(
+      false
+    );
   });
 });

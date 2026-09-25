@@ -17,5 +17,9 @@ export const BILLING_FUNCTION_REGION = 'us-central1';
 
 export const BILLING_FUNCTION_NAMES = {
   createCheckout: 'createBillingCheckout',
+  createHandoff: 'createBillingHandoff',
+  claimGuestSubscription: 'claimGuestBillingSubscription',
   getPortal: 'getBillingPortal',
 };
+
+export const PRICING_PAGE_URL = 'https://myfeedpilot.com/pricing';

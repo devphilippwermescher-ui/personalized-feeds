@@ -31,6 +31,10 @@ export function followedFeedsCollection(userId: string) {
   return collection(getFirebaseDb(), 'users', userId, 'followedFeeds');
 }
 
+export function shareNotificationsCollection(userId: string) {
+  return collection(getFirebaseDb(), 'users', userId, 'shareNotifications');
+}
+
 export function profileViewersCollection(userId: string) {
   return collection(getFirebaseDb(), 'users', userId, 'profileViewers');
 }
@@ -103,9 +107,7 @@ export function docToContentAnalyticsDailySnapshot(
   return { id: d.id, ...d.data() } as ContentAnalyticsDailySnapshot;
 }
 
-export function docToContentAnalyticsPost(
-  d: QueryDocumentSnapshot<DocumentData, DocumentData>
-): ContentAnalyticsPost {
+export function docToContentAnalyticsPost(d: QueryDocumentSnapshot<DocumentData, DocumentData>): ContentAnalyticsPost {
   return { id: d.id, ...d.data() } as ContentAnalyticsPost;
 }
 

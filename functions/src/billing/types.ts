@@ -5,6 +5,7 @@ export interface LemonSqueezySubscriptionAttributes {
   store_id: number;
   customer_id: number;
   variant_id: number;
+  user_email: string;
   status: string;
   cancelled: boolean;
   renews_at: string | null;
@@ -49,4 +50,5 @@ export interface BillingConfiguration {
     EUR?: BillingStoreConfiguration;
   };
   testMode: boolean;
+  checkoutSuccessUrl: string;
 }

@@ -16,6 +16,7 @@ const configuration: BillingConfiguration = {
     },
   },
   testMode: true,
+  checkoutSuccessUrl: 'https://myfeedpilot.com/checkout/success',
 };
 
 function createPayload(
@@ -34,6 +35,7 @@ function createPayload(
         store_id: 42,
         customer_id: 7,
         variant_id: 2069645,
+        user_email: 'Customer@Example.com',
         status: 'active',
         cancelled: false,
         renews_at: '2027-08-29T12:00:00.000Z',
@@ -61,6 +63,7 @@ describe('Lemon Squeezy subscription mapping', () => {
     const result = parseSubscriptionWebhook(createPayload(), configuration, 100);
 
     expect(result.checkoutSessionId).toBe('00000000-0000-4000-8000-000000000001');
+    expect(result.customerEmail).toBe('customer@example.com');
     expect(result.subscription).toMatchObject({
       plan: 'pro',
       billingCurrency: 'USD',

@@ -1,10 +1,12 @@
 import { FieldValue, type Firestore } from 'firebase-admin/firestore';
 import { selectEntitlementSubscription } from './access-policy.js';
+import { hashBillingEmail, normalizeBillingEmail } from './email-identity.js';
 import type { SubscriptionWriteModel } from './subscription-state.js';
 
 const SUBSCRIPTION_INDEX_COLLECTION = 'billingSubscriptions';
 const CHECKOUT_SESSION_COLLECTION = 'billingCheckoutSessions';
 const USER_SUBSCRIPTIONS_COLLECTION = 'billingSubscriptions';
+const PENDING_CLAIMS_COLLECTION = 'billingPendingClaims';
 
 function assertValidUserId(userId: string): void {
   if (!userId || userId.length > 128 || userId.includes('/')) {
@@ -43,12 +45,8 @@ function validateCheckoutSession(params: {
   session: Record<string, unknown>;
   subscription: SubscriptionWriteModel;
   now: number;
-}): string {
+}): { kind: 'user'; userId: string } | { kind: 'guest' } {
   const { session, subscription, now } = params;
-  const userId = session.userId;
-  if (typeof userId !== 'string') throw new Error('Checkout session is missing its Firebase user');
-  assertValidUserId(userId);
-
   if (typeof session.expiresAt !== 'number' || session.expiresAt <= now) {
     throw new Error('Checkout session has expired');
   }
@@ -62,40 +60,87 @@ function validateCheckoutSession(params: {
   ) {
     throw new Error('Checkout session does not match the purchased subscription');
   }
-  return userId;
+
+  const userId = session.userId;
+  if (typeof userId === 'string') {
+    assertValidUserId(userId);
+    return { kind: 'user', userId };
+  }
+  if (session.identityType === 'guest') return { kind: 'guest' };
+  throw new Error('Checkout session is missing its billing identity');
 }
 
 export async function saveSubscription(params: {
   db: Firestore;
   checkoutSessionId: string | null;
+  customerEmail: string;
   subscription: SubscriptionWriteModel;
-}): Promise<'updated' | 'ignored_stale' | 'missing_user'> {
+}): Promise<'updated' | 'pending_claim' | 'ignored_stale' | 'missing_user'> {
+  const normalizedCustomerEmail = normalizeBillingEmail(params.customerEmail);
+  if (!normalizedCustomerEmail) throw new Error('Subscription contains an invalid customer email');
   const indexRef = params.db.collection(SUBSCRIPTION_INDEX_COLLECTION).doc(params.subscription.subscriptionId);
   const now = Date.now();
 
   return params.db.runTransaction(async (transaction) => {
     const indexSnapshot = await transaction.get(indexRef);
     const indexedUserId = indexSnapshot.exists ? indexSnapshot.get('userId') : null;
+    const indexedPendingEmailHash = indexSnapshot.exists ? indexSnapshot.get('pendingEmailHash') : null;
     let sessionRef = null;
     let sessionUserId: string | null = null;
+    let sessionIsGuest = false;
 
     // The opaque checkout session is required only for the first event that
     // links a Lemon Squeezy subscription to a Firebase user. Later lifecycle
     // events use the immutable server-owned subscription index, so expiring
     // old checkout sessions cannot break cancellation or renewal webhooks.
-    if (!indexedUserId && params.checkoutSessionId) {
+    if (!indexedUserId && !indexedPendingEmailHash && params.checkoutSessionId) {
       assertValidCheckoutSessionId(params.checkoutSessionId);
       sessionRef = params.db.collection(CHECKOUT_SESSION_COLLECTION).doc(params.checkoutSessionId);
       const sessionSnapshot = await transaction.get(sessionRef);
       if (!sessionSnapshot.exists) throw new Error('Checkout session was not found');
-      sessionUserId = validateCheckoutSession({
+      const identity = validateCheckoutSession({
         session: sessionSnapshot.data() as Record<string, unknown>,
         subscription: params.subscription,
         now,
       });
+      if (identity.kind === 'user') sessionUserId = identity.userId;
+      else sessionIsGuest = true;
     }
 
     const userId = typeof indexedUserId === 'string' ? indexedUserId : sessionUserId;
+    const pendingEmailHash =
+      typeof indexedPendingEmailHash === 'string'
+        ? indexedPendingEmailHash
+        : sessionIsGuest
+          ? hashBillingEmail(normalizedCustomerEmail)
+          : null;
+
+    if (!userId && !pendingEmailHash) return 'missing_user';
+    if (!userId && pendingEmailHash) {
+      const pendingRef = params.db.doc(
+        `${PENDING_CLAIMS_COLLECTION}/${pendingEmailHash}/${USER_SUBSCRIPTIONS_COLLECTION}/${params.subscription.subscriptionId}`
+      );
+      const pendingSnapshot = await transaction.get(pendingRef);
+      const currentProviderUpdatedAt = pendingSnapshot.get('providerUpdatedAt');
+      if (
+        typeof currentProviderUpdatedAt === 'number' &&
+        currentProviderUpdatedAt > params.subscription.providerUpdatedAt
+      ) {
+        return 'ignored_stale';
+      }
+      transaction.set(pendingRef, createSubscriptionFirestoreUpdate(params.subscription), { merge: true });
+      transaction.set(
+        indexRef,
+        {
+          pendingEmailHash,
+          subscriptionId: params.subscription.subscriptionId,
+          updatedAt: params.subscription.updatedAt,
+        },
+        { merge: true }
+      );
+      if (sessionRef) transaction.delete(sessionRef);
+      return 'pending_claim';
+    }
 
     if (!userId) return 'missing_user';
     assertValidUserId(userId);
@@ -156,5 +201,87 @@ export async function saveSubscription(params: {
     // replaying the same opaque identifier.
     if (sessionRef) transaction.delete(sessionRef);
     return 'updated';
+  });
+}
+
+export async function claimPendingSubscriptions(params: {
+  db: Firestore;
+  userId: string;
+  normalizedEmail: string;
+}): Promise<number> {
+  assertValidUserId(params.userId);
+  const pendingEmailHash = hashBillingEmail(params.normalizedEmail);
+  const pendingSubscriptionsRef = params.db.collection(
+    `${PENDING_CLAIMS_COLLECTION}/${pendingEmailHash}/${USER_SUBSCRIPTIONS_COLLECTION}`
+  );
+
+  return params.db.runTransaction(async (transaction) => {
+    const pendingSnapshot = await transaction.get(pendingSubscriptionsRef);
+    if (pendingSnapshot.docs.length === 0) return 0;
+
+    const aggregateRef = params.db.doc(`users/${params.userId}/billing/subscription`);
+    const userSubscriptionsRef = params.db.collection(`users/${params.userId}/${USER_SUBSCRIPTIONS_COLLECTION}`);
+    const aggregateSnapshot = await transaction.get(aggregateRef);
+    const userSubscriptionsSnapshot = await transaction.get(userSubscriptionsRef);
+    const indexSnapshots = await Promise.all(
+      pendingSnapshot.docs.map((snapshot) =>
+        transaction.get(params.db.collection(SUBSCRIPTION_INDEX_COLLECTION).doc(snapshot.id))
+      )
+    );
+
+    const subscriptionsById = new Map<string, SubscriptionWriteModel>();
+    userSubscriptionsSnapshot.docs.forEach((snapshot) => {
+      const subscription = snapshot.data();
+      if (isSubscriptionWriteModel(subscription)) subscriptionsById.set(snapshot.id, subscription);
+    });
+    const legacyAggregate = aggregateSnapshot.data();
+    if (isSubscriptionWriteModel(legacyAggregate) && !subscriptionsById.has(legacyAggregate.subscriptionId)) {
+      subscriptionsById.set(legacyAggregate.subscriptionId, legacyAggregate);
+    }
+
+    let claimedCount = 0;
+    pendingSnapshot.docs.forEach((pendingSnapshotDocument, index) => {
+      const pendingSubscription = pendingSnapshotDocument.data();
+      const indexSnapshot = indexSnapshots[index];
+      if (
+        !isSubscriptionWriteModel(pendingSubscription) ||
+        !indexSnapshot?.exists ||
+        indexSnapshot.get('pendingEmailHash') !== pendingEmailHash ||
+        typeof indexSnapshot.get('userId') === 'string'
+      ) {
+        return;
+      }
+
+      const currentSubscription = subscriptionsById.get(pendingSubscription.subscriptionId);
+      const selectedSubscription =
+        currentSubscription && currentSubscription.providerUpdatedAt > pendingSubscription.providerUpdatedAt
+          ? currentSubscription
+          : pendingSubscription;
+      subscriptionsById.set(selectedSubscription.subscriptionId, selectedSubscription);
+      transaction.set(
+        userSubscriptionsRef.doc(selectedSubscription.subscriptionId),
+        createSubscriptionFirestoreUpdate(selectedSubscription),
+        { merge: true }
+      );
+      transaction.set(
+        params.db.collection(SUBSCRIPTION_INDEX_COLLECTION).doc(selectedSubscription.subscriptionId),
+        {
+          userId: params.userId,
+          pendingEmailHash: FieldValue.delete(),
+          subscriptionId: selectedSubscription.subscriptionId,
+          updatedAt: selectedSubscription.updatedAt,
+        },
+        { merge: true }
+      );
+      transaction.delete(pendingSnapshotDocument.ref);
+      claimedCount += 1;
+    });
+
+    if (claimedCount > 0) {
+      const selectedEntitlement = selectEntitlementSubscription([...subscriptionsById.values()], Date.now());
+      if (!selectedEntitlement) throw new Error('Could not resolve the claimed billing entitlement');
+      transaction.set(aggregateRef, createSubscriptionFirestoreUpdate(selectedEntitlement), { merge: true });
+    }
+    return claimedCount;
   });
 }

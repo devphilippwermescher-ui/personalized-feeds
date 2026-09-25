@@ -5,14 +5,36 @@ import {
   findExistingMemberInFeed,
   getFeedMembers,
   getFeeds,
+  removeMemberFromFeed,
+  updateMemberInFeed,
 } from 'shared/firestore-service';
 import type { Feed, FeedMember, LinkedInProfileData } from 'shared/types';
-import { isPlanLimitReached } from 'shared/plans';
+import { getPlanEntitlements, isPlanLimitReached } from 'shared/plans';
 import { PlanLimitError } from '../errors/plan-limit-error';
 import { projectFeedMembersForPlan, projectFeedsForPlan } from '../utils/plan-projections';
 import { getUserPlanSnapshot } from './plan-service';
+import { getFeedPlanPolicies } from '../../feed-sharing/public';
 
 const mutationTails = new Map<string, Promise<void>>();
+
+async function getOwnerPlanPolicy(authenticatedUserId: string, ownerId: string, feedId: string) {
+  if (ownerId === authenticatedUserId) {
+    const [feeds, snapshot] = await Promise.all([getFeeds(ownerId), getUserPlanSnapshot(ownerId)]);
+    const feedIndex = feeds.findIndex((feed) => feed.id === feedId);
+    if (feedIndex < 0) throw new Error('Feed not found');
+    const feedLimit = snapshot.entitlements.maxCustomFeeds;
+    return {
+      ownerPlan: snapshot.plan,
+      isFeedLocked: feedLimit !== null && feedIndex >= feedLimit,
+      maxMembersPerFeed: snapshot.entitlements.maxMembersPerFeed,
+    } as const;
+  }
+
+  const policies = await getFeedPlanPolicies([{ ownerId, feedId }]);
+  const policy = policies[`${ownerId}/${feedId}`];
+  if (!policy) throw new Error('Feed access policy is unavailable');
+  return policy;
+}
 
 function runSerialized<T>(key: string, operation: () => Promise<T>): Promise<T> {
   const previous = mutationTails.get(key) || Promise.resolve();
@@ -58,18 +80,16 @@ export async function addFeedMemberForPlan(
   feedId: string,
   profileData: LinkedInProfileData
 ): Promise<{ member: FeedMember; alreadyExists: boolean }> {
-  if (ownerId !== authenticatedUserId) {
-    // Followed feeds are not part of the authenticated user's own Free quota.
-    return addMemberToFeed(ownerId, feedId, profileData);
-  }
-
   return runSerialized(`members:${ownerId}:${feedId}`, async () => {
-    const [members, planSnapshot, existingMember] = await Promise.all([
+    const [members, policy, existingMember] = await Promise.all([
       getFeedMembers(ownerId, feedId),
-      getUserPlanSnapshot(authenticatedUserId),
+      getOwnerPlanPolicy(authenticatedUserId, ownerId, feedId),
       findExistingMemberInFeed(ownerId, feedId, profileData),
     ]);
-    const limit = planSnapshot.entitlements.maxMembersPerFeed;
+    if (policy.isFeedLocked) {
+      throw new PlanLimitError('feeds', 3);
+    }
+    const limit = policy.maxMembersPerFeed;
     if (!existingMember && isPlanLimitReached(members.length, limit)) {
       throw new PlanLimitError('members', limit!);
     }
@@ -83,20 +103,61 @@ export async function getFeedMembersForPlan(
   ownerId: string,
   feedId: string
 ): Promise<FeedMember[]> {
-  const [members, planSnapshot] = await Promise.all([
+  const [members, policy] = await Promise.all([
     getFeedMembers(ownerId, feedId),
-    ownerId === authenticatedUserId ? getUserPlanSnapshot(authenticatedUserId) : Promise.resolve(null),
+    getOwnerPlanPolicy(authenticatedUserId, ownerId, feedId),
   ]);
 
-  return planSnapshot ? projectFeedMembersForPlan(members, planSnapshot.entitlements) : members;
+  return projectFeedMembersForPlan(members, getPlanEntitlements(policy.ownerPlan), policy.isFeedLocked);
+}
+
+export async function updateFeedMemberForPlan(
+  authenticatedUserId: string,
+  ownerId: string,
+  feedId: string,
+  memberId: string,
+  updates: Parameters<typeof updateMemberInFeed>[3]
+): Promise<void> {
+  const [members, policy] = await Promise.all([
+    getFeedMembers(ownerId, feedId),
+    getOwnerPlanPolicy(authenticatedUserId, ownerId, feedId),
+  ]);
+  const member = projectFeedMembersForPlan(members, getPlanEntitlements(policy.ownerPlan), policy.isFeedLocked).find(
+    (item) => item.id === memberId
+  );
+  if (policy.isFeedLocked || !member || member.isLockedByPlan) {
+    throw new PlanLimitError(policy.isFeedLocked ? 'feeds' : 'members', policy.isFeedLocked ? 3 : 10);
+  }
+  await updateMemberInFeed(ownerId, feedId, memberId, updates);
+}
+
+export async function removeFeedMemberForPlan(
+  authenticatedUserId: string,
+  ownerId: string,
+  feedId: string,
+  memberId: string
+): Promise<void> {
+  const [members, policy] = await Promise.all([
+    getFeedMembers(ownerId, feedId),
+    getOwnerPlanPolicy(authenticatedUserId, ownerId, feedId),
+  ]);
+  const member = projectFeedMembersForPlan(members, getPlanEntitlements(policy.ownerPlan), policy.isFeedLocked).find(
+    (item) => item.id === memberId
+  );
+  const ownerMayRemoveLockedData = authenticatedUserId === ownerId;
+  if (!member || (!ownerMayRemoveLockedData && (policy.isFeedLocked || member.isLockedByPlan))) {
+    throw new PlanLimitError(policy.isFeedLocked ? 'feeds' : 'members', policy.isFeedLocked ? 3 : 10);
+  }
+  await removeMemberFromFeed(ownerId, feedId, memberId);
 }
 
 export async function duplicateSharedFeedForPlan(userId: string, ownerId: string, feedId: string): Promise<Feed> {
   return runSerialized(`feeds:${userId}`, async () => {
-    const [ownedFeeds, sourceMembers, planSnapshot] = await Promise.all([
+    const [ownedFeeds, sourceMembers, planSnapshot, sourcePolicy] = await Promise.all([
       getFeeds(userId),
       getFeedMembers(ownerId, feedId),
       getUserPlanSnapshot(userId),
+      getOwnerPlanPolicy(userId, ownerId, feedId),
     ]);
 
     const feedLimit = planSnapshot.entitlements.maxCustomFeeds;
@@ -104,11 +165,19 @@ export async function duplicateSharedFeedForPlan(userId: string, ownerId: string
       throw new PlanLimitError('feeds', feedLimit!);
     }
 
+    if (sourcePolicy.isFeedLocked) {
+      throw new PlanLimitError('feeds', 3);
+    }
+    const accessibleSourceMembers = projectFeedMembersForPlan(
+      sourceMembers,
+      getPlanEntitlements(sourcePolicy.ownerPlan)
+    ).filter((member) => !member.isLockedByPlan);
+
     const memberLimit = planSnapshot.entitlements.maxMembersPerFeed;
-    if (memberLimit !== null && sourceMembers.length > memberLimit) {
+    if (memberLimit !== null && accessibleSourceMembers.length > memberLimit) {
       throw new PlanLimitError('members', memberLimit);
     }
 
-    return duplicateSharedFeed(userId, ownerId, feedId);
+    return duplicateSharedFeed(userId, ownerId, feedId, accessibleSourceMembers);
   });
 }

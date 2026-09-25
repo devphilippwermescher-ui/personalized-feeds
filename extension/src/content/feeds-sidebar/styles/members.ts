@@ -11,6 +11,27 @@ export const MEMBERS_CSS = `.lfa-member-row {
   .lfa-member-row:hover {
     background: #f8fafc;
   }
+  .lfa-member-row--locked {
+    opacity: 0.58;
+    background: #f8fafc;
+  }
+  .lfa-member-row--locked .lfa-member-name {
+    color: #64748b;
+    cursor: default;
+  }
+  .lfa-member-row--locked .lfa-member-name:hover {
+    color: #64748b;
+  }
+  .lfa-member-lock {
+    padding: 3px 6px;
+    border-radius: 999px;
+    background: #e2e8f0;
+    color: #475569;
+    font-size: 9px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
   .lfa-member-main {
     display: flex;
     align-items: center;

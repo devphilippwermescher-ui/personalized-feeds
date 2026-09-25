@@ -33,16 +33,15 @@ interface FeedMembersDeps {
   getFeeds: () => FeedInfo[];
 }
 
-function startBackgroundStatusRefresh(
-  feedId: string,
-  members: FeedMemberInfo[],
-  deps: FeedMembersDeps
-): void {
+function startBackgroundStatusRefresh(feedId: string, members: FeedMemberInfo[], deps: FeedMembersDeps): void {
   const feed = deps.getFeeds().find((item) => item.id === feedId);
   const isProfileViewers = feed?.systemType === 'profileViewers';
-  const profileMembers = members.some((member) => member.itemType && member.itemType !== 'profile')
-    ? members.filter((member) => !member.itemType || member.itemType === 'profile')
+  const unlockedMembers = members.some((member) => member.isLockedByPlan)
+    ? members.filter((member) => !member.isLockedByPlan)
     : members;
+  const profileMembers = unlockedMembers.some((member) => member.itemType && member.itemType !== 'profile')
+    ? unlockedMembers.filter((member) => !member.itemType || member.itemType === 'profile')
+    : unlockedMembers;
   if (profileMembers.length === 0) {
     return;
   }
@@ -51,36 +50,35 @@ function startBackgroundStatusRefresh(
   const controller = new AbortController();
   deps.setStatusFetchController(controller);
 
-  void deps.fetchStatusesProgressively(
-    profileMembers,
-    (member) => {
-      void deps.persistResolvedMemberState(feedId, member);
-      if (!deps.updateRenderedMemberState(feedId, member)) {
-        deps.renderSidebarContent();
+  void deps
+    .fetchStatusesProgressively(
+      profileMembers,
+      (member) => {
+        void deps.persistResolvedMemberState(feedId, member);
+        if (!deps.updateRenderedMemberState(feedId, member)) {
+          deps.renderSidebarContent();
+        }
+      },
+      controller.signal,
+      isProfileViewers ? { preserveExistingPremium: true } : undefined
+    )
+    .finally(() => {
+      if (deps.getStatusFetchController() === controller) {
+        deps.setStatusFetchController(null);
       }
-    },
-    controller.signal,
-    isProfileViewers ? { preserveExistingPremium: true } : undefined
-  ).finally(() => {
-    if (deps.getStatusFetchController() === controller) {
-      deps.setStatusFetchController(null);
-    }
-  });
+    });
 }
 
 function profileViewerToMember(viewer: Partial<FeedMemberInfo> | ProfileViewerListItem): FeedMemberInfo | null {
   const itemType = 'itemType' in viewer ? viewer.itemType : undefined;
   const isSearchItem = 'searchUrl' in viewer || itemType === 'search';
   const linkedinUrl = isSearchItem
-    ? ('searchUrl' in viewer ? viewer.searchUrl : viewer.linkedinUrl)
+    ? 'searchUrl' in viewer
+      ? viewer.searchUrl
+      : viewer.linkedinUrl
     : viewer.linkedinUrl;
 
-  if (
-    !viewer.id ||
-    !linkedinUrl ||
-    !viewer.displayName ||
-    (!isSearchItem && !viewer.linkedinUsername)
-  ) {
+  if (!viewer.id || !linkedinUrl || !viewer.displayName || (!isSearchItem && !viewer.linkedinUsername)) {
     return null;
   }
 
@@ -140,9 +138,7 @@ export async function loadFeedMembers(feedId: string, deps: FeedMembersDeps): Pr
     const recruiterAggregateMember = buildRecruiterAggregateMember(
       (resp?.summary as ProfileViewerSummary | null | undefined) || null
     );
-    const nextMembers = recruiterAggregateMember
-      ? [recruiterAggregateMember, ...members]
-      : members;
+    const nextMembers = recruiterAggregateMember ? [recruiterAggregateMember, ...members] : members;
 
     deps.setFeedMembersById({
       ...deps.getFeedMembersById(),
@@ -157,7 +153,11 @@ export async function loadFeedMembers(feedId: string, deps: FeedMembersDeps): Pr
   const resp = await deps.sendMsg({ type: 'FEEDS_GET_MEMBERS', ownerId: feed?.ownerId, feedId });
   const members = ((resp?.members as FeedMemberInfo[]) || []).map((member) => ({
     ...member,
-    status: !feed?.isShared ? ('loading' as const) : member.status || ('loading' as const),
+    status: member.isLockedByPlan
+      ? member.status
+      : !feed?.isShared
+        ? ('loading' as const)
+        : member.status || ('loading' as const),
   }));
 
   deps.setFeedMembersById({
@@ -201,10 +201,9 @@ export async function toggleFeedExpansion(feedId: string, deps: FeedMembersDeps)
   const isProfileViewersFeed = feed?.systemType === 'profileViewers';
   let membersForRefresh = cachedMembers;
   if (!feed?.isShared && !isProfileViewersFeed && cachedMembers.length > 0) {
-    membersForRefresh = cachedMembers.map((member) => ({
-      ...member,
-      status: 'loading' as const,
-    }));
+    membersForRefresh = cachedMembers.map((member) =>
+      member.isLockedByPlan ? member : { ...member, status: 'loading' as const }
+    );
     deps.setFeedMembersById({
       ...deps.getFeedMembersById(),
       [feedId]: membersForRefresh,
@@ -212,9 +211,7 @@ export async function toggleFeedExpansion(feedId: string, deps: FeedMembersDeps)
   }
   const retryState = deps.getFeedMembersRetryState();
   const shouldRetryEmptyState =
-    cachedMembers.length === 0 &&
-    (feed?.memberCount || 0) > 0 &&
-    retryState[feedId] !== true;
+    cachedMembers.length === 0 && (feed?.memberCount || 0) > 0 && retryState[feedId] !== true;
 
   if (shouldRetryEmptyState) {
     deps.setFeedMembersRetryState({
@@ -279,6 +276,7 @@ export function renderMembersList(
       ${members
         .map((member) => {
           const status = getMemberStatus(member);
+          const isLocked = member.isLockedByPlan === true;
           if (member.itemType === 'search' || member.itemType === 'recruiterAggregate') {
             return renderMemberRow({
               feedId: feed.id,
@@ -287,6 +285,7 @@ export function renderMembersList(
               statusActionHtml: '',
               canEdit: false,
               showMeta: true,
+              isLocked,
             });
           }
 
@@ -295,13 +294,16 @@ export function renderMembersList(
           });
           // Relationship badges reflect the owner's connection context.
           // In shared feeds the recipient's relationship is unknown, so hide them entirely.
-          const showStatusAction = !feed.isShared && canEditMembers;
+          const showStatusAction = !feed.isShared && canEditMembers && !isLocked;
           return renderMemberRow({
             feedId: feed.id,
             member,
-            messageButtonHtml: showMessagingButtons ? renderMessageButton(feed.id, member, canMessage) : '',
+            messageButtonHtml:
+              showMessagingButtons && !isLocked ? renderMessageButton(feed.id, member, canMessage) : '',
             statusActionHtml: showStatusAction ? renderMemberStatusAction(feed.id, member, status) : '',
-            canEdit: canEditMembers,
+            canEdit: canEditMembers && !isLocked,
+            canRemove: !feed.isShared && isLocked,
+            isLocked,
             showMeta: false,
           });
         })
@@ -311,7 +313,7 @@ export function renderMembersList(
 }
 
 export function renderFeedPreview(feedId: string, feedMembersById: Record<string, FeedMemberInfo[]>): string {
-  const members = (feedMembersById[feedId] || []).slice(0, 3);
+  const members = (feedMembersById[feedId] || []).filter((member) => !member.isLockedByPlan).slice(0, 3);
   if (members.length === 0) {
     return '';
   }
@@ -328,8 +330,8 @@ export function renderFeedPreview(feedId: string, feedMembersById: Record<string
                 </svg>
               </div>`
             : member.profileImageUrl
-            ? `<img class="lfa-feed-preview-avatar" src="${escapeHtml(member.profileImageUrl)}" alt="${escapeHtml(member.displayName)}" data-lfa-avatar-img="true" /><div class="lfa-feed-preview-avatar lfa-feed-preview-avatar--fallback" style="display:none;">${escapeHtml(getMemberInitials(member.displayName))}</div>`
-            : `<div class="lfa-feed-preview-avatar lfa-feed-preview-avatar--fallback">${escapeHtml(getMemberInitials(member.displayName))}</div>`
+              ? `<img class="lfa-feed-preview-avatar" src="${escapeHtml(member.profileImageUrl)}" alt="${escapeHtml(member.displayName)}" data-lfa-avatar-img="true" /><div class="lfa-feed-preview-avatar lfa-feed-preview-avatar--fallback" style="display:none;">${escapeHtml(getMemberInitials(member.displayName))}</div>`
+              : `<div class="lfa-feed-preview-avatar lfa-feed-preview-avatar--fallback">${escapeHtml(getMemberInitials(member.displayName))}</div>`
         )
         .join('')}
     </div>

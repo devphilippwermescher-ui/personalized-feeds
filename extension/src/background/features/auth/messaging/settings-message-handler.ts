@@ -25,6 +25,7 @@ import {
 import { resetAuthenticatedUserProfileReadiness } from '../services/user-profile-readiness';
 import { clearProfileViewersAlarm } from '../../profile-viewers/profile-viewers-coordinator-storage';
 import { normalizeFeedsError } from '../../feeds/errors/feeds-error';
+import { claimGuestBillingSubscription } from '../../billing/public';
 import {
   authenticateFeedsWithEmail,
   authenticateFeedsWithGoogle,
@@ -75,6 +76,9 @@ export function registerAuthSettingsMessageHandler(): void {
       void (async () => {
         const user = await getAuthenticatedFeedsUser();
         if (user) {
+          await claimGuestBillingSubscription().catch((error) => {
+            console.warn('[billing] Guest subscription claim check failed:', error);
+          });
           const preferences = await resolveUserProfilePreferences(user.uid);
           const info = formatUserInfo(
             {

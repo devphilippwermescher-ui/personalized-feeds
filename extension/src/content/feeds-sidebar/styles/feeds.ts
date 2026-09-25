@@ -16,13 +16,19 @@ export const FEEDS_CSS = `.lfa-feed-list {
   .lfa-feed-group--system {
     overflow: visible;
   }
-  .lfa-feed-group--system .lfa-feed-item {
+  .lfa-feed-group--plan-limited {
+    overflow: visible;
+  }
+  .lfa-feed-group--system .lfa-feed-item,
+  .lfa-feed-group--plan-limited .lfa-feed-item {
     border-radius: 13px;
   }
-  .lfa-feed-group--system .lfa-feed-item--expanded {
+  .lfa-feed-group--system .lfa-feed-item--expanded,
+  .lfa-feed-group--plan-limited .lfa-feed-item--expanded {
     border-radius: 13px 13px 0 0;
   }
-  .lfa-feed-group--system .lfa-feed-expanded {
+  .lfa-feed-group--system .lfa-feed-expanded,
+  .lfa-feed-group--plan-limited .lfa-feed-expanded {
     border-radius: 0 0 13px 13px;
   }
   .lfa-feed-group--system:has(.lfa-feed-info:hover),
@@ -30,7 +36,9 @@ export const FEEDS_CSS = `.lfa-feed-list {
   .lfa-feed-group--system:has(.lfa-feed-pin:hover),
   .lfa-feed-group--system:has(.lfa-feed-pin:focus-visible),
   .lfa-feed-group--system:has(.lfa-profile-viewer-count:hover),
-  .lfa-feed-group--system:has(.lfa-profile-viewer-count:focus-visible) {
+  .lfa-feed-group--system:has(.lfa-profile-viewer-count:focus-visible),
+  .lfa-feed-group--plan-limited:has(.lfa-profile-viewer-count:hover),
+  .lfa-feed-group--plan-limited:has(.lfa-profile-viewer-count:focus-visible) {
     position: relative;
     z-index: 4;
   }
@@ -56,6 +64,26 @@ export const FEEDS_CSS = `.lfa-feed-list {
   }
   .lfa-feed-item--system {
     background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+  }
+  .lfa-feed-item--locked {
+    background: #f8fafc;
+    opacity: 0.68;
+  }
+  .lfa-feed-item--locked:hover,
+  .lfa-feed-item--locked.lfa-feed-item--expanded {
+    background: #f1f5f9;
+  }
+  .lfa-feed-plan-lock {
+    flex-shrink: 0;
+    padding: 3px 6px;
+    border-radius: 999px;
+    background: #e2e8f0;
+    color: #475569;
+    font-size: 9px;
+    font-weight: 800;
+    line-height: 1;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
   }
   .lfa-feed-item:hover,
   .lfa-feed-item--expanded,

@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { closePlanModal, openPlanModal } from '../plan-modal';
-import { PRICING_PAGE_URL } from '../../subscription/services/pricing-page';
 
 const sendMessage = vi.fn();
 
@@ -36,6 +35,10 @@ describe('plan modal', () => {
 
     expect(document.body.textContent).toContain('Add unlimited people with Pro');
     expect(document.body.textContent).toContain('up to 10 people in each feed');
+
+    openPlanModal({ plan: 'free', context: 'sharing' });
+
+    expect(document.body.textContent).toContain('Share without limits with Pro');
   });
 
   it('does not show prices inside the limit modal', () => {
@@ -53,7 +56,7 @@ describe('plan modal', () => {
     openPlanModal({ plan: 'free', context: 'feeds' });
     document.querySelector<HTMLButtonElement>('.mfp-plan-cta')?.click();
 
-    expect(window.open).toHaveBeenCalledWith(PRICING_PAGE_URL, '_blank', 'noopener,noreferrer');
+    expect(sendMessage).toHaveBeenCalledWith({ type: 'BILLING_OPEN_PRICING' });
     expect(document.querySelector('.mfp-plan-note')?.textContent).toContain('Pricing opened');
     expect(sendMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'BILLING_OPEN_CHECKOUT' }));
   });
@@ -79,5 +82,21 @@ describe('plan modal', () => {
       expect(document.querySelector('.mfp-plan-note')?.textContent).toContain('Billing management opened');
     });
     expect(sendMessage).toHaveBeenCalledWith({ type: 'BILLING_OPEN_PORTAL' });
+  });
+
+  it('keeps past-due users on Pro and points them to payment management', async () => {
+    sendMessage.mockImplementation(async (message: { type?: string }) => {
+      if (message.type === 'PLAN_GET') {
+        return { success: true, plan: 'pro', subscription: { status: 'past_due', billingInterval: 'monthly' } };
+      }
+      return { success: true };
+    });
+
+    openPlanModal({ plan: 'pro', context: 'feeds' });
+
+    await vi.waitFor(() => {
+      expect(document.querySelector('.mfp-plan-current')?.textContent).toContain('payment needs attention');
+    });
+    expect(document.querySelector<HTMLButtonElement>('.mfp-plan-cta')?.textContent).toBe('Update payment');
   });
 });

@@ -51,12 +51,19 @@ function getOptionalEurStoreConfiguration(): BillingStoreConfiguration | undefin
 
 export function getBillingConfiguration(): BillingConfiguration {
   const eurStore = getOptionalEurStoreConfiguration();
+  const checkoutSuccessUrl =
+    getEnvironmentValue('BILLING_CHECKOUT_SUCCESS_URL') ?? 'https://myfeedpilot.com/checkout/success';
+  const parsedSuccessUrl = new URL(checkoutSuccessUrl);
+  if (parsedSuccessUrl.protocol !== 'https:') {
+    throw new Error('BILLING_CHECKOUT_SUCCESS_URL must use HTTPS');
+  }
   return {
     stores: {
       USD: getUsdStoreConfiguration(),
       ...(eurStore ? { EUR: eurStore } : {}),
     },
     testMode: requireEnvironmentValue('LEMON_SQUEEZY_TEST_MODE').toLowerCase() === 'true',
+    checkoutSuccessUrl: parsedSuccessUrl.toString(),
   };
 }
 

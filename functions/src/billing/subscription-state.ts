@@ -1,5 +1,6 @@
 import type { BillingConfiguration, LemonSqueezySubscriptionWebhook } from './types.js';
 import { getBillingIntervalForVariant } from './config.js';
+import { normalizeBillingEmail } from './email-identity.js';
 
 const SUBSCRIPTION_EVENTS = new Set([
   'subscription_created',
@@ -55,7 +56,7 @@ export function parseSubscriptionWebhook(
   payload: LemonSqueezySubscriptionWebhook,
   configuration: BillingConfiguration,
   receivedAt = Date.now()
-): { checkoutSessionId: string | null; subscription: SubscriptionWriteModel } {
+): { checkoutSessionId: string | null; customerEmail: string; subscription: SubscriptionWriteModel } {
   const attributes = payload.data.attributes;
   if (payload.data.type !== 'subscriptions') {
     throw new Error(`Unexpected webhook resource type: ${payload.data.type}`);
@@ -84,8 +85,11 @@ export function parseSubscriptionWebhook(
     typeof customCheckoutSessionId === 'string' && customCheckoutSessionId.length > 0 ? customCheckoutSessionId : null;
 
   const currentPeriodEnd = endsAt ?? renewsAt;
+  const customerEmail = normalizeBillingEmail(attributes.user_email);
+  if (!customerEmail) throw new Error('Subscription webhook contains an invalid customer email');
   return {
     checkoutSessionId,
+    customerEmail,
     subscription: {
       plan: 'pro',
       source: 'lemon_squeezy',

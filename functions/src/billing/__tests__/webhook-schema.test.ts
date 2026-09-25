@@ -14,6 +14,7 @@ function createPayload() {
         store_id: 42,
         customer_id: 7,
         variant_id: 2069629,
+        user_email: 'customer@example.com',
         status: 'active',
         cancelled: false,
         renews_at: '2027-08-29T12:00:00.000Z',

@@ -9,7 +9,7 @@ import { renderPlanStarIcon } from './plan-star';
 import { closeProfilePreferencesModal } from '../profile-preferences/public';
 import { injectPlanModalStyles } from './plan-modal-styles';
 
-export type PlanModalContext = 'feeds' | 'members';
+export type PlanModalContext = 'feeds' | 'members' | 'sharing';
 
 const MODAL_ID = 'mfp-plan-modal-overlay';
 const MODAL_HOST_ID = 'mfp-plan-modal-react-root';
@@ -21,6 +21,13 @@ function getContextCopy(context: PlanModalContext): { title: string; description
     return {
       title: 'Add unlimited people with Pro',
       description: 'The Free plan includes up to 10 people in each feed. Upgrade to keep growing this feed.',
+    };
+  }
+
+  if (context === 'sharing') {
+    return {
+      title: 'Share without limits with Pro',
+      description: 'Share and receive more personalized feeds without Free plan sharing limits.',
     };
   }
 
@@ -54,6 +61,9 @@ function renderSubscriptionSummary(subscription: BillingSubscription | null | un
   }
 
   const interval = subscription.billingInterval === 'annual' ? 'Annual' : 'Monthly';
+  if (subscription.status === 'past_due') {
+    return `<strong>${interval} Pro plan — payment needs attention</strong><span>Your Pro access remains active while Lemon Squeezy retries the payment. Update your payment method to avoid interruption.</span>`;
+  }
   const isEnding = subscription.status === 'cancelled';
   const date = formatBillingDate(isEnding ? subscription.endsAt : subscription.renewsAt);
   const timing = isEnding
@@ -75,6 +85,10 @@ async function hydrateSubscriptionSummary(overlay: HTMLElement): Promise<void> {
     const snapshot = await getPlanSnapshot(true);
     if (!overlay.isConnected) return;
     summary.innerHTML = renderSubscriptionSummary(snapshot.subscription);
+    if (snapshot.subscription?.status === 'past_due') {
+      const cta = overlay.querySelector<HTMLButtonElement>('.mfp-plan-cta');
+      if (cta && !cta.disabled) cta.textContent = 'Update payment';
+    }
   } catch {
     if (overlay.isConnected) {
       summary.innerHTML = '<strong>Pro plan active</strong><span>Billing details could not be loaded.</span>';

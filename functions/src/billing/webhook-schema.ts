@@ -25,6 +25,7 @@ const subscriptionWebhookSchema = webhookEnvelopeSchema.extend({
       store_id: z.number().int().positive(),
       customer_id: z.number().int().positive(),
       variant_id: z.number().int().positive(),
+      user_email: z.string().email().max(320),
       status: subscriptionStatusSchema,
       cancelled: z.boolean(),
       renews_at: providerDateSchema.nullable(),
