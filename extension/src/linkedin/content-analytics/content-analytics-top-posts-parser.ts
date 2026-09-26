@@ -1,5 +1,5 @@
 import type { ContentAnalyticsMetricValues } from 'shared/types';
-import { DashboardAnalyticsError } from '../../background/dashboard-analytics/dashboard-analytics-errors';
+import { DashboardAnalyticsError } from '../../background/features/dashboard-analytics/dashboard-analytics-errors';
 import { getActivityPublishedAt, resolveActivityIdentity } from './linkedin-activity-urn';
 
 export type TopPostsMetricType = 'IMPRESSIONS' | 'ENGAGEMENTS';
@@ -115,10 +115,7 @@ export function parseContentAnalyticsTopPosts(
   const miniUpdateByActivityId = new Map<string, JsonRecord>();
   miniUpdates.forEach((miniUpdate) => {
     const metadata = isRecord(miniUpdate.metadata) ? miniUpdate.metadata : undefined;
-    const identity = resolveActivityIdentity([
-      readString(metadata?.backendUrn),
-      readString(miniUpdate.entityUrn),
-    ]);
+    const identity = resolveActivityIdentity([readString(metadata?.backendUrn), readString(miniUpdate.entityUrn)]);
     if (identity.activityId) miniUpdateByActivityId.set(identity.activityId, miniUpdate);
   });
 
@@ -157,9 +154,7 @@ export function parseContentAnalyticsTopPosts(
       ...(readNumber(counts?.numComments) !== undefined ? { comments: readNumber(counts?.numComments) } : {}),
       // `numShares: null` means "not reported", which is not the same as zero.
       ...(readNumber(counts?.numShares) !== undefined ? { reposts: readNumber(counts?.numShares) } : {}),
-      ...(readNumber(counts?.numImpressions) !== undefined
-        ? { impressions: readNumber(counts?.numImpressions) }
-        : {}),
+      ...(readNumber(counts?.numImpressions) !== undefined ? { impressions: readNumber(counts?.numImpressions) } : {}),
       ...toMetricValues(metricType, metricValue),
     };
 
@@ -169,8 +164,7 @@ export function parseContentAnalyticsTopPosts(
       shareUrn: shareIdentity.shareUrn,
       text: readString(commentaryText?.text) || '',
       linkedinUrl:
-        readString(navigationContext?.target) ||
-        `https://www.linkedin.com/feed/update/${identity.activityUrn}`,
+        readString(navigationContext?.target) || `https://www.linkedin.com/feed/update/${identity.activityUrn}`,
       analyticsUrl: readString(actionData?.navigationUrl),
       publishedAt,
       publishedAtSource: 'activity_urn',

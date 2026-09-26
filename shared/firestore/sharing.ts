@@ -3,6 +3,8 @@ import {
   doc,
   getDoc,
   getDocs,
+  limit,
+  onSnapshot,
   orderBy,
   query,
   setDoc,
@@ -12,9 +14,11 @@ import {
 import { getFirebaseDb } from '../firebase-config';
 import type {
   Feed,
+  FeedMember,
   FeedShareAccess,
   FeedShareRole,
   FollowedFeed,
+  ShareNotification,
   SharedFeedSummary,
   UserProfile,
 } from '../types';
@@ -24,19 +28,12 @@ import {
   membersCollection,
   normalizeEmail,
   shareLinksCollection,
+  shareNotificationsCollection,
   sharesCollection,
   docToShareAccess,
 } from './refs';
-import {
-  createFeed,
-  getFeed,
-  getFeedMembers,
-  getFeeds,
-} from './feeds';
-import {
-  findUserProfileByEmail,
-  getUserProfile,
-} from './users';
+import { createFeed, getFeed, getFeedMembers, getFeeds } from './feeds';
+import { findUserProfileByEmail, getUserProfile } from './users';
 
 async function ensureFeedExists(ownerId: string, feedId: string): Promise<Feed> {
   const feed = await getFeed(ownerId, feedId);
@@ -54,19 +51,12 @@ async function ensureUserExists(userId: string): Promise<UserProfile> {
   return user;
 }
 
-async function upsertFollowedFeed(
-  userId: string,
-  ownerId: string,
-  feedId: string,
-  role: FeedShareRole
-): Promise<void> {
+async function upsertFollowedFeed(userId: string, ownerId: string, feedId: string, role: FeedShareRole): Promise<void> {
   const followedId = `${ownerId}_${feedId}`;
   const now = Date.now();
   const followedRef = doc(followedFeedsCollection(userId), followedId);
   const existingSnap = await getDoc(followedRef);
-  const existing = existingSnap.exists()
-    ? (existingSnap.data() as Partial<Omit<FollowedFeed, 'id'>>)
-    : null;
+  const existing = existingSnap.exists() ? (existingSnap.data() as Partial<Omit<FollowedFeed, 'id'>>) : null;
 
   await setDoc(followedRef, {
     ownerId,
@@ -127,6 +117,75 @@ export async function getFeedShares(ownerId: string, feedId: string): Promise<Ar
   }));
 }
 
+export function subscribeFeedShares(
+  ownerId: string,
+  feedId: string,
+  onShares: (shares: Array<FeedShareAccess & UserProfile>) => void,
+  onError?: (error: Error) => void
+): () => void {
+  let active = true;
+  let snapshotVersion = 0;
+  const unsubscribe = onSnapshot(
+    query(sharesCollection(ownerId, feedId), orderBy('createdAt', 'asc')),
+    (snapshot) => {
+      const version = ++snapshotVersion;
+      const shares = snapshot.docs.map(docToShareAccess);
+      void Promise.all(shares.map((share) => ensureUserExists(share.targetUid)))
+        .then((profiles) => {
+          if (!active || version !== snapshotVersion) return;
+          onShares(
+            shares.map((share, index) => ({
+              ...profiles[index],
+              ...share,
+            }))
+          );
+        })
+        .catch((error: unknown) => {
+          if (!active || version !== snapshotVersion) return;
+          onError?.(error instanceof Error ? error : new Error('Unable to load shared users'));
+        });
+    },
+    (error) => onError?.(error)
+  );
+
+  return () => {
+    active = false;
+    unsubscribe();
+  };
+}
+
+export async function getShareNotifications(userId: string): Promise<ShareNotification[]> {
+  const snapshot = await getDocs(query(shareNotificationsCollection(userId), orderBy('updatedAt', 'desc')));
+  return snapshot.docs
+    .map((item) => ({ id: item.id, ...item.data() }) as ShareNotification)
+    .filter((item) => item.status === 'pending' || item.status === 'unread');
+}
+
+export function subscribeShareNotifications(
+  userId: string,
+  onNotifications: (notifications: ShareNotification[]) => void,
+  onError?: (error: Error) => void
+): () => void {
+  return onSnapshot(
+    query(shareNotificationsCollection(userId), orderBy('updatedAt', 'desc'), limit(10)),
+    (snapshot) => {
+      onNotifications(
+        snapshot.docs
+          .map((item) => ({ id: item.id, ...item.data() }) as ShareNotification)
+          .filter((item) => item.status === 'pending' || item.status === 'unread')
+      );
+    },
+    (error) => onError?.(error)
+  );
+}
+
+export async function dismissShareNotification(userId: string, notificationId: string): Promise<void> {
+  await updateDoc(doc(shareNotificationsCollection(userId), notificationId), {
+    status: 'dismissed',
+    updatedAt: Date.now(),
+  });
+}
+
 export async function updateFeedShareRole(
   ownerId: string,
   feedId: string,
@@ -153,9 +212,7 @@ export async function removeFeedShare(ownerId: string, feedId: string, targetUid
     await deleteDoc(doc(followedFeedsCollection(targetUid), `${ownerId}_${feedId}`));
   } catch (err: unknown) {
     const code =
-      typeof err === 'object' && err !== null && 'code' in err
-        ? String((err as { code?: unknown }).code)
-        : '';
+      typeof err === 'object' && err !== null && 'code' in err ? String((err as { code?: unknown }).code) : '';
 
     // The primary action is removing share access from the owner's feed.
     // Cleanup of the follower-side reference can legitimately race with:
@@ -221,13 +278,17 @@ export async function followFeedByShareToken(userId: string, token: string): Pro
   // document to exist for hasFeedReadAccess to pass for non-owner users.
   const now = Date.now();
   await Promise.all([
-    setDoc(doc(sharesCollection(tokenData.ownerId, tokenData.feedId), userId), {
-      targetUid: userId,
-      targetEmail: normalizeEmail(currentUser.email),
-      role,
-      createdAt: now,
-      updatedAt: now,
-    } satisfies FeedShareAccess, { merge: true }),
+    setDoc(
+      doc(sharesCollection(tokenData.ownerId, tokenData.feedId), userId),
+      {
+        targetUid: userId,
+        targetEmail: normalizeEmail(currentUser.email),
+        role,
+        createdAt: now,
+        updatedAt: now,
+      } satisfies FeedShareAccess,
+      { merge: true }
+    ),
     upsertFollowedFeed(userId, tokenData.ownerId, tokenData.feedId, role),
   ]);
 
@@ -267,7 +328,7 @@ export async function getFollowedFeeds(userId: string): Promise<SharedFeedSummar
         }
 
         const activeRole = shareSnap.exists()
-          ? ((shareSnap.data() as Partial<FeedShareAccess>).role || followed.role)
+          ? (shareSnap.data() as Partial<FeedShareAccess>).role || followed.role
           : followed.role;
 
         if (activeRole !== followed.role) {
@@ -298,9 +359,7 @@ export async function getFollowedFeeds(userId: string): Promise<SharedFeedSummar
         };
       } catch (err: unknown) {
         const code =
-          typeof err === 'object' && err !== null && 'code' in err
-            ? String((err as { code?: unknown }).code)
-            : '';
+          typeof err === 'object' && err !== null && 'code' in err ? String((err as { code?: unknown }).code) : '';
         if (code === 'permission-denied') {
           // Share was revoked but followedFeed entry was not cleaned up. Treat as stale.
           return null;
@@ -343,10 +402,11 @@ export async function unfollowFeed(userId: string, ownerId: string, feedId: stri
 export async function duplicateSharedFeed(
   userId: string,
   ownerId: string,
-  feedId: string
+  feedId: string,
+  accessibleSourceMembers?: FeedMember[]
 ): Promise<Feed> {
   const sourceFeed = await ensureFeedExists(ownerId, feedId);
-  const sourceMembers = await getFeedMembers(ownerId, feedId);
+  const sourceMembers = accessibleSourceMembers ?? (await getFeedMembers(ownerId, feedId));
   const existingFeeds = await getFeeds(userId);
 
   const baseName = sourceFeed.name.trim() || 'Shared feed';
@@ -368,7 +428,7 @@ export async function duplicateSharedFeed(
   const batch = writeBatch(getFirebaseDb());
   const now = Date.now();
 
-  sourceMembers.forEach((member) => {
+  sourceMembers.forEach((member, index) => {
     const memberRef = doc(membersCollection(userId, duplicatedFeed.id));
     batch.set(memberRef, {
       linkedinUrl: member.linkedinUrl,
@@ -381,7 +441,9 @@ export async function duplicateSharedFeed(
       company: member.company || '',
       location: member.location || '',
       connectionDegree: member.connectionDegree || '',
-      addedAt: now,
+      // Source members are already newest-first. Unique timestamps keep that
+      // exact order when the duplicated feed is read with addedAt descending.
+      addedAt: now - index,
     });
   });
 

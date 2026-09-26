@@ -8,6 +8,7 @@ import {
 import { CONTENT_COPY } from '../../shared/copy';
 import { enrichProfileDataForFeed } from '../../shared/enrich-profile-data';
 import { getCreateFeedModalElements, getSelectedCreateFeedColor } from '../../shared/profile-feed-modals';
+import { openPlanModal } from '../../shared/plan-modal';
 
 interface DomBindingDeps {
   handleAddToFeed: () => Promise<void>;
@@ -102,7 +103,7 @@ export function setupProfileContentDomBindings(deps: DomBindingDeps): void {
         name,
         description: descriptionInput?.value.trim() || '',
         color: getSelectedCreateFeedColor(),
-      })) as { success: boolean; feed?: FeedInfo; error?: string } | null;
+      })) as { success: boolean; feed?: FeedInfo; error?: string; code?: string } | null;
 
       const currentProfileData = deps.getCurrentProfileData();
       if (result?.success && result.feed && currentProfileData) {
@@ -115,7 +116,7 @@ export function setupProfileContentDomBindings(deps: DomBindingDeps): void {
           type: 'FEEDS_ADD_MEMBER',
           feedId: result.feed.id,
           profileData: enrichedProfileData,
-        })) as { success: boolean; member?: unknown; alreadyExists?: boolean } | null;
+        })) as { success: boolean; member?: unknown; alreadyExists?: boolean; code?: string } | null;
 
         createOverlay.style.display = 'none';
 
@@ -131,10 +132,19 @@ export function setupProfileContentDomBindings(deps: DomBindingDeps): void {
           deps.showToast(feedCreatedAndProfileAddedMessage(name), 'success');
           await deps.refreshCardState();
         } else {
-          deps.showToast(feedCreatedButProfileAddFailedMessage(name), 'error');
+          if (addResult?.code === 'PLAN_LIMIT_REACHED') {
+            openPlanModal({ plan: 'free', context: 'members' });
+          } else {
+            deps.showToast(feedCreatedButProfileAddFailedMessage(name), 'error');
+          }
         }
       } else {
-        deps.showToast(result?.error || 'Failed to create feed', 'error');
+        if (result?.code === 'PLAN_LIMIT_REACHED') {
+          createOverlay.style.display = 'none';
+          openPlanModal({ plan: 'free', context: 'feeds' });
+        } else {
+          deps.showToast(result?.error || 'Failed to create feed', 'error');
+        }
       }
     } finally {
       createFeedSubmitInFlight = false;

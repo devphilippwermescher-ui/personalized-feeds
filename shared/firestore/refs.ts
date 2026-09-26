@@ -13,6 +13,7 @@ import type {
   ProfileViewer,
   ProfileViewerSearch,
 } from '../types';
+import { normalizeLinkedInProfileImageUrl } from '../linkedin-profile-image';
 
 export function feedsCollection(userId: string) {
   return collection(getFirebaseDb(), 'users', userId, 'feeds');
@@ -28,6 +29,10 @@ export function sharesCollection(userId: string, feedId: string) {
 
 export function followedFeedsCollection(userId: string) {
   return collection(getFirebaseDb(), 'users', userId, 'followedFeeds');
+}
+
+export function shareNotificationsCollection(userId: string) {
+  return collection(getFirebaseDb(), 'users', userId, 'shareNotifications');
 }
 
 export function profileViewersCollection(userId: string) {
@@ -102,9 +107,7 @@ export function docToContentAnalyticsDailySnapshot(
   return { id: d.id, ...d.data() } as ContentAnalyticsDailySnapshot;
 }
 
-export function docToContentAnalyticsPost(
-  d: QueryDocumentSnapshot<DocumentData, DocumentData>
-): ContentAnalyticsPost {
+export function docToContentAnalyticsPost(d: QueryDocumentSnapshot<DocumentData, DocumentData>): ContentAnalyticsPost {
   return { id: d.id, ...d.data() } as ContentAnalyticsPost;
 }
 
@@ -156,12 +159,28 @@ export function settingsDoc(userId: string) {
   return doc(getFirebaseDb(), 'users', userId, 'settings', 'preferences');
 }
 
+export function profilePreferencesDoc(userId: string) {
+  return doc(getFirebaseDb(), 'users', userId, 'settings', 'profile');
+}
+
+export function subscriptionDoc(userId: string) {
+  return doc(getFirebaseDb(), 'users', userId, 'billing', 'subscription');
+}
+
+export function billingPaymentStatusDoc(userId: string) {
+  return doc(getFirebaseDb(), 'users', userId, 'billing', 'paymentStatus');
+}
+
 export function docToFeed(d: QueryDocumentSnapshot<DocumentData, DocumentData>): Feed {
   return { id: d.id, ...d.data() } as Feed;
 }
 
 export function docToMember(d: QueryDocumentSnapshot<DocumentData, DocumentData>): FeedMember {
-  return { id: d.id, ...d.data() } as FeedMember;
+  const member = { id: d.id, ...d.data() } as FeedMember;
+  return {
+    ...member,
+    profileImageUrl: normalizeLinkedInProfileImageUrl(member.profileImageUrl),
+  };
 }
 
 export function docToShareAccess(d: QueryDocumentSnapshot<DocumentData, DocumentData>): FeedShareAccess {

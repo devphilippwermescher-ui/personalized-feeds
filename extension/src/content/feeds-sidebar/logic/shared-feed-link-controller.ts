@@ -7,6 +7,7 @@ import {
   stripSharefeedFromLocation,
 } from './sharefeed-location';
 import { normalizeSharedFeed } from './profile-viewers-feed';
+import type { SharingLimitDetails } from 'shared/types';
 
 interface SharedFeedLinkControllerDeps {
   getCurrentUser: () => UserInfo | null;
@@ -18,18 +19,27 @@ interface SharedFeedLinkControllerDeps {
   renderSidebarContent: () => void;
   showToast: (message: string, type?: 'success' | 'error') => void;
   showFollowedModal: (feed: FeedInfo) => void;
+  showSharingLimit: (details: SharingLimitDetails) => void;
 }
 
-export function createSharedFeedLinkController(
-  deps: SharedFeedLinkControllerDeps
-): {
+export function createSharedFeedLinkController(deps: SharedFeedLinkControllerDeps): {
   handlePendingSharedFeedLink: () => Promise<void>;
   schedulePendingShareRetries: () => void;
+  stop: () => void;
 } {
-  let processedShareToken: string | null = null;
   let shareFollowInFlightToken: string | null = null;
   let retryIntervalId: number | null = null;
+  let locationPollIntervalId: number | null = null;
   let locationWatcherStarted = false;
+  let lastObservedDirectToken: string | null = null;
+  let handledTerminalToken: string | null = null;
+
+  const stopRetryWindow = (): void => {
+    if (retryIntervalId !== null) {
+      window.clearInterval(retryIntervalId);
+      retryIntervalId = null;
+    }
+  };
 
   const handlePendingSharedFeedLink = async (): Promise<void> => {
     if (!deps.getCurrentUser()) {
@@ -41,7 +51,7 @@ export function createSharedFeedLinkController(
     }
 
     const token = getSharefeedTokenFromLocation();
-    if (!token || processedShareToken === token || shareFollowInFlightToken === token) {
+    if (!token || shareFollowInFlightToken === token || handledTerminalToken === token) {
       return;
     }
 
@@ -50,38 +60,38 @@ export function createSharedFeedLinkController(
     try {
       const response = await deps.sendMsg({ type: 'FEEDS_FOLLOW_SHARE_LINK', token });
       if (!response?.success || !response.sharedFeed) {
+        const sharingLimit = response?.sharingLimit as SharingLimitDetails | undefined;
+        if (sharingLimit) {
+          handledTerminalToken = token;
+          stopRetryWindow();
+          stripSharefeedFromLocation();
+          deps.showSharingLimit(sharingLimit);
+          return;
+        }
         const error = (response?.error as string) || '';
-        const isRetryable =
-          error === SESSION_EXPIRED_MESSAGE ||
-          error.toLowerCase().includes('permission denied');
+        const isRetryable = error === SESSION_EXPIRED_MESSAGE || error.toLowerCase().includes('permission denied');
 
         if (!isRetryable) {
-          processedShareToken = token;
+          handledTerminalToken = token;
+          stopRetryWindow();
+          stripSharefeedFromLocation();
           deps.showToast(error || 'Failed to follow shared feed', 'error');
         }
         return;
       }
 
-      const sharedFeed = normalizeSharedFeed(
-        response.sharedFeed as FeedInfo & { role?: 'reader' | 'editor' }
-      );
+      const sharedFeed = normalizeSharedFeed(response.sharedFeed as FeedInfo & { role?: 'reader' | 'editor' });
 
-      if (
-        !deps
-          .getSharedFeeds()
-          .some(
-            (feed) =>
-              feed.id === sharedFeed.id && feed.ownerId === sharedFeed.ownerId
-          )
-      ) {
+      if (!deps.getSharedFeeds().some((feed) => feed.id === sharedFeed.id && feed.ownerId === sharedFeed.ownerId)) {
         deps.setSharedFeeds([sharedFeed, ...deps.getSharedFeeds()]);
       }
 
       deps.selectSharedTab();
       deps.renderSidebarContent();
       deps.showFollowedModal(sharedFeed);
+      handledTerminalToken = token;
+      stopRetryWindow();
       stripSharefeedFromLocation();
-      processedShareToken = null;
     } finally {
       if (shareFollowInFlightToken === token) {
         shareFollowInFlightToken = null;
@@ -110,10 +120,7 @@ export function createSharedFeedLinkController(
   };
 
   const handlePotentialSharefeedLocationChange = (event?: Event): void => {
-    const eventToken =
-      event instanceof HashChangeEvent
-        ? getSharefeedTokenFromHref(event.newURL)
-        : null;
+    const eventToken = event instanceof HashChangeEvent ? getSharefeedTokenFromHref(event.newURL) : null;
 
     if (eventToken) {
       storePendingSharefeedToken(eventToken);
@@ -136,18 +143,51 @@ export function createSharedFeedLinkController(
     window.addEventListener('hashchange', handlePotentialSharefeedLocationChange);
     window.addEventListener('popstate', handlePotentialSharefeedLocationChange);
     window.addEventListener('focus', handlePotentialSharefeedLocationChange);
-    document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'visible') {
-        handlePotentialSharefeedLocationChange();
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    locationPollIntervalId = window.setInterval(() => {
+      const directToken = getSharefeedTokenFromHref(window.location.href);
+      if (!directToken) {
+        lastObservedDirectToken = null;
+        if (!getSharefeedTokenFromLocation()) {
+          handledTerminalToken = null;
+        }
+        return;
       }
-    });
+      if (directToken === lastObservedDirectToken) return;
+
+      lastObservedDirectToken = directToken;
+      storePendingSharefeedToken(directToken);
+      void handlePendingSharedFeedLink();
+      startRetryWindow();
+    }, 250);
   };
+
+  function handleVisibilityChange(): void {
+    if (document.visibilityState === 'visible') {
+      handlePotentialSharefeedLocationChange();
+    }
+  }
 
   return {
     handlePendingSharedFeedLink,
     schedulePendingShareRetries: () => {
       startLocationWatcher();
       startRetryWindow();
+    },
+    stop: () => {
+      stopRetryWindow();
+      if (locationPollIntervalId !== null) {
+        window.clearInterval(locationPollIntervalId);
+        locationPollIntervalId = null;
+      }
+      window.removeEventListener('hashchange', handlePotentialSharefeedLocationChange);
+      window.removeEventListener('popstate', handlePotentialSharefeedLocationChange);
+      window.removeEventListener('focus', handlePotentialSharefeedLocationChange);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      locationWatcherStarted = false;
+      lastObservedDirectToken = null;
+      handledTerminalToken = null;
     },
   };
 }

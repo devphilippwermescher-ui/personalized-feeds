@@ -1,7 +1,9 @@
-import type { FeedInfo, UserInfo } from '../types';
+import type { EmailPasswordSignInInput, EmailPasswordSignUpInput, FeedInfo, UserInfo } from '../types';
 import {
   checkAuth,
   handleExpiredSession,
+  handleEmailSignIn,
+  handleEmailSignUp,
   handleSignIn,
   handleSignOut,
   SESSION_EXPIRED_MESSAGE,
@@ -19,17 +21,19 @@ interface SidebarAuthControllerDeps {
   setIsInitializing: (value: boolean) => void;
   renderSidebarContent: () => void;
   loadFeeds: () => Promise<void>;
+  loadPlan: (force?: boolean) => Promise<void>;
+  setIsPremium: (value: boolean) => void;
 }
 
 export function createSidebarAuthController(deps: SidebarAuthControllerDeps): {
   sendMsg: (message: Record<string, unknown>) => Promise<Record<string, unknown>>;
   checkAuth: () => Promise<void>;
   handleSignIn: () => Promise<void>;
+  handleEmailSignIn: (input: EmailPasswordSignInInput) => Promise<void>;
+  handleEmailSignUp: (input: EmailPasswordSignUpInput) => Promise<void>;
   handleSignOut: () => Promise<void>;
 } {
-  const sendMsg = (
-    message: Record<string, unknown>
-  ): Promise<Record<string, unknown>> =>
+  const sendMsg = (message: Record<string, unknown>): Promise<Record<string, unknown>> =>
     new Promise((resolve) => {
       chrome.runtime.sendMessage(message, (response) => {
         if (response?.error === SESSION_EXPIRED_MESSAGE) {
@@ -47,6 +51,7 @@ export function createSidebarAuthController(deps: SidebarAuthControllerDeps): {
             setAuthErrorMessage: deps.setAuthErrorMessage,
             setIsLoading: deps.setIsLoading,
             setIsInitializing: deps.setIsInitializing,
+            setIsPremium: deps.setIsPremium,
             renderSidebarContent: deps.renderSidebarContent,
           });
         }
@@ -54,6 +59,16 @@ export function createSidebarAuthController(deps: SidebarAuthControllerDeps): {
         resolve(response || {});
       });
     });
+
+  const authenticationDeps = {
+    sendMsg,
+    setIsLoading: deps.setIsLoading,
+    setAuthErrorMessage: deps.setAuthErrorMessage,
+    renderSidebarContent: deps.renderSidebarContent,
+    loadFeeds: deps.loadFeeds,
+    loadPlan: deps.loadPlan,
+    setCurrentUser: deps.setCurrentUser,
+  };
 
   return {
     sendMsg,
@@ -63,15 +78,9 @@ export function createSidebarAuthController(deps: SidebarAuthControllerDeps): {
         setCurrentUser: deps.setCurrentUser,
         setAuthErrorMessage: deps.setAuthErrorMessage,
       }),
-    handleSignIn: () =>
-      handleSignIn({
-        sendMsg,
-        setIsLoading: deps.setIsLoading,
-        setAuthErrorMessage: deps.setAuthErrorMessage,
-        renderSidebarContent: deps.renderSidebarContent,
-        loadFeeds: deps.loadFeeds,
-        setCurrentUser: deps.setCurrentUser,
-      }),
+    handleSignIn: () => handleSignIn(authenticationDeps),
+    handleEmailSignIn: (input) => handleEmailSignIn(input, authenticationDeps),
+    handleEmailSignUp: (input) => handleEmailSignUp(input, authenticationDeps),
     handleSignOut: () =>
       handleSignOut({
         sendMsg,
@@ -80,6 +89,7 @@ export function createSidebarAuthController(deps: SidebarAuthControllerDeps): {
           deps.setFeeds(feeds as FeedInfo[]);
           deps.resetSignedOutState();
         },
+        setIsPremium: deps.setIsPremium,
         renderSidebarContent: deps.renderSidebarContent,
       }),
   };

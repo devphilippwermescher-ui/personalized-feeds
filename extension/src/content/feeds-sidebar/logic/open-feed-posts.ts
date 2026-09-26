@@ -1,8 +1,5 @@
 import type { FeedInfo, FeedMemberInfo } from '../types';
-import {
-  buildLinkedInContentSearchUrl,
-  extractLinkedInMemberToken,
-} from './feed-posts';
+import { buildLinkedInContentSearchUrl, extractLinkedInMemberToken } from './feed-posts';
 
 const openInFlight = new Set<string>();
 
@@ -13,12 +10,10 @@ interface OpenFeedPostsDeps {
   resolveProfileUrn: (linkedinUsername: string) => Promise<string | null>;
   renderSidebarContent: () => void;
   showToast: (message: string, type?: 'success' | 'error') => void;
+  showPlanModal: () => void;
 }
 
-export async function openFeedPosts(
-  feedId: string,
-  deps: OpenFeedPostsDeps
-): Promise<void> {
+export async function openFeedPosts(feedId: string, deps: OpenFeedPostsDeps): Promise<void> {
   if (openInFlight.has(feedId)) {
     return;
   }
@@ -31,6 +26,10 @@ export async function openFeedPosts(
       deps.showToast('Feed not found', 'error');
       return;
     }
+    if (feed.isLockedByPlan) {
+      deps.showPlanModal();
+      return;
+    }
 
     let members = deps.getFeedMembersById()[feedId];
     if (!members && (feed.memberCount || 0) > 0) {
@@ -38,7 +37,7 @@ export async function openFeedPosts(
       members = deps.getFeedMembersById()[feedId];
     }
 
-    const loadedMembers = members || [];
+    const loadedMembers = (members || []).filter((member) => !member.isLockedByPlan);
     if (loadedMembers.length === 0) {
       deps.showToast('This feed has no profiles yet', 'error');
       return;

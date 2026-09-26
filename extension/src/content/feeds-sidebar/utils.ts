@@ -1,5 +1,6 @@
 import type { FeedMemberInfo } from './types';
 import { getLinkedInDomFollowState, getLinkedInDomStatus } from '../linkedin-dom-status';
+import { invalidateCacheForUser } from '../linkedin-relationship-status';
 
 export type MemberStatus = NonNullable<FeedMemberInfo['status']>;
 
@@ -20,6 +21,20 @@ export function getMemberStatus(member: FeedMemberInfo): MemberStatus {
   const domFollowState = getLinkedInDomFollowState(member);
   if (typeof domFollowState === 'boolean') {
     member.isFollowing = domFollowState;
+  }
+
+  if (
+    domStatus &&
+    domStatus !== member.status &&
+    member.status !== 'withdrawn' &&
+    member.status !== 'unavailable' &&
+    member.linkedinUsername
+  ) {
+    invalidateCacheForUser(member.linkedinUsername);
+    member.status = domStatus;
+    if (domStatus === 'pending' || domStatus === 'connected') {
+      member.canConnect = false;
+    }
   }
 
   if (member.status === 'withdrawn' && (domStatus === 'connect' || domStatus === 'following')) {

@@ -1,6 +1,7 @@
 import type { ChangeEventHandler, CSSProperties, ReactNode, Ref } from 'react';
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { Modal, type ModalTone, type ModalVariant } from 'shared/ui/modal';
 import type { LfsDropdownOption } from './dropdown';
 
 function cx(...parts: Array<string | false | null | undefined>): string {
@@ -82,6 +83,7 @@ interface LfsInputFieldProps {
   inputClassName?: string;
   onChange: ChangeEventHandler<HTMLInputElement>;
   inputRef?: Ref<HTMLInputElement>;
+  maxLength?: number;
 }
 
 interface LfsDropdownProps {
@@ -104,6 +106,7 @@ export function LfsInputField({
   inputClassName,
   onChange,
   inputRef,
+  maxLength,
 }: LfsInputFieldProps) {
   return (
     <label className={cx('lfs-field', className)}>
@@ -115,6 +118,7 @@ export function LfsInputField({
         type="text"
         value={value}
         placeholder={placeholder}
+        maxLength={maxLength}
         onChange={onChange}
       />
       {helper ? <span className="lfs-field__helper">{helper}</span> : null}
@@ -254,10 +258,19 @@ export function LfsDropdown({
           aria-controls={id}
           onClick={() => setOpen((current) => !current)}
         >
-          <span className={cx('lfs-dropdown__trigger-text', !selectedOption && 'lfs-dropdown__trigger-text--placeholder')}>
+          <span
+            className={cx('lfs-dropdown__trigger-text', !selectedOption && 'lfs-dropdown__trigger-text--placeholder')}
+          >
             {selectedOption?.label || placeholder}
           </span>
-          <svg className="lfs-dropdown__chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+          <svg
+            className="lfs-dropdown__chevron"
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+          >
             <path d="M4 6l4 4 4-4" />
           </svg>
         </button>
@@ -277,6 +290,8 @@ interface LfsModalProps {
   centeredTitle?: boolean;
   className?: string;
   bodyClassName?: string;
+  variant?: ModalVariant;
+  tone?: ModalTone;
   onClose: () => void;
 }
 
@@ -289,29 +304,34 @@ export function LfsModal({
   centeredTitle = false,
   className,
   bodyClassName,
+  variant,
+  tone,
   onClose,
 }: LfsModalProps) {
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        onClose();
-      }
-    };
-
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [onClose]);
-
   const hasTitle = title.trim().length > 0 || Boolean(titleIcon);
 
   return (
-    <div className="lfs-modal-overlay" onClick={(event) => event.target === event.currentTarget && onClose()}>
-      <div className={cx('lfs-modal', `lfs-modal--${size}`, className)}>
+    <Modal
+      title={title}
+      variant={variant}
+      tone={tone}
+      size={size}
+      onClose={onClose}
+      classNames={{
+        overlay: 'lfs-modal-overlay',
+        dialog: 'lfs-modal',
+        body: 'lfs-modal__body',
+        footer: 'lfs-modal__footer',
+      }}
+      dialogClassName={cx(`lfs-modal--${size}`, className)}
+      bodyClassName={bodyClassName}
+      footer={footer}
+      header={
         <div
           className={cx(
             'lfs-modal__header',
             centeredTitle && 'lfs-modal__header--centered',
-            !hasTitle && 'lfs-modal__header--icon-only',
+            !hasTitle && 'lfs-modal__header--icon-only'
           )}
         >
           <div className="lfs-modal__title-wrap">
@@ -324,9 +344,9 @@ export function LfsModal({
             </svg>
           </button>
         </div>
-        <div className={cx('lfs-modal__body', bodyClassName)}>{children}</div>
-        {footer ? <div className="lfs-modal__footer">{footer}</div> : null}
-      </div>
-    </div>
+      }
+    >
+      {children}
+    </Modal>
   );
 }

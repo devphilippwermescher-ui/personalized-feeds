@@ -4,6 +4,7 @@ import { FEEDS_CSS } from './styles/feeds';
 import { MEMBERS_CSS } from './styles/members';
 import { MODALS_CSS } from './styles/modals';
 import { EDITORSEARCH_CSS } from './styles/editor-search';
+import { BILLING_NOTICE_CSS } from './styles/billing-notice';
 
 export const FEEDS_SIDEBAR_CSS = [
   SHELL_CSS,
@@ -12,4 +13,5 @@ export const FEEDS_SIDEBAR_CSS = [
   MEMBERS_CSS,
   MODALS_CSS,
   EDITORSEARCH_CSS,
+  BILLING_NOTICE_CSS,
 ].join('');

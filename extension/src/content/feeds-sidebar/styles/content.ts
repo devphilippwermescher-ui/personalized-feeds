@@ -11,7 +11,7 @@ export const CONTENT_CSS = `.lfa-sidebar-content {
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 80px 40px 40px;
+    padding: 44px 40px 40px;
     text-align: center;
     flex: 1;
   }
@@ -31,6 +31,7 @@ export const CONTENT_CSS = `.lfa-sidebar-content {
     line-height: 1.5;
   }
   .lfa-signin-btn {
+    width: min(100%, 340px);
     background: #615DEC;
     color: #fff;
     border: none;
@@ -43,6 +44,154 @@ export const CONTENT_CSS = `.lfa-sidebar-content {
   }
   .lfa-signin-btn:hover {
     background: #504CC9;
+  }
+  .lfa-auth-form {
+    width: min(100%, 340px);
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .lfa-auth-field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    color: #374151;
+    font-size: 12px;
+    font-weight: 600;
+    text-align: left;
+  }
+  .lfa-auth-field small {
+    color: #9ca3af;
+    font-size: 10px;
+    font-weight: 500;
+  }
+  .lfa-auth-name-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 12px;
+  }
+  .lfa-auth-input {
+    appearance: none;
+    -webkit-appearance: none;
+    box-sizing: border-box;
+    width: 100%;
+    height: 42px;
+    border: 1px solid #d1d5db;
+    border-radius: 10px;
+    background: #ffffff;
+    color: #1a1a2e;
+    padding: 0 12px;
+    font: inherit;
+    font-size: 14px;
+    font-weight: 400;
+    outline: none;
+    transition: border-color 0.16s ease, box-shadow 0.16s ease;
+  }
+  .lfa-auth-input:focus {
+    border-color: #615dec;
+    box-shadow: 0 0 0 3px rgba(97, 93, 236, 0.14);
+  }
+  .lfa-auth-password-wrap {
+    position: relative;
+    display: block;
+  }
+  .lfa-auth-password-input {
+    padding-right: 42px;
+  }
+  .lfa-auth-password-toggle {
+    appearance: none;
+    -webkit-appearance: none;
+    position: absolute;
+    top: 50%;
+    right: 6px;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    transform: translateY(-50%);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: #9ca3af;
+    cursor: pointer;
+  }
+  .lfa-auth-password-toggle:hover,
+  .lfa-auth-password-toggle:focus-visible {
+    background: #f3f4f6;
+    color: #615dec;
+    outline: none;
+  }
+  .lfa-email-auth-submit {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 100%;
+    min-height: 42px;
+    border: 1px solid #615dec;
+    border-radius: 21px;
+    background: #ffffff;
+    color: #504cc9;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.16s ease, color 0.16s ease;
+  }
+  .lfa-email-auth-submit:hover {
+    background: #f5f4ff;
+  }
+  .lfa-auth-divider {
+    width: min(100%, 340px);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 18px 0;
+    color: #9ca3af;
+    font-size: 11px;
+  }
+  .lfa-auth-divider::before,
+  .lfa-auth-divider::after {
+    content: '';
+    height: 1px;
+    flex: 1;
+    background: #e5e7eb;
+  }
+  .lfa-auth-consent {
+    display: flex;
+    align-items: flex-start;
+    gap: 9px;
+    color: #6b7280;
+    font-size: 11px;
+    line-height: 1.4;
+    text-align: left;
+    cursor: pointer;
+  }
+  .lfa-auth-consent input {
+    width: 16px;
+    height: 16px;
+    margin: 0;
+    accent-color: #615dec;
+    flex: 0 0 auto;
+  }
+  .lfa-auth-switch {
+    margin: 16px 0 0;
+    color: #6b7280;
+    font-size: 12px;
+  }
+  .lfa-auth-switch button {
+    appearance: none;
+    -webkit-appearance: none;
+    border: none;
+    padding: 0;
+    background: transparent;
+    color: #615dec;
+    font: inherit;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .lfa-auth-switch button:hover {
+    color: #504cc9;
+    text-decoration: underline;
   }
   .lfa-sidebar-pro-promo {
     margin-top: 4px;
@@ -149,6 +298,56 @@ export const CONTENT_CSS = `.lfa-sidebar-content {
     flex-direction: column;
     flex: 1;
     min-height: 0;
+  }
+  .lfa-pro-footer {
+    flex-shrink: 0;
+    padding: 12px 14px 14px;
+    border-top: 1px solid #e5e7eb;
+    background: #ffffff;
+  }
+  .lfa-pro-footer-copy {
+    margin: 0 0 10px;
+    color: #6b7280;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.35;
+    text-align: center;
+  }
+  .lfa-pro-footer-btn {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 100%;
+    height: 42px;
+    margin: 0;
+    padding: 0 16px;
+    border: 1px solid rgba(217, 154, 0, 0.22);
+    border-radius: 12px;
+    background: linear-gradient(100deg, #ffe477 0%, #f6c93d 100%);
+    color: #201a0c;
+    box-shadow: 0 7px 16px rgba(199, 137, 8, 0.18);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 9px;
+    font-family: inherit;
+    font-size: 15px;
+    font-weight: 800;
+    line-height: 1;
+    cursor: pointer;
+    transition: box-shadow 0.16s ease, filter 0.16s ease;
+  }
+  .lfa-pro-footer-btn svg {
+    width: 21px;
+    height: 21px;
+    flex-shrink: 0;
+  }
+  .lfa-pro-footer-btn:hover {
+    filter: brightness(1.02);
+    box-shadow: 0 9px 20px rgba(199, 137, 8, 0.24);
+  }
+  .lfa-pro-footer-btn:focus-visible {
+    outline: 3px solid rgba(217, 154, 0, 0.24);
+    outline-offset: 2px;
   }
   .lfa-support-footer {
     flex-shrink: 0;
