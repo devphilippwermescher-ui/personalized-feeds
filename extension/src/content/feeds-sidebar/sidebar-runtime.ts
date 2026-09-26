@@ -31,6 +31,7 @@ import { createSidebarFeedActionsController } from './controllers/sidebar-feed-a
 import { createSidebarProfileViewersController } from './controllers/sidebar-profile-viewers-controller';
 import { registerPlanRuntimeController } from './controllers/plan-runtime-controller';
 import { createShareNotificationController } from './controllers/share-notification-controller';
+import { createBillingNoticeController } from './controllers/billing-notice-controller';
 
 export function startFeedsSidebar(): void {
   const DASHBOARD_URL = getDashboardOrigin();
@@ -370,6 +371,12 @@ export function startFeedsSidebar(): void {
     showToast,
   });
 
+  const billingNoticeController = createBillingNoticeController({
+    sendMsg,
+    isSidebarOpen: () => sidebarUiController?.isOpen() === true,
+    showError: (message) => showToast(message, 'error'),
+  });
+
   feedActionsController.attachFeedSyncListeners();
   registerPlanRuntimeController({
     getPlan: () => currentPlan,
@@ -406,5 +413,6 @@ export function startFeedsSidebar(): void {
     },
   });
   sidebarUiController.start();
+  billingNoticeController.start();
   shareNotificationController.start();
 }

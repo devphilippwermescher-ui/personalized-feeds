@@ -5,7 +5,9 @@ import type { BillingCurrency } from 'shared/types';
 export type BillingMessage =
   | { type: 'BILLING_OPEN_CHECKOUT'; interval: ProBillingInterval; currency: BillingCurrency }
   | { type: 'BILLING_OPEN_PRICING' }
-  | { type: 'BILLING_OPEN_PORTAL' };
+  | { type: 'BILLING_OPEN_PORTAL' }
+  | { type: 'BILLING_NOTICE_GET' }
+  | { type: 'BILLING_NOTICE_DISMISS'; noticeId: string };
 
 export interface BillingActionResponse {
   success: boolean;

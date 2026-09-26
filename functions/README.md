@@ -115,6 +115,13 @@ Use the same signing secret as `functions/.secret.local` and enable:
 - `subscription_cancelled`
 - `subscription_resumed`
 - `subscription_expired`
+- `subscription_payment_failed`
+- `subscription_payment_success`
+- `subscription_payment_recovered`
+
+Payment events are validated as Subscription invoice payloads. A failed payment creates a realtime billing warning
+without removing Pro access; success or recovery clears that warning. `subscription_updated` remains the source of
+truth for subscription status and entitlements.
 
 Subscription pausing is not part of the myFeedPilot billing flow. Keep the Pause option disabled in the Lemon
 Squeezy Customer Portal. An unexpected `paused` status received through `subscription_updated` fails closed to the

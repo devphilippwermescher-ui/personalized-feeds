@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { parseSubscriptionWebhookPayload, parseWebhookEnvelope } from '../webhook-schema.js';
+import {
+  parseSubscriptionInvoiceWebhookPayload,
+  parseSubscriptionWebhookPayload,
+  parseWebhookEnvelope,
+} from '../webhook-schema.js';
 
 function createPayload() {
   return {
@@ -50,5 +54,33 @@ describe('Lemon Squeezy webhook runtime schemas', () => {
 
     expect(() => parseSubscriptionWebhookPayload(unknownStatus)).toThrow();
     expect(() => parseSubscriptionWebhookPayload(invalidDate)).toThrow();
+  });
+
+  it('accepts subscription invoice payment events and rejects the wrong resource type', () => {
+    const payload = {
+      meta: { event_name: 'subscription_payment_failed' },
+      data: {
+        type: 'subscription-invoices',
+        id: 'invoice-1',
+        attributes: {
+          store_id: 42,
+          subscription_id: 123,
+          customer_id: 7,
+          user_email: 'customer@example.com',
+          billing_reason: 'renewal',
+          status: 'pending',
+          updated_at: '2026-09-26T12:00:00.000Z',
+          test_mode: true,
+        },
+      },
+    };
+
+    expect(parseSubscriptionInvoiceWebhookPayload(payload).data.id).toBe('invoice-1');
+    expect(() =>
+      parseSubscriptionInvoiceWebhookPayload({
+        ...payload,
+        data: { ...payload.data, type: 'subscriptions' },
+      })
+    ).toThrow();
   });
 });

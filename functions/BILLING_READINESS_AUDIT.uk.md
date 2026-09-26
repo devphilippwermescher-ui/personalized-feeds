@@ -91,13 +91,15 @@ Lemon Squeezy визначає `past_due` як період retry, а `unpaid` �
 
 #### Рекомендовані для billing history, support та monitoring
 
-- [ ] `subscription_payment_success`
-- [ ] `subscription_payment_failed`
-- [ ] `subscription_payment_recovered`
+- [x] `subscription_payment_success`
+- [x] `subscription_payment_failed`
+- [x] `subscription_payment_recovered`
 - [ ] `subscription_payment_refunded`
 - [ ] `order_refunded`
 
-Ці події не повинні проходити через поточний `Subscription` parser: payment events несуть `Subscription invoice object`, а refund order — `Order object`.^7 Для них потрібні окремі schema/parser/handler та окреме збереження billing history.
+Ці події не проходять через `Subscription` parser: payment events несуть `Subscription invoice object` і мають
+окремі schema/parser/handler. Поточний payment status зберігається окремо від entitlement state; refund order все ще
+потребує окремого handler та визначеної продуктової policy.^7
 
 Практична політика:
 
@@ -176,7 +178,8 @@ API key не можна зберігати в GitHub або client-side code; Le
 - [x] HTTPS.
 - [x] Signing secret відповідає staging Secret Manager.
 - [x] П’ять lifecycle events вибрані.
-- [ ] Payment/refund events додати після появи окремих handlers.
+- [x] Payment failed/success/recovered events додані через окремий invoice handler.
+- [ ] Payment refunded та order refunded додати після визначення refund policy.
 - [ ] Виконати test delivery та побачити 200.
 - [ ] Перевірити Resend того самого event: стан не дублюється і не регресує.
 - [ ] Перевірити 500/retry: Lemon Squeezy робить до трьох повторів після першої спроби з приблизними затримками 5, 25, 125 секунд.^11

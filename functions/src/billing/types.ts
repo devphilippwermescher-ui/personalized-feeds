@@ -26,6 +26,31 @@ export interface LemonSqueezySubscriptionWebhook {
   };
 }
 
+export type LemonSqueezyPaymentEventName =
+  | 'subscription_payment_failed'
+  | 'subscription_payment_success'
+  | 'subscription_payment_recovered';
+
+export interface LemonSqueezySubscriptionInvoiceWebhook {
+  meta: {
+    event_name: LemonSqueezyPaymentEventName;
+  };
+  data: {
+    type: 'subscription-invoices';
+    id: string;
+    attributes: {
+      store_id: number;
+      subscription_id: number;
+      customer_id: number;
+      user_email: string;
+      billing_reason: string;
+      status: 'pending' | 'paid' | 'void' | 'refunded' | 'partial_refund';
+      updated_at: string;
+      test_mode: boolean;
+    };
+  };
+}
+
 export interface LemonSqueezyWebhookEnvelope {
   meta: {
     event_name: string;

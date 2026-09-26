@@ -11,11 +11,14 @@ import { hasCurrentProAccess } from './billing/access-policy.js';
 import { claimPendingSubscriptions, saveSubscription } from './billing/firestore-subscription-repository.js';
 import { createBillingHandoff as createBillingHandoffRecord } from './billing/handoff-repository.js';
 import { createCheckout, getCustomerPortalUrl } from './billing/lemon-squeezy-api.js';
+import { isSubscriptionPaymentEvent, parseSubscriptionPaymentWebhook } from './billing/payment-event-state.js';
+import { savePaymentStatus } from './billing/payment-status-repository.js';
 import { isSubscriptionEvent, parseSubscriptionWebhook } from './billing/subscription-state.js';
 import { verifyWebhookSignature } from './billing/webhook-security.js';
 import {
   formatWebhookValidationError,
   isWebhookValidationError,
+  parseSubscriptionInvoiceWebhookPayload,
   parseSubscriptionWebhookPayload,
   parseWebhookEnvelope,
 } from './billing/webhook-schema.js';
@@ -220,12 +223,34 @@ export const lemonSqueezyWebhook = onRequest({ secrets: [lemonSqueezyWebhookSecr
     response.status(400).send('Webhook event header does not match the payload');
     return;
   }
-  if (!eventName || !isSubscriptionEvent(eventName)) {
+  if (!eventName || (!isSubscriptionEvent(eventName) && !isSubscriptionPaymentEvent(eventName))) {
     response.status(200).json({ received: true, processed: false });
     return;
   }
 
   try {
+    if (isSubscriptionPaymentEvent(eventName)) {
+      const payload = parseSubscriptionInvoiceWebhookPayload(request.body);
+      const paymentStatus = parseSubscriptionPaymentWebhook(payload, getBillingConfiguration());
+      const result = await savePaymentStatus({ db: getFirestore(), paymentStatus });
+      if (result === 'missing_user' || result === 'missing_subscription') {
+        logger.error('Payment webhook could not be linked to a Firebase subscription', {
+          subscriptionId: paymentStatus.subscriptionId,
+          invoiceId: paymentStatus.invoiceId,
+          eventName,
+          result,
+        });
+        response.status(500).send('Payment identity could not be resolved');
+        return;
+      }
+      response.status(200).json({
+        received: true,
+        processed: result === 'updated',
+        result,
+      });
+      return;
+    }
+
     const payload = parseSubscriptionWebhookPayload(request.body);
     const parsed = parseSubscriptionWebhook(payload, getBillingConfiguration());
     const result = await saveSubscription({
@@ -249,11 +274,11 @@ export const lemonSqueezyWebhook = onRequest({ secrets: [lemonSqueezyWebhookSecr
     });
   } catch (error) {
     if (isWebhookValidationError(error)) {
-      logger.warn('Rejected an invalid Lemon Squeezy subscription webhook', {
+      logger.warn('Rejected an invalid Lemon Squeezy billing webhook', {
         eventName,
         validationErrors: formatWebhookValidationError(error),
       });
-      response.status(400).send('Invalid subscription webhook payload');
+      response.status(400).send('Invalid billing webhook payload');
       return;
     }
     logger.error('Failed to process Lemon Squeezy webhook', { eventName, error });

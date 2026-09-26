@@ -167,6 +167,10 @@ export function subscriptionDoc(userId: string) {
   return doc(getFirebaseDb(), 'users', userId, 'billing', 'subscription');
 }
 
+export function billingPaymentStatusDoc(userId: string) {
+  return doc(getFirebaseDb(), 'users', userId, 'billing', 'paymentStatus');
+}
+
 export function docToFeed(d: QueryDocumentSnapshot<DocumentData, DocumentData>): Feed {
   return { id: d.id, ...d.data() } as Feed;
 }

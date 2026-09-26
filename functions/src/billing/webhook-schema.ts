@@ -1,5 +1,9 @@
 import { z } from 'zod';
-import type { LemonSqueezySubscriptionWebhook, LemonSqueezyWebhookEnvelope } from './types.js';
+import type {
+  LemonSqueezySubscriptionInvoiceWebhook,
+  LemonSqueezySubscriptionWebhook,
+  LemonSqueezyWebhookEnvelope,
+} from './types.js';
 
 const customDataSchema = z.record(z.unknown());
 const providerDateSchema = z.string().datetime({ offset: true });
@@ -36,12 +40,40 @@ const subscriptionWebhookSchema = webhookEnvelopeSchema.extend({
   }),
 });
 
+const subscriptionInvoiceWebhookSchema = webhookEnvelopeSchema.extend({
+  meta: z.object({
+    event_name: z.enum([
+      'subscription_payment_failed',
+      'subscription_payment_success',
+      'subscription_payment_recovered',
+    ]),
+  }),
+  data: z.object({
+    type: z.literal('subscription-invoices'),
+    id: z.string().min(1),
+    attributes: z.object({
+      store_id: z.number().int().positive(),
+      subscription_id: z.number().int().positive(),
+      customer_id: z.number().int().positive(),
+      user_email: z.string().email().max(320),
+      billing_reason: z.string().min(1),
+      status: z.enum(['pending', 'paid', 'void', 'refunded', 'partial_refund']),
+      updated_at: providerDateSchema,
+      test_mode: z.boolean(),
+    }),
+  }),
+});
+
 export function parseWebhookEnvelope(payload: unknown): LemonSqueezyWebhookEnvelope {
   return webhookEnvelopeSchema.parse(payload) as LemonSqueezyWebhookEnvelope;
 }
 
 export function parseSubscriptionWebhookPayload(payload: unknown): LemonSqueezySubscriptionWebhook {
   return subscriptionWebhookSchema.parse(payload) as LemonSqueezySubscriptionWebhook;
+}
+
+export function parseSubscriptionInvoiceWebhookPayload(payload: unknown): LemonSqueezySubscriptionInvoiceWebhook {
+  return subscriptionInvoiceWebhookSchema.parse(payload) as LemonSqueezySubscriptionInvoiceWebhook;
 }
 
 export function formatWebhookValidationError(error: unknown): string[] {

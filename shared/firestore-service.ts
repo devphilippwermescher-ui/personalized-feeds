@@ -9,3 +9,5 @@ export * from './firestore/profile-viewers';
 export * from './firestore/feeds';
 export * from './firestore/sharing';
 export * from './firestore/subscription';
+export * from './firestore/billing-notices';
+export * from './firestore/billing-payment-status';

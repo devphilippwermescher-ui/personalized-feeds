@@ -5,7 +5,13 @@ import {
   createBillingPricingUrl,
   getBillingPortalUrl,
 } from '../services/billing-functions-client';
+import {
+  dismissCurrentBillingNotice,
+  startPlanSubscriptionRuntime,
+} from '../services/plan-subscription-runtime';
 import type { BillingActionResponse, BillingMessage } from '../types';
+
+type BillingOpenMessage = Exclude<BillingMessage, { type: 'BILLING_NOTICE_GET' | 'BILLING_NOTICE_DISMISS' }>;
 
 function isBillingInterval(value: unknown): value is ProBillingInterval {
   return value === 'monthly' || value === 'annual';
@@ -13,17 +19,21 @@ function isBillingInterval(value: unknown): value is ProBillingInterval {
 
 function isBillingMessage(message: unknown): message is BillingMessage {
   if (!message || typeof message !== 'object' || !('type' in message)) return false;
-  const candidate = message as { type?: unknown; interval?: unknown; currency?: unknown };
+  const candidate = message as { type?: unknown; interval?: unknown; currency?: unknown; noticeId?: unknown };
   return (
     candidate.type === 'BILLING_OPEN_PRICING' ||
     candidate.type === 'BILLING_OPEN_PORTAL' ||
+    candidate.type === 'BILLING_NOTICE_GET' ||
+    (candidate.type === 'BILLING_NOTICE_DISMISS' &&
+      typeof candidate.noticeId === 'string' &&
+      candidate.noticeId.length <= 256) ||
     (candidate.type === 'BILLING_OPEN_CHECKOUT' &&
       isBillingInterval(candidate.interval) &&
       isBillingCurrency(candidate.currency))
   );
 }
 
-async function openBillingTab(message: BillingMessage): Promise<BillingActionResponse> {
+async function openBillingTab(message: BillingOpenMessage): Promise<BillingActionResponse> {
   let url: string;
   if (message.type === 'BILLING_OPEN_CHECKOUT') {
     url = await createBillingCheckoutUrl(message.interval, message.currency);
@@ -45,7 +55,14 @@ export function registerBillingMessageHandler(): void {
   chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) => {
     if (!isBillingMessage(message)) return false;
 
-    void openBillingTab(message)
+    const action =
+      message.type === 'BILLING_NOTICE_GET'
+        ? startPlanSubscriptionRuntime().then((notice) => ({ success: true, notice }))
+        : message.type === 'BILLING_NOTICE_DISMISS'
+          ? dismissCurrentBillingNotice(message.noticeId).then(() => ({ success: true }))
+          : openBillingTab(message);
+
+    void action
       .then(sendResponse)
       .catch((error) => {
         sendResponse({
