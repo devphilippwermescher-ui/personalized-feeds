@@ -36,7 +36,11 @@ export function renderFeedRow({ feed, expanded, previewHtml, expandedContentHtml
     : `${visibleEntryCount}`;
   const activeMemberCount = feed.activeMemberCount ?? feed.memberCount ?? 0;
   const lockedMemberCount = feed.lockedMemberCount ?? Math.max(0, (feed.memberCount || 0) - activeMemberCount);
+  const hasMemberOverflow = !isLockedByPlan && lockedMemberCount > 0;
   const planLimitTooltip = `${activeMemberCount} active ${activeMemberCount === 1 ? 'profile' : 'profiles'} and ${lockedMemberCount} locked. ${isShared ? 'The feed owner needs Pro' : 'Upgrade to Pro'} to unlock all profiles.`;
+  const feedLockTooltip = isShared
+    ? 'This feed is locked by the owner’s plan. The feed owner needs Pro to unlock it.'
+    : 'Free includes up to 3 custom feeds. Upgrade to Pro to unlock this feed.';
   const hiddenViewerDetails = [
     privateViewerCount > 0
       ? `${privateViewerCount} private-mode ${privateViewerCount === 1 ? 'visitor' : 'visitors'}`
@@ -62,7 +66,7 @@ export function renderFeedRow({ feed, expanded, previewHtml, expandedContentHtml
   const groupClasses = [
     'lfa-feed-group',
     isProfileViewers ? 'lfa-feed-group--system' : '',
-    lockedMemberCount > 0 ? 'lfa-feed-group--plan-limited' : '',
+    hasMemberOverflow ? 'lfa-feed-group--plan-limited' : '',
   ]
     .filter(Boolean)
     .join(' ');
@@ -97,7 +101,7 @@ export function renderFeedRow({ feed, expanded, previewHtml, expandedContentHtml
         <div class="lfa-feed-name-wrap">
           <div class="lfa-feed-title-row">
             <button class="lfa-feed-name" type="button">${escapeHtml(feed.name)}</button>
-            ${isLockedByPlan ? '<span class="lfa-feed-plan-lock" title="Locked by the feed owner’s plan">Locked</span>' : ''}
+            ${isLockedByPlan ? `<span class="lfa-feed-plan-lock" title="${escapeHtml(feedLockTooltip)}">Locked</span>` : ''}
             ${
               isProfileViewers
                 ? `
@@ -132,7 +136,7 @@ export function renderFeedRow({ feed, expanded, previewHtml, expandedContentHtml
                   <span class="lfa-profile-viewer-count-tooltip" role="tooltip">${escapeHtml(viewerCountTooltip)}</span>
                 </span>
               `
-              : lockedMemberCount > 0
+              : hasMemberOverflow
                 ? `
                   <span class="lfa-profile-viewer-count-wrap">
                     <span class="lfa-profile-viewer-count" tabindex="0" aria-label="${escapeHtml(planLimitTooltip)}">${activeMemberCount} / ${lockedMemberCount}</span>

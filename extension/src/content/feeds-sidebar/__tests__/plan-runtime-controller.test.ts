@@ -5,10 +5,19 @@ import { registerPlanRuntimeController } from '../controllers/plan-runtime-contr
 describe('sidebar plan runtime controller', () => {
   beforeEach(() => {
     document.body.innerHTML = '';
+    vi.stubGlobal('chrome', {
+      runtime: {
+        onMessage: {
+          addListener: vi.fn(),
+          removeListener: vi.fn(),
+        },
+      },
+    });
   });
 
   afterEach(() => {
     vi.useRealTimers();
+    vi.unstubAllGlobals();
   });
 
   it('refreshes the authoritative plan, rerenders the badge, and starts Pro features', async () => {
@@ -25,6 +34,7 @@ describe('sidebar plan runtime controller', () => {
       },
       renderSidebar,
       activateProFeatures,
+      deactivateProFeatures: vi.fn().mockResolvedValue(undefined),
     });
 
     requestPlanRefresh();
@@ -52,6 +62,7 @@ describe('sidebar plan runtime controller', () => {
       },
       renderSidebar,
       activateProFeatures,
+      deactivateProFeatures: vi.fn().mockResolvedValue(undefined),
     });
 
     requestPlanRefresh();
@@ -78,6 +89,7 @@ describe('sidebar plan runtime controller', () => {
       },
       renderSidebar: vi.fn(),
       activateProFeatures,
+      deactivateProFeatures: vi.fn().mockResolvedValue(undefined),
     });
 
     window.dispatchEvent(new Event('focus'));
@@ -86,6 +98,32 @@ describe('sidebar plan runtime controller', () => {
     expect(currentPlan).toBe('pro');
     expect(refreshPlan).toHaveBeenCalledTimes(2);
     expect(activateProFeatures).toHaveBeenCalledOnce();
+
+    unregister();
+  });
+
+  it('refreshes a Pro plan on focus and reloads plan-aware data after expiration', async () => {
+    let currentPlan: 'free' | 'pro' = 'pro';
+    const refreshPlan = vi.fn().mockResolvedValue('free');
+    const deactivateProFeatures = vi.fn().mockResolvedValue(undefined);
+    const unregister = registerPlanRuntimeController({
+      getPlan: () => currentPlan,
+      refreshPlan,
+      setPlan: (plan) => {
+        currentPlan = plan;
+      },
+      renderSidebar: vi.fn(),
+      activateProFeatures: vi.fn().mockResolvedValue(undefined),
+      deactivateProFeatures,
+    });
+
+    window.dispatchEvent(new Event('focus'));
+
+    await vi.waitFor(() => {
+      expect(currentPlan).toBe('free');
+      expect(deactivateProFeatures).toHaveBeenCalledOnce();
+    });
+    expect(refreshPlan).toHaveBeenCalledOnce();
 
     unregister();
   });

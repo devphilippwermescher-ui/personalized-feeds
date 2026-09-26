@@ -80,10 +80,30 @@ describe('renderFeedRow', () => {
 
     expect(html).toContain('lfa-feed-item--locked');
     expect(html).toContain('draggable="false"');
-    expect(html).toContain('>0 / 16</span>');
-    expect(html).toContain('0 active profiles and 16 locked');
-    expect(html).toContain('Upgrade to Pro to unlock all profiles.');
+    expect(html).toContain('>16</span>');
+    expect(html).not.toContain('>10 / 6</span>');
+    expect(html).not.toContain('lfa-profile-viewer-count-wrap');
+    expect(html).toContain('Free includes up to 3 custom feeds. Upgrade to Pro to unlock this feed.');
     expect(html).toContain('lfa-feed-plan-lock');
+  });
+
+  it('shows a plain total for a locked overflow feed that does not exceed the member limit', () => {
+    const html = renderFeedRow({
+      feed: makeFeed({
+        name: 'Fourth feed',
+        memberCount: 1,
+        activeMemberCount: 0,
+        lockedMemberCount: 1,
+        isLockedByPlan: true,
+      }),
+      expanded: false,
+      previewHtml: '',
+    });
+
+    expect(html).toContain('lfa-feed-item--locked');
+    expect(html).toContain('>1</span>');
+    expect(html).not.toContain('>0 / 1</span>');
+    expect(html).not.toContain('lfa-profile-viewer-count-wrap');
   });
 
   it('uses a compact active/locked count with the Profile Visitors tooltip style', () => {

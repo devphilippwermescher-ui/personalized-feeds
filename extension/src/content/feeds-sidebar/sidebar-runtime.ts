@@ -396,6 +396,14 @@ export function startFeedsSidebar(): void {
 
       renderSidebarContent();
     },
+    deactivateProFeatures: async () => {
+      try {
+        await loadFeeds();
+      } catch (error) {
+        console.warn('[plan] Failed to reload sidebar data after Pro expiration', error);
+      }
+      renderSidebarContent();
+    },
   });
   sidebarUiController.start();
   shareNotificationController.start();

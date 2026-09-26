@@ -7,6 +7,7 @@ interface PlanRuntimeControllerOptions {
   setPlan: (plan: AppPlan) => void;
   renderSidebar: () => void;
   activateProFeatures: () => Promise<void>;
+  deactivateProFeatures: () => Promise<void>;
 }
 
 export function registerPlanRuntimeController(options: PlanRuntimeControllerOptions): () => void {
@@ -35,6 +36,8 @@ export function registerPlanRuntimeController(options: PlanRuntimeControllerOpti
         if (previousPlan !== 'pro' && plan === 'pro') {
           clearRetryTimeouts();
           await options.activateProFeatures();
+        } else if (previousPlan === 'pro' && plan !== 'pro') {
+          await options.deactivateProFeatures();
         }
       })
       .catch((error) => {
@@ -50,7 +53,6 @@ export function registerPlanRuntimeController(options: PlanRuntimeControllerOpti
   };
 
   const scheduleRefreshBurst = (): void => {
-    if (options.getPlan() === 'pro') return;
     clearRetryTimeouts();
     refresh();
     retryTimeoutIds = [1_500, 4_000, 8_000].map((delay) =>
@@ -63,12 +65,17 @@ export function registerPlanRuntimeController(options: PlanRuntimeControllerOpti
   const handleVisibilityChange = (): void => {
     if (document.visibilityState === 'visible') scheduleRefreshBurst();
   };
+  const handleRuntimeMessage = (message: Record<string, unknown>): void => {
+    if (message.type === 'PLAN_SUBSCRIPTION_UPDATED') refresh();
+  };
   const unregisterRequestListener = onPlanRefreshRequested(scheduleRefreshBurst);
+  chrome.runtime.onMessage.addListener(handleRuntimeMessage);
   window.addEventListener('focus', scheduleRefreshBurst);
   document.addEventListener('visibilitychange', handleVisibilityChange);
 
   return () => {
     unregisterRequestListener();
+    chrome.runtime.onMessage.removeListener(handleRuntimeMessage);
     window.removeEventListener('focus', scheduleRefreshBurst);
     document.removeEventListener('visibilitychange', handleVisibilityChange);
     clearRetryTimeouts();
