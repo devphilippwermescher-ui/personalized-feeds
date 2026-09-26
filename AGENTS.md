@@ -20,6 +20,9 @@ Primary product behavior:
 
 ## Working Style
 
+- Prioritize implementation quality, architectural integrity, and long-term maintainability over delivery speed. It is acceptable for work to take longer when that is necessary to preserve feature boundaries, reuse existing abstractions, avoid duplication, and prevent technical debt.
+- Do not choose a locally faster implementation when it knowingly violates the architecture rules or duplicates existing behavior. If the correct implementation requires preliminary refactoring, perform a small behavior-preserving refactor first or explicitly surface the tradeoff before proceeding.
+- Before declaring a non-trivial change complete, perform a separate architecture review of the touched code: verify ownership and dependency direction, entrypoint responsibilities, feature boundaries and `public.ts` usage, reuse versus duplication, file responsibilities and size, and test placement. Passing tests, lint, type-check, and builds does not replace this review.
 - Prefer small, isolated changes.
 - Do not overwrite existing user changes.
 - Before editing, identify whether the work belongs to `extension`, `dashboard`, or `shared`.
