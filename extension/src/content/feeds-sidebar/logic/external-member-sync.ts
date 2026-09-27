@@ -14,10 +14,10 @@ interface ExternalMemberSyncDeps {
   loadFeeds: () => Promise<void>;
   loadFeedMembers: (feedId: string) => Promise<void>;
   renderSidebarContent: () => void;
-  fetchLinkedInRelationshipStatus: (
-    member: FeedMemberInfo
-  ) => Promise<Partial<FeedMemberInfo>>;
+  fetchLinkedInRelationshipStatus: (member: FeedMemberInfo) => Promise<Partial<FeedMemberInfo>>;
   updateRenderedMemberState: (feedId: string, member: FeedMemberInfo) => boolean;
+  getActiveMemberEditor: () => { feedId: string; member: FeedMemberInfo } | null;
+  setActiveMemberEditor: (value: null) => void;
 }
 
 let listenerAttached = false;
@@ -28,18 +28,62 @@ export function insertAddedMemberIntoCache(
 ): FeedMemberInfo[] {
   const incomingUsername = getCanonicalLinkedInUsername(incomingMember);
   const exists = existingMembers.some(
-    (member) =>
-      member.id === incomingMember.id ||
-      getCanonicalLinkedInUsername(member) === incomingUsername
+    (member) => member.id === incomingMember.id || getCanonicalLinkedInUsername(member) === incomingUsername
   );
 
   if (exists) {
     return existingMembers;
   }
 
-  return [incomingMember, ...existingMembers].sort(
-    (left, right) => (right.addedAt || 0) - (left.addedAt || 0)
-  );
+  return [incomingMember, ...existingMembers].sort((left, right) => (right.addedAt || 0) - (left.addedAt || 0));
+}
+
+export function applyRealtimeFeedMembers(
+  detail: { ownerId: string; feedId: string; memberCount: number; members: FeedMemberInfo[] },
+  deps: Pick<
+    ExternalMemberSyncDeps,
+    | 'getFeeds'
+    | 'setFeeds'
+    | 'getSharedFeeds'
+    | 'setSharedFeeds'
+    | 'getFeedMembersById'
+    | 'setFeedMembersById'
+    | 'getActiveMemberEditor'
+    | 'setActiveMemberEditor'
+    | 'renderSidebarContent'
+  >
+): boolean {
+  const matchesFeed = (feed: FeedInfo): boolean => feed.id === detail.feedId && feed.ownerId === detail.ownerId;
+  if (![...deps.getFeeds(), ...deps.getSharedFeeds()].some(matchesFeed)) return false;
+
+  const activeMemberCount = detail.members.filter((member) => !member.isLockedByPlan).length;
+  const updateFeed = (feed: FeedInfo): FeedInfo =>
+    matchesFeed(feed)
+      ? {
+          ...feed,
+          memberCount: detail.memberCount,
+          activeMemberCount,
+          lockedMemberCount: Math.max(0, detail.memberCount - activeMemberCount),
+        }
+      : feed;
+
+  deps.setFeeds(deps.getFeeds().map(updateFeed));
+  deps.setSharedFeeds(deps.getSharedFeeds().map(updateFeed));
+  deps.setFeedMembersById({
+    ...deps.getFeedMembersById(),
+    [detail.feedId]: detail.members,
+  });
+
+  const activeEditor = deps.getActiveMemberEditor();
+  if (
+    activeEditor?.feedId === detail.feedId &&
+    !detail.members.some((member) => member.id === activeEditor.member.id)
+  ) {
+    deps.setActiveMemberEditor(null);
+  }
+
+  deps.renderSidebarContent();
+  return true;
 }
 
 async function handleExternalMemberAdded(
@@ -60,10 +104,7 @@ async function handleExternalMemberAdded(
   if (!exists) {
     if (!hasCompleteLocalCache) {
       await deps.loadFeeds();
-      if (
-        deps.getExpandedFeedId() === detail.feedId &&
-        !deps.getFeedMembersById()[detail.feedId]
-      ) {
+      if (deps.getExpandedFeedId() === detail.feedId && !deps.getFeedMembersById()[detail.feedId]) {
         await deps.loadFeedMembers(detail.feedId);
       }
       deps.renderSidebarContent();
@@ -71,9 +112,7 @@ async function handleExternalMemberAdded(
     }
 
     const incrementMemberCount = (feed: FeedInfo): FeedInfo =>
-      feed.id === detail.feedId
-        ? { ...feed, memberCount: (feed.memberCount || 0) + 1 }
-        : feed;
+      feed.id === detail.feedId ? { ...feed, memberCount: (feed.memberCount || 0) + 1 } : feed;
     deps.setFeeds(deps.getFeeds().map(incrementMemberCount));
     deps.setSharedFeeds(deps.getSharedFeeds().map(incrementMemberCount));
     deps.setFeedMembersById({
@@ -89,10 +128,7 @@ async function handleExternalMemberAdded(
   }
 
   try {
-    Object.assign(
-      memberWithLoadingState,
-      await deps.fetchLinkedInRelationshipStatus(memberWithLoadingState)
-    );
+    Object.assign(memberWithLoadingState, await deps.fetchLinkedInRelationshipStatus(memberWithLoadingState));
   } catch {
     memberWithLoadingState.status = undefined;
     memberWithLoadingState.status = getMemberStatus(memberWithLoadingState);
@@ -119,4 +155,26 @@ export function attachFeedSyncListeners(deps: ExternalMemberSyncDeps): void {
       void handleExternalMemberAdded(customEvent.detail, deps);
     }
   }) as EventListener);
+
+  chrome.runtime.onMessage.addListener((message) => {
+    if (
+      message.type !== 'FEEDS_MEMBERS_UPDATED' ||
+      typeof message.ownerId !== 'string' ||
+      typeof message.feedId !== 'string' ||
+      typeof message.memberCount !== 'number' ||
+      !Array.isArray(message.members)
+    ) {
+      return;
+    }
+
+    applyRealtimeFeedMembers(
+      {
+        ownerId: message.ownerId,
+        feedId: message.feedId,
+        memberCount: message.memberCount,
+        members: message.members as FeedMemberInfo[],
+      },
+      deps
+    );
+  });
 }

@@ -32,7 +32,13 @@ service cloud.firestore {
 
       match /feeds/{feedId} {
         allow read: if hasFeedReadAccess(userId, feedId);
-        allow write: if isOwner(userId);
+        allow create, delete: if isOwner(userId);
+        allow update: if isOwner(userId) || (
+          hasFeedWriteAccess(userId, feedId) &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['memberCount', 'updatedAt']) &&
+          request.resource.data.memberCount is int &&
+          request.resource.data.memberCount >= 0
+        );
 
         match /members/{memberId} {
           allow read: if hasFeedReadAccess(userId, feedId);
@@ -41,20 +47,29 @@ service cloud.firestore {
 
         match /shares/{targetUid} {
           allow read: if isOwner(userId) || (signedIn() && request.auth.uid == targetUid);
-          allow create: if isOwner(userId) || (signedIn() && request.auth.uid == targetUid);
-          allow update: if isOwner(userId);
-          allow delete: if isOwner(userId) || (
-            signedIn() &&
-            request.auth.uid == targetUid &&
-            resource.data.targetUid == request.auth.uid
-          );
+          // Creation and removal run through callable Functions so both users'
+          // limits and usage counters change atomically.
+          allow create, delete: if false;
+          allow update: if isOwner(userId)
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['role', 'updatedAt'])
+            && request.resource.data.role in ['reader', 'editor'];
         }
       }
 
       match /followedFeeds/{followedFeedId} {
-        allow read, write: if isOwner(userId);
-        // Feed owners can remove a follower's reference to their own feed
-        allow delete: if signedIn() && resource.data.ownerId == request.auth.uid;
+        allow read: if isOwner(userId);
+        allow update: if isOwner(userId)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['role', 'sortOrder'])
+          && request.resource.data.role in ['reader', 'editor'];
+        allow create, delete: if false;
+      }
+
+      match /shareNotifications/{notificationId} {
+        allow read: if isOwner(userId);
+        allow update: if isOwner(userId)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt'])
+          && request.resource.data.status == 'dismissed';
+        allow create, delete: if false;
       }
 
       match /profileViewers/{viewerId} {
@@ -116,6 +131,7 @@ service cloud.firestore {
       match /settings/{settingId} {
         allow read, write: if isOwner(userId);
       }
+
     }
 
     match /emailIndex/{email} {
@@ -128,6 +144,18 @@ service cloud.firestore {
       allow create: if signedIn() && request.resource.data.ownerId == request.auth.uid;
       allow update: if false;
       allow delete: if signedIn() && resource.data.ownerId == request.auth.uid;
+    }
+
+    match /sharingUsage/{userId} {
+      allow read, write: if false;
+    }
+
+    match /sharingPairs/{pairId} {
+      allow read, write: if false;
+    }
+
+    match /sharingFeedUsage/{feedId} {
+      allow read, write: if false;
     }
   }
 }

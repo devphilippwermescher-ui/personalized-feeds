@@ -2,16 +2,7 @@ import type { FeedInfo } from '../types';
 import { renderLfsIconButton } from '../../../shared/ui';
 
 function renderFeedActionIcon(
-  action:
-    | 'edit'
-    | 'add'
-    | 'share'
-    | 'delete'
-    | 'duplicate'
-    | 'unfollow'
-    | 'refresh'
-    | 'confirm'
-    | 'cancel'
+  action: 'edit' | 'add' | 'share' | 'delete' | 'duplicate' | 'unfollow' | 'refresh' | 'confirm' | 'cancel'
 ): string {
   if (action === 'edit') {
     return `
@@ -155,9 +146,7 @@ export function renderFeedActions(feed: FeedInfo): string {
           variant: 'default',
           disabled: isRefreshing,
           dataAttributes: {
-            'feed-action': isRefreshing
-              ? 'refreshProfileViewers'
-              : 'refreshProfileViewersAsk',
+            'feed-action': isRefreshing ? 'refreshProfileViewers' : 'refreshProfileViewersAsk',
             'feed-id': feed.id,
           },
         })}
@@ -170,18 +159,22 @@ export function renderFeedActions(feed: FeedInfo): string {
     title: string;
     disabled?: boolean;
     danger?: boolean;
-  }> = feed.isShared
-    ? [
-        ...(feed.accessRole === 'editor' ? [{ key: 'add' as const, title: 'Add people' }] : []),
-        { key: 'duplicate', title: 'Duplicate feed' },
-        { key: 'unfollow', title: 'Unfollow feed', danger: true },
-      ]
-    : [
-        { key: 'edit', title: 'Edit feed' },
-        { key: 'add', title: 'Add people' },
-        { key: 'share', title: 'Share feed' },
-        { key: 'delete', title: 'Delete feed', danger: true },
-      ];
+  }> = feed.isLockedByPlan
+    ? feed.isShared
+      ? [{ key: 'unfollow', title: 'Unfollow feed', danger: true }]
+      : [{ key: 'delete', title: 'Delete feed', danger: true }]
+    : feed.isShared
+      ? [
+          ...(feed.accessRole === 'editor' ? [{ key: 'add' as const, title: 'Add people' }] : []),
+          { key: 'duplicate', title: 'Duplicate feed' },
+          { key: 'unfollow', title: 'Unfollow feed', danger: true },
+        ]
+      : [
+          { key: 'edit', title: 'Edit feed' },
+          { key: 'add', title: 'Add people' },
+          { key: 'share', title: 'Share feed' },
+          { key: 'delete', title: 'Delete feed', danger: true },
+        ];
 
   return `
     <div class="lfa-feed-actions">

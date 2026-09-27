@@ -1,4 +1,12 @@
-import type { FeedInfo, FeedMemberInfo, MemberEditorState, UserInfo } from '../types';
+import type {
+  EmailPasswordSignInInput,
+  EmailPasswordSignUpInput,
+  FeedInfo,
+  FeedMemberInfo,
+  MemberEditorState,
+  SidebarAuthMode,
+  UserInfo,
+} from '../types';
 import type { UserFeatureSettings } from 'shared/types';
 import { injectSharedStyles } from '../../../shared/ui';
 import { FEEDS_SIDEBAR_CSS } from '../styles';
@@ -17,14 +25,13 @@ import {
   renderSidebarInnerMarkup,
   restoreSidebarDomSnapshot,
 } from './sidebar-render';
-import {
-  ensureInit,
-  toggleSidebar,
-} from './sidebar-session';
+import { ensureInit, toggleSidebar } from './sidebar-session';
 import { getSharefeedTokenFromLocation } from './sharefeed-location';
 import { onFeatureSettingsChange } from '../../feature-settings';
 import type { FeedActionDeps } from './feed-actions';
 import type { MemberActionDeps } from './member-actions';
+import { openPlanModal } from '../../shared/plan-modal';
+import { openProfilePreferencesModal, PROFILE_PREFERENCES_UPDATED_EVENT } from '../../profile-preferences/public';
 
 interface SidebarUiControllerDeps {
   dashboardUrl: string;
@@ -45,15 +52,17 @@ interface SidebarUiControllerDeps {
   getIsInitializing: () => boolean;
   setIsInitializing: (value: boolean) => void;
   getIsPremium: () => boolean;
-  setIsPremium: (value: boolean) => void;
   getAuthErrorMessage: () => string;
   setAuthErrorMessage: (message: string) => void;
   sendMsg: (message: Record<string, unknown>) => Promise<Record<string, unknown>>;
   loadFeeds: () => Promise<void>;
   refreshSharedFeeds: () => Promise<void>;
   handleSignIn: () => Promise<void>;
+  handleEmailSignIn: (input: EmailPasswordSignInInput) => Promise<void>;
+  handleEmailSignUp: (input: EmailPasswordSignUpInput) => Promise<void>;
   handleSignOut: () => Promise<void>;
   checkAuth: () => Promise<void>;
+  loadPlan: (force?: boolean) => Promise<void>;
   schedulePendingShareRetries: () => void;
   renderFeedPreview: (feedId: string) => string;
   renderMembersList: (feed: FeedInfo) => string;
@@ -83,6 +92,7 @@ export function createSidebarUiController(deps: SidebarUiControllerDeps): {
   getSidebarEl: () => HTMLElement | null;
   isOpen: () => boolean;
   openSidebar: () => void;
+  selectFeedTab: (tab: 'owned' | 'shared') => void;
 } {
   let sidebarOpen = false;
   let sidebarEl: HTMLElement | null = null;
@@ -94,30 +104,24 @@ export function createSidebarUiController(deps: SidebarUiControllerDeps): {
   let draggedFeedId: string | null = null;
   let settingsMenuOpen = false;
   let accountMenuOpen = false;
+  let authMode: SidebarAuthMode = 'sign-in';
   let sidebarBindingsFrameId: number | null = null;
 
   const filterFeeds = (query: string): void => {
     sidebarSearchQuery = query;
     const normalizedQuery = query.trim().toLowerCase();
     document.querySelectorAll<HTMLElement>('.lfa-feed-group').forEach((group) => {
-      const name =
-        group.querySelector('.lfa-feed-name')?.textContent?.toLowerCase() || '';
-      group.style.display =
-        !normalizedQuery || name.includes(normalizedQuery) ? '' : 'none';
+      const name = group.querySelector('.lfa-feed-name')?.textContent?.toLowerCase() || '';
+      group.style.display = !normalizedQuery || name.includes(normalizedQuery) ? '' : 'none';
     });
   };
 
   const renderSidebarInner = (container: HTMLElement): void => {
+    if (deps.getCurrentUser()) authMode = 'sign-in';
     const previousRenderedExpandedFeedId = lastRenderedExpandedFeedId;
     const nextRenderedExpandedFeedId = deps.getExpandedFeedId();
-    const previousExpandedFeedHeight = getExpandedFeedGroupHeight(
-      container,
-      nextRenderedExpandedFeedId
-    );
-    const shouldCenterFeed = shouldCenterExpandedFeed(
-      previousRenderedExpandedFeedId,
-      nextRenderedExpandedFeedId
-    );
+    const previousExpandedFeedHeight = getExpandedFeedGroupHeight(container, nextRenderedExpandedFeedId);
+    const shouldCenterFeed = shouldCenterExpandedFeed(previousRenderedExpandedFeedId, nextRenderedExpandedFeedId);
     const snapshot = captureSidebarDomSnapshot(container, {
       feedListScrollTop,
       memberEditorScrollTop,
@@ -142,36 +146,26 @@ export function createSidebarUiController(deps: SidebarUiControllerDeps): {
       isInitializing: deps.getIsInitializing(),
       isPremium: deps.getIsPremium(),
       authErrorMessage: deps.getAuthErrorMessage(),
+      authMode,
       getLogoUrl,
     });
 
     if (settingsMenuOpen) {
-      container
-        .querySelector('#lfa-settings-menu')
-        ?.classList.add('lfa-settings-menu--open');
+      container.querySelector('#lfa-settings-menu')?.classList.add('lfa-settings-menu--open');
     }
     if (accountMenuOpen) {
-      container
-        .querySelector('#lfa-account-menu')
-        ?.classList.add('lfa-account-menu--open');
+      container.querySelector('#lfa-account-menu')?.classList.add('lfa-account-menu--open');
     }
 
     restoreSidebarDomSnapshot(container, snapshot, (restoredSnapshot) => {
       feedListScrollTop = restoredSnapshot.feedListScrollTop;
       memberEditorScrollTop = restoredSnapshot.memberEditorScrollTop;
       sidebarSearchQuery = restoredSnapshot.searchQuery;
-      const nextExpandedFeedHeight = getExpandedFeedGroupHeight(
-        container,
-        nextRenderedExpandedFeedId
-      );
+      const nextExpandedFeedHeight = getExpandedFeedGroupHeight(container, nextRenderedExpandedFeedId);
 
       if (
         nextRenderedExpandedFeedId &&
-        (shouldCenterFeed ||
-          didExpandedFeedHeightChange(
-            previousExpandedFeedHeight,
-            nextExpandedFeedHeight
-          ))
+        (shouldCenterFeed || didExpandedFeedHeightChange(previousExpandedFeedHeight, nextExpandedFeedHeight))
       ) {
         centerExpandedFeedInView(container, nextRenderedExpandedFeedId);
       }
@@ -187,27 +181,34 @@ export function createSidebarUiController(deps: SidebarUiControllerDeps): {
       bindSidebarDom(container, {
         toggleSidebar: toggle,
         handleSignIn: deps.handleSignIn,
+        handleEmailSignIn: (input) => {
+          void deps.handleEmailSignIn(input);
+        },
+        handleEmailSignUp: (input) => {
+          void deps.handleEmailSignUp(input);
+        },
+        showSignIn: () => {
+          authMode = 'sign-in';
+          deps.setAuthErrorMessage('');
+          renderSidebarContent();
+        },
+        showSignUp: () => {
+          authMode = 'sign-up';
+          deps.setAuthErrorMessage('');
+          renderSidebarContent();
+        },
         handleSignOut: deps.handleSignOut,
         showCreateFeedForm: deps.showCreateFeedForm,
-        selectFeedTab: (tab) => {
-          deps.setActiveFeedTab(tab);
-          deps.setExpandedFeedId(null);
-          deps.setActiveMemberEditor(null);
-          sidebarSearchQuery = '';
-          renderSidebarContent();
-
-          if (tab === 'shared') {
-            void deps.refreshSharedFeeds().then(() => {
-              if (deps.getActiveFeedTab() === 'shared') {
-                renderSidebarContent();
-              }
-            });
-          }
+        selectFeedTab,
+        openProfileSettings: () => {
+          void openProfilePreferencesModal().catch((error) => {
+            deps.showToast(
+              error instanceof Error ? error.message : 'Profile preferences could not be opened.',
+              'error'
+            );
+          });
         },
-        openProfileSettings: () =>
-          window.open(`${deps.dashboardUrl}/settings/profile`, '_blank'),
-        openSubscription: () =>
-          window.open(`${deps.dashboardUrl}/subscription`, '_blank'),
+        openManagePlan: () => openPlanModal({ plan: 'free', context: 'feeds' }),
         updateFeatureSetting: async (key, value) => {
           const response = await deps.sendMsg({
             type: 'SETTINGS_UPDATE',
@@ -215,10 +216,7 @@ export function createSidebarUiController(deps: SidebarUiControllerDeps): {
           });
 
           if (!response?.success) {
-            deps.showToast(
-              (response?.error as string) || 'Failed to update settings',
-              'error'
-            );
+            deps.showToast((response?.error as string) || 'Failed to update settings', 'error');
             renderSidebarContent();
             return;
           }
@@ -234,10 +232,8 @@ export function createSidebarUiController(deps: SidebarUiControllerDeps): {
         filterFeeds,
         toggleFeedExpansion: deps.toggleFeedExpansion,
         openFeedPosts: deps.openFeedPosts,
-        requestProfileViewersRefreshConfirmation:
-          deps.requestProfileViewersRefreshConfirmation,
-        cancelProfileViewersRefreshConfirmation:
-          deps.cancelProfileViewersRefreshConfirmation,
+        requestProfileViewersRefreshConfirmation: deps.requestProfileViewersRefreshConfirmation,
+        cancelProfileViewersRefreshConfirmation: deps.cancelProfileViewersRefreshConfirmation,
         refreshProfileViewers: deps.refreshProfileViewers,
         moveFeed: deps.moveFeed,
         showEditFeedModal: deps.showEditFeedModal,
@@ -248,10 +244,7 @@ export function createSidebarUiController(deps: SidebarUiControllerDeps): {
         deleteFeed: deps.deleteFeed,
         handleMemberDelete: deps.handleMemberDelete,
         openDashboard: () => window.open(deps.dashboardUrl, '_blank'),
-        getFeeds: () =>
-          deps.getActiveFeedTab() === 'owned'
-            ? deps.getFeeds()
-            : deps.getSharedFeeds(),
+        getFeeds: () => (deps.getActiveFeedTab() === 'owned' ? deps.getFeeds() : deps.getSharedFeeds()),
         getFeedMembersById: deps.getFeedMembersById,
         setActiveMemberEditor: deps.setActiveMemberEditor,
         getDraggedFeedId: () => draggedFeedId,
@@ -265,12 +258,6 @@ export function createSidebarUiController(deps: SidebarUiControllerDeps): {
           accountMenuOpen = value;
         },
         memberActionDeps: deps.getMemberActionDeps(),
-        togglePlan: () => {
-          const newPlan = deps.getIsPremium() ? 'free' : 'premium';
-          deps.setIsPremium(newPlan === 'premium');
-          chrome.storage.local.set({ pf_userPlan: newPlan });
-          renderSidebarContent();
-        },
       });
     });
   };
@@ -278,6 +265,22 @@ export function createSidebarUiController(deps: SidebarUiControllerDeps): {
   function renderSidebarContent(): void {
     if (sidebarEl) {
       renderSidebarInner(sidebarEl);
+    }
+  }
+
+  function selectFeedTab(tab: 'owned' | 'shared'): void {
+    deps.setActiveFeedTab(tab);
+    deps.setExpandedFeedId(null);
+    deps.setActiveMemberEditor(null);
+    sidebarSearchQuery = '';
+    renderSidebarContent();
+
+    if (tab === 'shared') {
+      void deps.refreshSharedFeeds().then(() => {
+        if (deps.getActiveFeedTab() === 'shared') {
+          renderSidebarContent();
+        }
+      });
     }
   }
 
@@ -293,10 +296,9 @@ export function createSidebarUiController(deps: SidebarUiControllerDeps): {
       getTriggerBtn: () => triggerBtn,
       setIsInitializing: deps.setIsInitializing,
       renderSidebarContent,
-      setIsPremium: deps.setIsPremium,
-      getIsPremium: deps.getIsPremium,
       getCurrentUser: deps.getCurrentUser,
       loadFeeds: deps.loadFeeds,
+      loadPlan: deps.loadPlan,
       sendMsg: deps.sendMsg,
       setCurrentUser: deps.setCurrentUser,
       setAuthErrorMessage: deps.setAuthErrorMessage,
@@ -321,6 +323,13 @@ export function createSidebarUiController(deps: SidebarUiControllerDeps): {
       if (sidebarOpen) {
         renderSidebarContent();
       }
+    });
+
+    document.addEventListener(PROFILE_PREFERENCES_UPDATED_EVENT, (event) => {
+      const updatedUser = (event as CustomEvent<{ user?: UserInfo }>).detail?.user;
+      if (!updatedUser || updatedUser.userId !== deps.getCurrentUser()?.userId) return;
+      deps.setCurrentUser(updatedUser);
+      if (sidebarOpen) renderSidebarContent();
     });
 
     const overlay = document.createElement('div');
@@ -351,6 +360,7 @@ export function createSidebarUiController(deps: SidebarUiControllerDeps): {
     renderSidebarContent,
     getSidebarEl: () => sidebarEl,
     isOpen: () => sidebarOpen,
+    selectFeedTab,
     openSidebar: () => {
       if (!sidebarEl) {
         init();
@@ -362,7 +372,6 @@ export function createSidebarUiController(deps: SidebarUiControllerDeps): {
     },
     start: () => {
       ensureInit({
-        setIsPremium: deps.setIsPremium,
         init,
       });
       deps.schedulePendingShareRetries();
@@ -370,15 +379,6 @@ export function createSidebarUiController(deps: SidebarUiControllerDeps): {
       if (getSharefeedTokenFromLocation()) {
         void deps.checkAuth();
       }
-
-      chrome.storage.onChanged.addListener((changes, area) => {
-        if (area === 'local' && changes.pf_userPlan) {
-          deps.setIsPremium(changes.pf_userPlan.newValue === 'premium');
-          if (sidebarOpen) {
-            renderSidebarContent();
-          }
-        }
-      });
     },
   };
 }

@@ -1,10 +1,5 @@
 import type { PostAuthorProfile } from './types';
-
-export function escapeHtml(text: string): string {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
-}
+export { escapeHtml } from '../shared/escape-html';
 
 export function getLinkedInUsernameFromUrl(urlValue: string): string {
   try {

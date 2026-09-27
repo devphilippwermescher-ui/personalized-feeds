@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { parseContentAnalyticsPostSummary } from '../content-analytics-post-summary-parser';
-import { isDashboardAnalyticsError } from '../../../background/dashboard-analytics/dashboard-analytics-errors';
+import { isDashboardAnalyticsError } from '../../../background/features/dashboard-analytics/dashboard-analytics-errors';
 import { buildPostSummaryRscFixture } from './fixtures/content-analytics-post-summary';
 
 describe('parseContentAnalyticsPostSummary', () => {

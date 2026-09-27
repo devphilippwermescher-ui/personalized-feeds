@@ -1,17 +1,28 @@
 import { bindLfsDropdowns } from '../../../shared/ui';
-import type { FeedInfo, FeedMemberInfo, MemberEditorState } from '../types';
+import type {
+  EmailPasswordSignInInput,
+  EmailPasswordSignUpInput,
+  FeedInfo,
+  FeedMemberInfo,
+  MemberEditorState,
+} from '../types';
 import type { UserFeatureSettings } from 'shared/types';
 import { getFeedScrollContainer } from './feed-expansion-motion';
 import { bindMemberActionButtons } from './member-actions';
+import { bindSidebarAuthForm } from './auth-form-bindings';
 
 interface SidebarDomBindingsDeps {
   toggleSidebar: () => void;
   handleSignIn: () => void;
+  handleEmailSignIn: (input: EmailPasswordSignInInput) => void;
+  handleEmailSignUp: (input: EmailPasswordSignUpInput) => void;
+  showSignIn: () => void;
+  showSignUp: () => void;
   handleSignOut: () => void;
   showCreateFeedForm: () => void;
   selectFeedTab: (tab: 'owned' | 'shared') => void;
   openProfileSettings: () => void;
-  openSubscription: () => void;
+  openManagePlan: () => void;
   updateFeatureSetting: (key: keyof UserFeatureSettings, value: boolean) => Promise<void>;
   renderSidebarContent: () => void;
   handleMemberSave: () => void;
@@ -38,27 +49,38 @@ interface SidebarDomBindingsDeps {
   setSettingsMenuOpen: (value: boolean) => void;
   setAccountMenuOpen: (value: boolean) => void;
   memberActionDeps: Parameters<typeof bindMemberActionButtons>[1];
-  togglePlan: () => void;
 }
 
 export function bindSidebarDom(container: HTMLElement, deps: SidebarDomBindingsDeps): void {
-  container.querySelector('#lfa-plan-toggle-btn')?.addEventListener('click', deps.togglePlan);
   container.querySelector('#lfa-open-popup-hint')?.addEventListener('click', (e) => e.preventDefault());
   container.querySelector('#lfa-open-dashboard-btn')?.addEventListener('click', deps.openDashboard);
   container.querySelector('#lfa-header-dashboard-btn')?.addEventListener('click', deps.openDashboard);
   container.querySelector('#lfa-toolbar-dashboard-btn')?.addEventListener('click', deps.openDashboard);
-  container.querySelector('#lfa-open-subscription-btn')?.addEventListener('click', deps.openSubscription);
-  container.querySelector('#lfa-open-subscription-activate')?.addEventListener('click', deps.openSubscription);
-  container.querySelector('#lfa-signin-btn')?.addEventListener('click', deps.handleSignIn);
+  bindSidebarAuthForm(container, {
+    handleGoogleSignIn: deps.handleSignIn,
+    handleEmailSignIn: deps.handleEmailSignIn,
+    handleEmailSignUp: deps.handleEmailSignUp,
+    showSignIn: deps.showSignIn,
+    showSignUp: deps.showSignUp,
+  });
   container.querySelector('#lfa-account-signout-btn')?.addEventListener('click', deps.handleSignOut);
+  container.querySelector('#lfa-manage-plan-btn')?.addEventListener('click', () => {
+    container.querySelector('#lfa-account-menu')?.classList.remove('lfa-account-menu--open');
+    deps.setAccountMenuOpen(false);
+    deps.openManagePlan();
+  });
+  container.querySelector('#lfa-footer-get-pro-btn')?.addEventListener('click', deps.openManagePlan);
   container.querySelector('#lfa-add-feed-btn')?.addEventListener('click', deps.showCreateFeedForm);
-  container.querySelector('#lfa-profile-settings-btn')?.addEventListener('click', deps.openProfileSettings);
+  container.querySelector('#lfa-profile-settings-btn')?.addEventListener('click', () => {
+    container.querySelector('#lfa-account-menu')?.classList.remove('lfa-account-menu--open');
+    deps.setAccountMenuOpen(false);
+    deps.openProfileSettings();
+  });
   container.querySelector('#lfa-manage-account-btn')?.addEventListener('click', () => {
     container.querySelector('#lfa-settings-menu')?.classList.remove('lfa-settings-menu--open');
     deps.setSettingsMenuOpen(false);
     deps.openProfileSettings();
   });
-  container.querySelector('#lfa-subscription-btn')?.addEventListener('click', deps.openSubscription);
   container.querySelector('#lfa-tab-owned')?.addEventListener('click', () => deps.selectFeedTab('owned'));
   container.querySelector('#lfa-tab-shared')?.addEventListener('click', () => deps.selectFeedTab('shared'));
   container.querySelector('#lfa-member-editor-back')?.addEventListener('click', () => {
@@ -96,6 +118,8 @@ function bindSettingsMenu(container: HTMLElement, deps: SidebarDomBindingsDeps):
 
   settingsBtn?.addEventListener('click', (event) => {
     event.stopPropagation();
+    container.querySelector('#lfa-account-menu')?.classList.remove('lfa-account-menu--open');
+    deps.setAccountMenuOpen(false);
     const isOpen = settingsMenu?.classList.toggle('lfa-settings-menu--open') ?? false;
     deps.setSettingsMenuOpen(isOpen);
   });
@@ -135,6 +159,8 @@ function bindAccountMenu(container: HTMLElement, deps: SidebarDomBindingsDeps): 
 
   accountBtn?.addEventListener('click', (event) => {
     event.stopPropagation();
+    container.querySelector('#lfa-settings-menu')?.classList.remove('lfa-settings-menu--open');
+    deps.setSettingsMenuOpen(false);
     const isOpen = accountMenu?.classList.toggle('lfa-account-menu--open') ?? false;
     deps.setAccountMenuOpen(isOpen);
   });

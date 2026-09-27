@@ -3,6 +3,11 @@ import { getMemberStatus } from '../utils';
 import type { FeedInfo, FeedMemberInfo } from '../types';
 import { bindMemberActionButtons, renderMemberStatusAction } from '../logic/member-action-render';
 import type { MemberActionDeps } from '../logic/member-action-types';
+import {
+  cacheStatus,
+  clearStatusCache,
+  getCachedStatus,
+} from '../../linkedin-relationship-status/cache';
 
 function member(overrides: Partial<FeedMemberInfo> = {}): FeedMemberInfo {
   return {
@@ -20,6 +25,40 @@ describe('getMemberStatus', () => {
   beforeEach(() => {
     window.history.pushState({}, '', '/in/yuliia-biliavtseva/');
     document.body.innerHTML = '';
+    clearStatusCache();
+  });
+
+  it('uses a native Pending link from the exact current profile and clears stale Connect cache', () => {
+    cacheStatus(
+      'yuliia-biliavtseva',
+      'connect',
+      undefined,
+      false,
+      true,
+      true,
+      false,
+      undefined,
+      false,
+      'https://media.licdn.com/avatar.jpg'
+    );
+    document.body.innerHTML = `
+      <section data-member-id="unrelated-member">
+        <h2>Suggested Person</h2>
+        <button aria-label="Invite Suggested Person to connect">Connect</button>
+      </section>
+      <section componentkey="Topcard-main">
+        <h1>Yuliia Biliavtseva</h1>
+        <a href="/in/yuliia-biliavtseva/">Yuliia Biliavtseva</a>
+        <a role="button" aria-label="Pending, click to withdraw invitation">Pending</a>
+      </section>
+    `;
+    const testMember = member({ status: 'connect', canConnect: true });
+
+    expect(getCachedStatus('yuliia-biliavtseva')?.status).toBe('connect');
+    expect(getMemberStatus(testMember)).toBe('pending');
+    expect(testMember.status).toBe('pending');
+    expect(testMember.canConnect).toBe(false);
+    expect(getCachedStatus('yuliia-biliavtseva')).toBeNull();
   });
 
   it('prefers the current LinkedIn profile DOM status over a stale stored status', () => {

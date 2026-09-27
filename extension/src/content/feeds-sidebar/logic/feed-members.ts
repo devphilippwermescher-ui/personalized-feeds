@@ -6,6 +6,7 @@ import { renderMemberStatusAction, renderMessageButton } from './member-actions'
 import { CONTENT_COPY } from '../../shared/copy';
 import { buildRecruiterAggregateMember } from './profile-viewers-feed';
 import type { ProfileViewerListItem, ProfileViewerSummary } from 'shared/types';
+import { escapeHtml } from '../../shared/escape-html';
 
 interface FeedMembersDeps {
   sendMsg: (message: Record<string, unknown>) => Promise<Record<string, unknown>>;
@@ -32,16 +33,15 @@ interface FeedMembersDeps {
   getFeeds: () => FeedInfo[];
 }
 
-function startBackgroundStatusRefresh(
-  feedId: string,
-  members: FeedMemberInfo[],
-  deps: FeedMembersDeps
-): void {
+function startBackgroundStatusRefresh(feedId: string, members: FeedMemberInfo[], deps: FeedMembersDeps): void {
   const feed = deps.getFeeds().find((item) => item.id === feedId);
   const isProfileViewers = feed?.systemType === 'profileViewers';
-  const profileMembers = members.some((member) => member.itemType && member.itemType !== 'profile')
-    ? members.filter((member) => !member.itemType || member.itemType === 'profile')
+  const unlockedMembers = members.some((member) => member.isLockedByPlan)
+    ? members.filter((member) => !member.isLockedByPlan)
     : members;
+  const profileMembers = unlockedMembers.some((member) => member.itemType && member.itemType !== 'profile')
+    ? unlockedMembers.filter((member) => !member.itemType || member.itemType === 'profile')
+    : unlockedMembers;
   if (profileMembers.length === 0) {
     return;
   }
@@ -50,36 +50,35 @@ function startBackgroundStatusRefresh(
   const controller = new AbortController();
   deps.setStatusFetchController(controller);
 
-  void deps.fetchStatusesProgressively(
-    profileMembers,
-    (member) => {
-      void deps.persistResolvedMemberState(feedId, member);
-      if (!deps.updateRenderedMemberState(feedId, member)) {
-        deps.renderSidebarContent();
+  void deps
+    .fetchStatusesProgressively(
+      profileMembers,
+      (member) => {
+        void deps.persistResolvedMemberState(feedId, member);
+        if (!deps.updateRenderedMemberState(feedId, member)) {
+          deps.renderSidebarContent();
+        }
+      },
+      controller.signal,
+      isProfileViewers ? { preserveExistingPremium: true } : undefined
+    )
+    .finally(() => {
+      if (deps.getStatusFetchController() === controller) {
+        deps.setStatusFetchController(null);
       }
-    },
-    controller.signal,
-    isProfileViewers ? { preserveExistingPremium: true } : undefined
-  ).finally(() => {
-    if (deps.getStatusFetchController() === controller) {
-      deps.setStatusFetchController(null);
-    }
-  });
+    });
 }
 
 function profileViewerToMember(viewer: Partial<FeedMemberInfo> | ProfileViewerListItem): FeedMemberInfo | null {
   const itemType = 'itemType' in viewer ? viewer.itemType : undefined;
   const isSearchItem = 'searchUrl' in viewer || itemType === 'search';
   const linkedinUrl = isSearchItem
-    ? ('searchUrl' in viewer ? viewer.searchUrl : viewer.linkedinUrl)
+    ? 'searchUrl' in viewer
+      ? viewer.searchUrl
+      : viewer.linkedinUrl
     : viewer.linkedinUrl;
 
-  if (
-    !viewer.id ||
-    !linkedinUrl ||
-    !viewer.displayName ||
-    (!isSearchItem && !viewer.linkedinUsername)
-  ) {
+  if (!viewer.id || !linkedinUrl || !viewer.displayName || (!isSearchItem && !viewer.linkedinUsername)) {
     return null;
   }
 
@@ -139,9 +138,7 @@ export async function loadFeedMembers(feedId: string, deps: FeedMembersDeps): Pr
     const recruiterAggregateMember = buildRecruiterAggregateMember(
       (resp?.summary as ProfileViewerSummary | null | undefined) || null
     );
-    const nextMembers = recruiterAggregateMember
-      ? [recruiterAggregateMember, ...members]
-      : members;
+    const nextMembers = recruiterAggregateMember ? [recruiterAggregateMember, ...members] : members;
 
     deps.setFeedMembersById({
       ...deps.getFeedMembersById(),
@@ -156,7 +153,11 @@ export async function loadFeedMembers(feedId: string, deps: FeedMembersDeps): Pr
   const resp = await deps.sendMsg({ type: 'FEEDS_GET_MEMBERS', ownerId: feed?.ownerId, feedId });
   const members = ((resp?.members as FeedMemberInfo[]) || []).map((member) => ({
     ...member,
-    status: !feed?.isShared ? ('loading' as const) : member.status || ('loading' as const),
+    status: member.isLockedByPlan
+      ? member.status
+      : !feed?.isShared
+        ? ('loading' as const)
+        : member.status || ('loading' as const),
   }));
 
   deps.setFeedMembersById({
@@ -170,6 +171,10 @@ export async function loadFeedMembers(feedId: string, deps: FeedMembersDeps): Pr
   deps.setLoadingMembersFeedId(null);
   deps.renderSidebarContent();
 
+  if (feed?.ownerId) {
+    void deps.sendMsg({ type: 'FEEDS_WATCH_MEMBERS', ownerId: feed.ownerId, feedId });
+  }
+
   // Relationship statuses belong to the owner's context; don't resolve or persist them
   // when a recipient is browsing a shared feed.
   if (!feed?.isShared) {
@@ -179,6 +184,10 @@ export async function loadFeedMembers(feedId: string, deps: FeedMembersDeps): Pr
 
 export async function toggleFeedExpansion(feedId: string, deps: FeedMembersDeps): Promise<void> {
   if (deps.getExpandedFeedId() === feedId) {
+    const currentFeed = deps.getFeeds().find((item) => item.id === feedId);
+    if (currentFeed?.ownerId && currentFeed.systemType !== 'profileViewers') {
+      void deps.sendMsg({ type: 'FEEDS_UNWATCH_MEMBERS', ownerId: currentFeed.ownerId, feedId });
+    }
     deps.setExpandedFeedId(null);
     deps.setActiveMemberEditor(null);
     deps.getStatusFetchController()?.abort();
@@ -200,10 +209,9 @@ export async function toggleFeedExpansion(feedId: string, deps: FeedMembersDeps)
   const isProfileViewersFeed = feed?.systemType === 'profileViewers';
   let membersForRefresh = cachedMembers;
   if (!feed?.isShared && !isProfileViewersFeed && cachedMembers.length > 0) {
-    membersForRefresh = cachedMembers.map((member) => ({
-      ...member,
-      status: 'loading' as const,
-    }));
+    membersForRefresh = cachedMembers.map((member) =>
+      member.isLockedByPlan ? member : { ...member, status: 'loading' as const }
+    );
     deps.setFeedMembersById({
       ...deps.getFeedMembersById(),
       [feedId]: membersForRefresh,
@@ -211,9 +219,7 @@ export async function toggleFeedExpansion(feedId: string, deps: FeedMembersDeps)
   }
   const retryState = deps.getFeedMembersRetryState();
   const shouldRetryEmptyState =
-    cachedMembers.length === 0 &&
-    (feed?.memberCount || 0) > 0 &&
-    retryState[feedId] !== true;
+    cachedMembers.length === 0 && (feed?.memberCount || 0) > 0 && retryState[feedId] !== true;
 
   if (shouldRetryEmptyState) {
     deps.setFeedMembersRetryState({
@@ -225,9 +231,25 @@ export async function toggleFeedExpansion(feedId: string, deps: FeedMembersDeps)
   }
 
   deps.renderSidebarContent();
+  if (feed?.ownerId && feed.systemType !== 'profileViewers') {
+    void deps.sendMsg({ type: 'FEEDS_WATCH_MEMBERS', ownerId: feed.ownerId, feedId });
+  }
   if (!feed?.isShared && !isProfileViewersFeed) {
     startBackgroundStatusRefresh(feedId, membersForRefresh, deps);
   }
+}
+
+function renderFeedExpandedHeader(feed: FeedInfo): string {
+  const actionsHtml = renderFeedActions(feed);
+  if (!actionsHtml.trim()) {
+    return '';
+  }
+
+  return `
+    <div class="lfa-feed-expanded-header">
+      ${actionsHtml}
+    </div>
+  `;
 }
 
 export function renderMembersList(
@@ -238,9 +260,7 @@ export function renderMembersList(
 ): string {
   if (deps.getLoadingMembersFeedId() === feed.id) {
     return `
-      <div class="lfa-feed-expanded-header">
-        ${renderFeedActions(feed)}
-      </div>
+      ${renderFeedExpandedHeader(feed)}
       <div class="lfa-feed-members-state">
         <div class="lfa-spinner lfa-spinner--small"></div>
         <p>${CONTENT_COPY.common.loadingProfiles}</p>
@@ -254,9 +274,7 @@ export function renderMembersList(
 
   if (members.length === 0) {
     return `
-      <div class="lfa-feed-expanded-header">
-        ${renderFeedActions(feed)}
-      </div>
+      ${renderFeedExpandedHeader(feed)}
       <div class="lfa-feed-members-empty">
         ${CONTENT_COPY.feedModals.emptyProfilesHint}
       </div>
@@ -264,13 +282,12 @@ export function renderMembersList(
   }
 
   return `
-    <div class="lfa-feed-expanded-header">
-      ${renderFeedActions(feed)}
-    </div>
+    ${renderFeedExpandedHeader(feed)}
     <div class="lfa-feed-members-list">
       ${members
         .map((member) => {
           const status = getMemberStatus(member);
+          const isLocked = member.isLockedByPlan === true;
           if (member.itemType === 'search' || member.itemType === 'recruiterAggregate') {
             return renderMemberRow({
               feedId: feed.id,
@@ -279,6 +296,7 @@ export function renderMembersList(
               statusActionHtml: '',
               canEdit: false,
               showMeta: true,
+              isLocked,
             });
           }
 
@@ -287,13 +305,16 @@ export function renderMembersList(
           });
           // Relationship badges reflect the owner's connection context.
           // In shared feeds the recipient's relationship is unknown, so hide them entirely.
-          const showStatusAction = !feed.isShared && canEditMembers;
+          const showStatusAction = !feed.isShared && canEditMembers && !isLocked;
           return renderMemberRow({
             feedId: feed.id,
             member,
-            messageButtonHtml: showMessagingButtons ? renderMessageButton(feed.id, member, canMessage) : '',
+            messageButtonHtml:
+              showMessagingButtons && !isLocked ? renderMessageButton(feed.id, member, canMessage) : '',
             statusActionHtml: showStatusAction ? renderMemberStatusAction(feed.id, member, status) : '',
-            canEdit: canEditMembers,
+            canEdit: canEditMembers && !isLocked,
+            canRemove: !feed.isShared && isLocked,
+            isLocked,
             showMeta: false,
           });
         })
@@ -303,7 +324,7 @@ export function renderMembersList(
 }
 
 export function renderFeedPreview(feedId: string, feedMembersById: Record<string, FeedMemberInfo[]>): string {
-  const members = (feedMembersById[feedId] || []).slice(0, 3);
+  const members = (feedMembersById[feedId] || []).filter((member) => !member.isLockedByPlan).slice(0, 3);
   if (members.length === 0) {
     return '';
   }
@@ -320,16 +341,10 @@ export function renderFeedPreview(feedId: string, feedMembersById: Record<string
                 </svg>
               </div>`
             : member.profileImageUrl
-            ? `<img class="lfa-feed-preview-avatar" src="${escapeHtml(member.profileImageUrl)}" alt="${escapeHtml(member.displayName)}" data-lfa-avatar-img="true" /><div class="lfa-feed-preview-avatar lfa-feed-preview-avatar--fallback" style="display:none;">${escapeHtml(getMemberInitials(member.displayName))}</div>`
-            : `<div class="lfa-feed-preview-avatar lfa-feed-preview-avatar--fallback">${escapeHtml(getMemberInitials(member.displayName))}</div>`
+              ? `<img class="lfa-feed-preview-avatar" src="${escapeHtml(member.profileImageUrl)}" alt="${escapeHtml(member.displayName)}" data-lfa-avatar-img="true" /><div class="lfa-feed-preview-avatar lfa-feed-preview-avatar--fallback" style="display:none;">${escapeHtml(getMemberInitials(member.displayName))}</div>`
+              : `<div class="lfa-feed-preview-avatar lfa-feed-preview-avatar--fallback">${escapeHtml(getMemberInitials(member.displayName))}</div>`
         )
         .join('')}
     </div>
   `;
-}
-
-function escapeHtml(text: string): string {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
 }

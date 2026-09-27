@@ -23,7 +23,7 @@ async function bootstrap() {
 
   try {
     const [{ ErrorBoundary }, { default: App }, _] = await Promise.all([
-      import('./components/ErrorBoundary'),
+      import('./app/components/ErrorBoundary'),
       import('./App'),
       import('./styles/global.css'),
     ]);

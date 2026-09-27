@@ -1,13 +1,16 @@
 import { GRAPHQL_QUERY_IDS } from './constants';
-import { parseGraphQLRelationshipStatus, parseProfileImageUrlFromHtml, parseStatusFromCodeBlocks, parseStatusFromRegex, parseStatusFromRehydration } from './parsers';
+import {
+  parseGraphQLRelationshipStatus,
+  parseProfileImageUrlFromHtml,
+  parseStatusFromCodeBlocks,
+  parseStatusFromRegex,
+  parseStatusFromRehydration,
+} from './parsers';
 import { isLinkedInBlockedOrChallengeHtml, isLinkedInProfileUnavailableHtml } from './profile-page-state';
 import { decodeHtmlEntities, getCsrfToken } from './utils';
 import type { RelationshipResolution } from './types';
 import { getUsernameFromLinkedInUrl, normalizeLinkedInUsername } from '../../../../shared/linkedin-identity';
-import {
-  getLinkedInStatusFetchErrorCode,
-  LinkedInStatusFetchError,
-} from './errors';
+import { getLinkedInStatusFetchErrorCode, LinkedInStatusFetchError } from './errors';
 
 /**
  * Usernames stored in Firestore may already be percent-encoded
@@ -19,7 +22,11 @@ import {
  */
 function safeEncodeUsername(username: string): string {
   let decoded = username;
-  try { decoded = decodeURIComponent(username); } catch { /* keep original */ }
+  try {
+    decoded = decodeURIComponent(username);
+  } catch {
+    /* keep original */
+  }
   return encodeURIComponent(decoded);
 }
 
@@ -157,11 +164,10 @@ export async function fetchStatusFromProfilePage(
   const decodedHtml = decodeHtmlEntities(html);
   const withProfileImageUrl = (result: RelationshipResolution): RelationshipResolution => ({
     ...result,
-    profileImageUrl: result.profileImageUrl || parseProfileImageUrlFromHtml(html, targetProfileUrn || result.profileUrn),
+    profileImageUrl:
+      result.profileImageUrl || parseProfileImageUrlFromHtml(html, targetProfileUrn || result.profileUrn),
   });
-  const ctaPreview = Array.from(
-    new Set((decodedHtml.match(/aria-label="[^"]{1,160}"/g) || []).slice(0, 20))
-  );
+  const ctaPreview = Array.from(new Set((decodedHtml.match(/aria-label="[^"]{1,160}"/g) || []).slice(0, 20)));
   const htmlSignals = {
     hasMessageCta: /aria-label="Message [^"]+"/i.test(decodedHtml) || />\s*Message\s*</i.test(decodedHtml),
     hasConnectCta:
@@ -169,11 +175,8 @@ export async function fetchStatusFromProfilePage(
       /aria-label="Connect[^"]*"/i.test(decodedHtml) ||
       />\s*Connect\s*</i.test(decodedHtml),
     hasPendingCta:
-      /aria-label="Pending[^"]*withdraw invitation/i.test(decodedHtml) ||
-      />\s*Pending\s*</i.test(decodedHtml),
-    hasFirstDegree:
-      />\s*1st\s*</i.test(decodedHtml) ||
-      /1st degree connection/i.test(decodedHtml),
+      /aria-label="Pending[^"]*withdraw invitation/i.test(decodedHtml) || />\s*Pending\s*</i.test(decodedHtml),
+    hasFirstDegree: />\s*1st\s*</i.test(decodedHtml) || /1st degree connection/i.test(decodedHtml),
     hasSecondOrThirdDegree:
       />\s*2nd\s*</i.test(decodedHtml) ||
       />\s*3rd\s*</i.test(decodedHtml) ||
@@ -184,10 +187,7 @@ export async function fetchStatusFromProfilePage(
 
   if (isLinkedInBlockedOrChallengeHtml(html)) {
     console.warn(`[LFS] ${username}: LinkedIn profile page appears blocked/challenged`, htmlSignals);
-    throw new LinkedInStatusFetchError(
-      'LinkedIn profile page appears blocked or challenged',
-      'blocked'
-    );
+    throw new LinkedInStatusFetchError('LinkedIn profile page appears blocked or challenged', 'blocked');
   }
 
   if (isLinkedInProfileUnavailableHtml(html)) {
@@ -196,29 +196,23 @@ export async function fetchStatusFromProfilePage(
 
   const rehydrationResult = parseStatusFromRehydration(html);
   if (rehydrationResult) {
-    console.log(`[LFS] ${username}: status=${rehydrationResult.status} (from __como_rehydration__)`, htmlSignals);
     return withProfileImageUrl(rehydrationResult);
   }
 
   const jsonResult = parseStatusFromCodeBlocks(html);
   if (jsonResult) {
-    console.log(`[LFS] ${username}: status=${jsonResult.status} (from code blocks)`, htmlSignals);
     return withProfileImageUrl(jsonResult);
   }
 
   const regexResult = parseStatusFromRegex(html);
   if (regexResult) {
-    console.log(`[LFS] ${username}: status=${regexResult.status} (from regex: ${regexResult.reason})`, htmlSignals);
     return withProfileImageUrl(regexResult);
   }
 
-  console.log(`[LFS] ${username}: no status found in HTML`, htmlSignals);
   return null;
 }
 
-export async function fetchUnavailableStatusFromProfilePage(
-  username: string
-): Promise<RelationshipResolution | null> {
+export async function fetchUnavailableStatusFromProfilePage(username: string): Promise<RelationshipResolution | null> {
   const url = buildLinkedInProfileUrl(username);
 
   const response = await fetch(url, {
@@ -247,10 +241,7 @@ export async function fetchUnavailableStatusFromProfilePage(
 
   const html = await response.text();
   if (isLinkedInBlockedOrChallengeHtml(html)) {
-    throw new LinkedInStatusFetchError(
-      'LinkedIn profile page appears blocked or challenged',
-      'blocked'
-    );
+    throw new LinkedInStatusFetchError('LinkedIn profile page appears blocked or challenged', 'blocked');
   }
 
   if (isLinkedInProfileUnavailableHtml(html)) {
@@ -260,10 +251,7 @@ export async function fetchUnavailableStatusFromProfilePage(
   return null;
 }
 
-export async function fetchProfileImageFromProfilePage(
-  username: string,
-  targetProfileUrn?: string
-): Promise<string> {
+export async function fetchProfileImageFromProfilePage(username: string, targetProfileUrn?: string): Promise<string> {
   const url = buildLinkedInProfileUrl(username);
 
   const response = await fetch(url, {
@@ -280,14 +268,10 @@ export async function fetchProfileImageFromProfilePage(
 
   const html = await response.text();
   const profileImageUrl = parseProfileImageUrlFromHtml(html, targetProfileUrn);
-  console.log(`[LFS] ${username}: profile image ${profileImageUrl ? 'found' : 'not found'} (HTML fallback)`);
   return profileImageUrl;
 }
 
-export async function fetchWithGraphQL(
-  username: string,
-  queryId: string
-): Promise<RelationshipResolution | null> {
+export async function fetchWithGraphQL(username: string, queryId: string): Promise<RelationshipResolution | null> {
   const url =
     `https://www.linkedin.com/voyager/api/graphql?includeWebMetadata=true` +
     `&variables=(vanityName:${safeEncodeUsername(username)})` +
@@ -335,7 +319,6 @@ export async function resolveProfileUrn(username: string): Promise<string | null
   const html = await response.text();
   const decoded = decodeHtmlEntities(html);
   const match = decoded.match(/urn:li:fsd_profile:[A-Za-z0-9_-]+/);
-  console.log(`[LFS] resolveProfileUrn(${username}): ${match?.[0] ?? 'not found'}`);
   return match?.[0] ?? null;
 }
 
@@ -344,10 +327,7 @@ function extractProfileToken(profileUrn: string): string | null {
   return match?.[1] || null;
 }
 
-function sendConnectRequestInBackground(
-  profileUrn: string,
-  referrerUrl?: string
-): Promise<void> {
+function sendConnectRequestInBackground(profileUrn: string, referrerUrl?: string): Promise<void> {
   return new Promise((resolve, reject) => {
     if (typeof chrome === 'undefined' || !chrome.runtime?.sendMessage) {
       reject(new Error('Chrome runtime messaging is unavailable'));
@@ -378,10 +358,7 @@ function sendConnectRequestInBackground(
   });
 }
 
-async function sendLinkedInConnectRequestFromContent(
-  profileUrn: string,
-  referrerUrl?: string
-): Promise<void> {
+async function sendLinkedInConnectRequestFromContent(profileUrn: string, referrerUrl?: string): Promise<void> {
   const response = await fetch(
     'https://www.linkedin.com/voyager/api/voyagerRelationshipsDashMemberRelationships?action=verifyQuotaAndCreateV2&decorationId=com.linkedin.voyager.dash.deco.relationships.InvitationCreationResultWithInvitee-2',
     {
@@ -394,7 +371,8 @@ async function sendLinkedInConnectRequestFromContent(
         'csrf-token': getCsrfToken(),
         'x-li-deco-include-micro-schema': 'true',
         'x-li-lang': 'en_US',
-        'x-li-pem-metadata': 'Voyager - Profile Actions=topcard-primary-connect-action-click,Voyager - Invitations - Actions=invite-send',
+        'x-li-pem-metadata':
+          'Voyager - Profile Actions=topcard-primary-connect-action-click,Voyager - Invitations - Actions=invite-send',
         'x-restli-protocol-version': '2.0.0',
       },
       body: JSON.stringify({
@@ -409,16 +387,11 @@ async function sendLinkedInConnectRequestFromContent(
 
   if (!response.ok) {
     const body = await response.text().catch(() => '');
-    throw new Error(
-      `Failed to send connect request: ${response.status}${body ? ` ${body.slice(0, 500)}` : ''}`
-    );
+    throw new Error(`Failed to send connect request: ${response.status}${body ? ` ${body.slice(0, 500)}` : ''}`);
   }
 }
 
-export async function sendLinkedInConnectRequest(
-  profileUrn: string,
-  referrerUrl?: string
-): Promise<void> {
+export async function sendLinkedInConnectRequest(profileUrn: string, referrerUrl?: string): Promise<void> {
   try {
     await sendLinkedInConnectRequestFromContent(profileUrn, referrerUrl);
   } catch (contentError) {
@@ -444,7 +417,11 @@ export async function sendLinkedInFollowState(
   }
 
   let normalizedVanityName = vanityName.trim();
-  try { normalizedVanityName = decodeURIComponent(normalizedVanityName); } catch { /* keep original */ }
+  try {
+    normalizedVanityName = decodeURIComponent(normalizedVanityName);
+  } catch {
+    /* keep original */
+  }
   if (!normalizedVanityName) {
     throw new Error('LinkedIn username is required for follow action');
   }

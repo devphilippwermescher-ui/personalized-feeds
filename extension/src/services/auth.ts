@@ -1,8 +1,6 @@
 import { GoogleAuthProvider, signInWithCredential, signOut as firebaseSignOut, onAuthStateChanged } from 'firebase/auth';
 import type { User } from 'firebase/auth';
 import { getFirebaseAuth } from 'shared/firebase-config';
-import { createUserProfile } from 'shared/firestore-service';
-import type { UserProfile } from 'shared/types';
 
 const AUTH_STATE_TIMEOUT_MS = 8000;
 
@@ -10,20 +8,6 @@ export async function signInWithGoogleTokens(idToken: string, accessToken: strin
   const credential = GoogleAuthProvider.credential(idToken, accessToken);
   const firebaseAuth = getFirebaseAuth();
   const result = await signInWithCredential(firebaseAuth, credential);
-
-  const profile: UserProfile = {
-    uid: result.user.uid,
-    email: result.user.email || '',
-    displayName: result.user.displayName || '',
-    photoURL: result.user.photoURL || undefined,
-    createdAt: Date.now(),
-  };
-  try {
-    await createUserProfile(profile);
-  } catch (error) {
-    console.warn('[auth] Failed to create user profile after sign-in', error);
-  }
-
   return result.user;
 }
 

@@ -27,6 +27,8 @@ export function SharedFeedFollowedModal({
   return (
     <LfsModal
       title=""
+      variant="success"
+      tone="success"
       centeredTitle
       onClose={onClose}
       footer={<LfsButton label={CONTENT_COPY.common.viewSharedFeeds} onClick={onViewSharedFeeds} />}

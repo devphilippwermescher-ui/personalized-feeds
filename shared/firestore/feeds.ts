@@ -5,11 +5,14 @@ import {
   getDoc,
   getDocs,
   increment,
+  onSnapshot,
   orderBy,
   query,
   type QueryDocumentSnapshot,
   updateDoc,
+  writeBatch,
 } from 'firebase/firestore';
+import { getFirebaseDb } from '../firebase-config';
 import {
   buildMemberUpsertPatch,
   extractProfileToken,
@@ -20,14 +23,8 @@ import {
   normalizeMemberNumericId,
 } from '../linkedin-identity';
 import type { Feed, FeedMember, LinkedInProfileData } from '../types';
-import {
-  docToFeed,
-  docToMember,
-  feedsCollection,
-  membersCollection,
-  shareLinksCollection,
-  sharesCollection,
-} from './refs';
+import { normalizeLinkedInProfileImageUrl } from '../linkedin-profile-image';
+import { docToFeed, docToMember, feedsCollection, membersCollection, shareLinksCollection } from './refs';
 
 export async function createFeed(userId: string, name: string, description?: string, color?: string): Promise<Feed> {
   const normalizedName = name.trim();
@@ -41,11 +38,11 @@ export async function createFeed(userId: string, name: string, description?: str
     throw new Error('A feed with this name already exists. Please choose a different name.');
   }
 
-  const topSortOrder = existingFeeds.length > 0
-    ? Math.min(
-        ...existingFeeds.map((feed, index) => (typeof feed.sortOrder === 'number' ? feed.sortOrder : index))
-      ) - 1
-    : 0;
+  const topSortOrder =
+    existingFeeds.length > 0
+      ? Math.min(...existingFeeds.map((feed, index) => (typeof feed.sortOrder === 'number' ? feed.sortOrder : index))) -
+        1
+      : 0;
 
   const now = Date.now();
   const data = {
@@ -66,18 +63,16 @@ export async function createFeed(userId: string, name: string, description?: str
 export async function getFeeds(userId: string): Promise<Feed[]> {
   const q = query(feedsCollection(userId));
   const snapshot = await getDocs(q);
-  return snapshot.docs
-    .map(docToFeed)
-    .sort((a, b) => {
-      const aOrder = typeof a.sortOrder === 'number' ? a.sortOrder : Number.MAX_SAFE_INTEGER;
-      const bOrder = typeof b.sortOrder === 'number' ? b.sortOrder : Number.MAX_SAFE_INTEGER;
+  return snapshot.docs.map(docToFeed).sort((a, b) => {
+    const aOrder = typeof a.sortOrder === 'number' ? a.sortOrder : Number.MAX_SAFE_INTEGER;
+    const bOrder = typeof b.sortOrder === 'number' ? b.sortOrder : Number.MAX_SAFE_INTEGER;
 
-      if (aOrder !== bOrder) {
-        return aOrder - bOrder;
-      }
+    if (aOrder !== bOrder) {
+      return aOrder - bOrder;
+    }
 
-      return b.createdAt - a.createdAt;
-    });
+    return b.createdAt - a.createdAt;
+  });
 }
 
 export async function getFeed(userId: string, feedId: string): Promise<Feed | null> {
@@ -128,16 +123,20 @@ export async function reorderFeeds(userId: string, orderedFeedIds: string[]): Pr
 
 export async function deleteFeed(userId: string, feedId: string): Promise<void> {
   const membersSnap = await getDocs(membersCollection(userId, feedId));
-  const sharesSnap = await getDocs(sharesCollection(userId, feedId));
   const feed = await getFeed(userId, feedId);
   const deletePromises = membersSnap.docs.map((d: QueryDocumentSnapshot) => deleteDoc(d.ref));
-  const deleteSharePromises = sharesSnap.docs.map((d: QueryDocumentSnapshot) => deleteDoc(d.ref));
 
   if (feed?.shareToken) {
-    deletePromises.push(deleteDoc(doc(shareLinksCollection(), feed.shareToken)));
+    const shareLinkRef = doc(shareLinksCollection(), feed.shareToken);
+    const shareLinkSnap = await getDoc(shareLinkRef);
+    if (shareLinkSnap.exists() && shareLinkSnap.data()?.ownerId === userId) {
+      deletePromises.push(deleteDoc(shareLinkRef));
+    }
   }
 
-  await Promise.all([...deletePromises, ...deleteSharePromises]);
+  await Promise.all(deletePromises);
+  // Share documents and recipient-side followed-feed references are removed by
+  // cleanupDeletedFeedShares so the sharing counters stay transactionally correct.
   await deleteDoc(doc(feedsCollection(userId), feedId));
 }
 
@@ -170,27 +169,42 @@ export async function addMemberToFeed(
     isFollowing: profileData.isFollowing ?? false,
     displayName: profileData.displayName,
     headline: profileData.headline || '',
-    profileImageUrl: profileData.profileImageUrl || '',
+    profileImageUrl: normalizeLinkedInProfileImageUrl(profileData.profileImageUrl),
     company: profileData.company || '',
     location: profileData.location || '',
     connectionDegree: profileData.connectionDegree || '',
     addedAt: now,
   };
 
-  const docRef = await addDoc(membersCollection(userId, feedId), data);
-
-  await updateDoc(doc(feedsCollection(userId), feedId), {
+  const memberRef = doc(membersCollection(userId, feedId));
+  const batch = writeBatch(getFirebaseDb());
+  batch.set(memberRef, data);
+  batch.update(doc(feedsCollection(userId), feedId), {
     memberCount: increment(1),
     updatedAt: Date.now(),
   });
+  await batch.commit();
 
-  return { member: { id: docRef.id, ...data }, alreadyExists: false };
+  return { member: { id: memberRef.id, ...data }, alreadyExists: false };
 }
 
 export async function getFeedMembers(userId: string, feedId: string): Promise<FeedMember[]> {
   const q = query(membersCollection(userId, feedId), orderBy('addedAt', 'desc'));
   const snapshot = await getDocs(q);
   return snapshot.docs.map(docToMember);
+}
+
+export function subscribeFeedMembers(
+  userId: string,
+  feedId: string,
+  onMembers: (members: FeedMember[]) => void,
+  onError?: (error: Error) => void
+): () => void {
+  return onSnapshot(
+    query(membersCollection(userId, feedId), orderBy('addedAt', 'desc')),
+    (snapshot) => onMembers(snapshot.docs.map(docToMember)),
+    (error) => onError?.(error)
+  );
 }
 
 export async function getMemberByUsername(
@@ -200,14 +214,16 @@ export async function getMemberByUsername(
 ): Promise<FeedMember | null> {
   const members = await getFeedMembers(userId, feedId);
   const normalizedUsername = normalizeLinkedInUsername(username);
-  return members.find((member) => {
-    const memberUsername = normalizeLinkedInUsername(member.linkedinUsername);
-    const memberUrlUsername = getUsernameFromLinkedInUrl(member.linkedinUrl);
-    return memberUsername === normalizedUsername || memberUrlUsername === normalizedUsername;
-  }) || null;
+  return (
+    members.find((member) => {
+      const memberUsername = normalizeLinkedInUsername(member.linkedinUsername);
+      const memberUrlUsername = getUsernameFromLinkedInUrl(member.linkedinUrl);
+      return memberUsername === normalizedUsername || memberUrlUsername === normalizedUsername;
+    }) || null
+  );
 }
 
-async function findExistingMemberInFeed(
+export async function findExistingMemberInFeed(
   userId: string,
   feedId: string,
   profileData: LinkedInProfileData
@@ -226,9 +242,18 @@ async function findExistingMemberInFeed(
 }
 
 export async function removeMemberFromFeed(userId: string, feedId: string, memberId: string): Promise<void> {
-  await deleteDoc(doc(membersCollection(userId, feedId), memberId));
-  await updateDoc(doc(feedsCollection(userId), feedId), {
+  const batch = writeBatch(getFirebaseDb());
+  batch.delete(doc(membersCollection(userId, feedId), memberId));
+  batch.update(doc(feedsCollection(userId), feedId), {
     memberCount: increment(-1),
+    updatedAt: Date.now(),
+  });
+  await batch.commit();
+}
+
+export async function syncFeedMemberCount(userId: string, feedId: string, memberCount: number): Promise<void> {
+  await updateDoc(doc(feedsCollection(userId), feedId), {
+    memberCount: Math.max(0, memberCount),
     updatedAt: Date.now(),
   });
 }
@@ -240,21 +265,40 @@ export async function updateMemberInFeed(
   updates: Partial<
     Pick<
       FeedMember,
-      'displayName' | 'headline' | 'email' | 'company' | 'location' | 'linkedinUrl' | 'profileImageUrl' | 'connectionDegree' | 'status' | 'profileUrn' | 'canMessage' | 'memberNumericId' | 'canFollow' | 'canConnect' | 'isFollowing' | 'isPremium'
+      | 'displayName'
+      | 'headline'
+      | 'email'
+      | 'company'
+      | 'location'
+      | 'linkedinUrl'
+      | 'profileImageUrl'
+      | 'connectionDegree'
+      | 'status'
+      | 'profileUrn'
+      | 'canMessage'
+      | 'memberNumericId'
+      | 'canFollow'
+      | 'canConnect'
+      | 'isFollowing'
+      | 'isPremium'
     >
   >
 ): Promise<void> {
   const memberRef = doc(membersCollection(userId, feedId), memberId);
   const existingSnapshot = await getDoc(memberRef);
-  const existing = existingSnapshot.exists() ? { id: existingSnapshot.id, ...existingSnapshot.data() } as FeedMember : null;
+  const existing = existingSnapshot.exists()
+    ? ({ id: existingSnapshot.id, ...existingSnapshot.data() } as FeedMember)
+    : null;
   const shouldPreserveWithdrawn =
-    existing?.status === 'withdrawn' &&
-    (updates.status === 'connect' || updates.status === 'following');
+    existing?.status === 'withdrawn' && (updates.status === 'connect' || updates.status === 'following');
   const shouldPreserveUnavailable =
     existing?.status === 'unavailable' &&
     (updates.status === 'connect' || updates.status === 'following' || updates.status === 'pending');
   const safeUpdates = {
     ...updates,
+    ...('profileImageUrl' in updates
+      ? { profileImageUrl: normalizeLinkedInProfileImageUrl(updates.profileImageUrl) }
+      : {}),
     ...(shouldPreserveWithdrawn ? { status: 'withdrawn' as const, canConnect: false } : {}),
     ...(shouldPreserveUnavailable
       ? { status: 'unavailable' as const, canMessage: false, canFollow: false, canConnect: false, isFollowing: false }
@@ -264,10 +308,12 @@ export async function updateMemberInFeed(
       : {}),
   };
 
-  await updateDoc(memberRef, safeUpdates);
-  await updateDoc(doc(feedsCollection(userId), feedId), {
+  const batch = writeBatch(getFirebaseDb());
+  batch.update(memberRef, safeUpdates);
+  batch.update(doc(feedsCollection(userId), feedId), {
     updatedAt: Date.now(),
   });
+  await batch.commit();
 }
 
 export async function getProfileFeedMemberships(

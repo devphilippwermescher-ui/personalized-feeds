@@ -23,7 +23,7 @@ export const FEED_CARD_CSS = `
   }
 
   .pf-feed-icon-wrapper {
-    margin-right: 12px;
+    margin-right: 10px;
     display: flex;
     align-items: center;
     position: relative;
@@ -31,34 +31,51 @@ export const FEED_CARD_CSS = `
   }
 
   .pf-feed-icon-box {
-    width: 40px;
-    height: 40px;
+    position: relative;
+    box-sizing: border-box;
+    width: 36px;
+    height: 36px;
+    overflow: hidden;
     display: flex;
     align-items: center;
     justify-content: center;
-    background: #615DEC;
+    background: #ffffff;
     border-radius: 10px;
-    box-shadow: 0 2px 8px rgba(97,93,236,0.3);
+    box-shadow:
+      0 6px 14px rgba(15, 23, 42, 0.10),
+      inset 0 1px 0 rgba(255, 255, 255, 0.95);
+  }
+
+  .pf-feed-icon-box::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    box-sizing: border-box;
+    border: 1.5px solid rgba(97, 93, 236, 0.32);
+    border-radius: inherit;
+    pointer-events: none;
   }
 
   .pf-feed-card-logo {
-    width: 24px;
-    height: 24px;
+    width: 28px;
+    height: 28px;
     object-fit: contain;
     display: block;
   }
 
   .pf-feed-status-badge {
     position: absolute;
+    z-index: 2;
     top: -2px;
     right: -2px;
-    width: 16px;
-    height: 16px;
+    width: 14px;
+    height: 14px;
     border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 10px;
+    font-size: 9px;
     font-weight: bold;
     border: 2px solid white;
     box-shadow: 0 1px 3px rgba(0,0,0,0.2);
@@ -130,7 +147,7 @@ export const FEED_CARD_CSS = `
     background: #615DEC;
     color: white;
     border: none;
-    border-radius: 16px;
+    border-radius: 8px;
     font-weight: 600;
     font-size: 14px;
     cursor: pointer;

@@ -1,5 +1,6 @@
 import type { FeedInfo, FeedMemberInfo, UserInfo } from '../types';
 import type { ProfileViewerListItem, ProfileViewerSummary } from 'shared/types';
+import type { ProfileViewersCollectionProgress } from '../../../shared/profile-viewers-progress';
 
 export const PROFILE_VIEWERS_FEED_ID = '__profile_viewers__';
 const DEFAULT_RECRUITER_VIEWERS_URL =
@@ -62,13 +63,9 @@ function isVisibleProfileViewer(viewer: ProfileViewerListItem): boolean {
   return !('searchKey' in viewer);
 }
 
-export function buildRecruiterAggregateMember(
-  summary?: ProfileViewerSummary | null
-): FeedMemberInfo | null {
+export function buildRecruiterAggregateMember(summary?: ProfileViewerSummary | null): FeedMemberInfo | null {
   const recruiterViewerCount =
-    summary &&
-    Number.isSafeInteger(summary.recruiterViewerCount) &&
-    (summary.recruiterViewerCount || 0) > 0
+    summary && Number.isSafeInteger(summary.recruiterViewerCount) && (summary.recruiterViewerCount || 0) > 0
       ? summary.recruiterViewerCount
       : undefined;
 
@@ -98,7 +95,8 @@ export function withProfileViewersFeed(
   members: FeedMemberInfo[],
   privateViewerCount: number | undefined,
   recruiterViewerCount: number | undefined,
-  currentUser: UserInfo | null
+  currentUser: UserInfo | null,
+  collectionProgress?: ProfileViewersCollectionProgress
 ): FeedInfo[] {
   if (!currentUser) {
     return feeds.filter((feed) => feed.id !== PROFILE_VIEWERS_FEED_ID);
@@ -113,19 +111,20 @@ export function withProfileViewersFeed(
     memberCount: members.length,
     privateViewerCount,
     recruiterViewerCount,
+    // The background response is authoritative. In particular, `undefined`
+    // after a completed sync must clear progress that was set by an earlier
+    // PROFILE_VIEWERS_SYNC_STARTED event, even if the completion event was
+    // missed while the content script was being reloaded or reinjected.
+    profileViewersCollectionProgress: collectionProgress,
     sortOrder: -1,
     ownerId: currentUser.userId,
     isSystem: true,
     systemType: 'profileViewers',
     isRefreshingProfileViewers: existingProfileViewersFeed?.isRefreshingProfileViewers,
-    isConfirmingProfileViewersRefresh:
-      existingProfileViewersFeed?.isConfirmingProfileViewersRefresh,
+    isConfirmingProfileViewersRefresh: existingProfileViewersFeed?.isConfirmingProfileViewersRefresh,
   };
 
-  return [
-    profileViewersFeed,
-    ...feeds.filter((feed) => feed.id !== PROFILE_VIEWERS_FEED_ID),
-  ];
+  return [profileViewersFeed, ...feeds.filter((feed) => feed.id !== PROFILE_VIEWERS_FEED_ID)];
 }
 
 export function buildProfileViewersState(params: {
@@ -134,19 +133,16 @@ export function buildProfileViewersState(params: {
   feeds: FeedInfo[];
   feedMembersById: Record<string, FeedMemberInfo[]>;
   currentUser: UserInfo | null;
+  collectionProgress?: ProfileViewersCollectionProgress;
 }): {
   members: FeedMemberInfo[];
   privateViewerCount: number | undefined;
   feeds: FeedInfo[];
   feedMembersById: Record<string, FeedMemberInfo[]>;
 } {
-  const members = params.viewers
-    .filter(isVisibleProfileViewer)
-    .map(profileViewerToMember);
+  const members = params.viewers.filter(isVisibleProfileViewer).map(profileViewerToMember);
   const privateViewerCount =
-    params.summary &&
-    Number.isSafeInteger(params.summary.privateViewerCount) &&
-    params.summary.privateViewerCount >= 0
+    params.summary && Number.isSafeInteger(params.summary.privateViewerCount) && params.summary.privateViewerCount >= 0
       ? params.summary.privateViewerCount
       : undefined;
   const recruiterViewerCount =
@@ -156,10 +152,7 @@ export function buildProfileViewersState(params: {
       ? params.summary.recruiterViewerCount
       : undefined;
   const recruiterAggregateMember = buildRecruiterAggregateMember(params.summary);
-  const membersWithRecruiterAggregate =
-    recruiterAggregateMember
-      ? [recruiterAggregateMember, ...members]
-      : members;
+  const membersWithRecruiterAggregate = recruiterAggregateMember ? [recruiterAggregateMember, ...members] : members;
 
   return {
     members: membersWithRecruiterAggregate,
@@ -169,7 +162,8 @@ export function buildProfileViewersState(params: {
       membersWithRecruiterAggregate,
       privateViewerCount,
       recruiterViewerCount,
-      params.currentUser
+      params.currentUser,
+      params.collectionProgress
     ),
     feedMembersById: {
       ...params.feedMembersById,

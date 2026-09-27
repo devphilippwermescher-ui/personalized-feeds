@@ -1,9 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  extractActivityId,
-  getActivityPublishedAt,
-  resolveActivityIdentity,
-} from '../linkedin-activity-urn';
+import { extractActivityId, getActivityPublishedAt, resolveActivityIdentity } from '../linkedin-activity-urn';
 
 describe('LinkedIn activity identity', () => {
   it('extracts the numeric id from every urn form LinkedIn uses', () => {

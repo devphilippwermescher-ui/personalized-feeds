@@ -1,14 +1,14 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { CONTENT_ANALYTICS_ENABLED, DASHBOARD_ENABLED } from 'shared/feature-flags';
-import { useAuth } from './hooks/useAuth';
-import LoginPage from './pages/LoginPage';
+import { useAuth } from './features/auth/hooks/use-auth';
+import LoginPage from './features/auth/components/LoginPage';
 import DashboardPage from './pages/DashboardPage';
 import FeedDetailPage from './pages/FeedDetailPage';
 import BlankDashboardPage from './pages/BlankDashboardPage';
 import DashboardDisabledPage from './pages/DashboardDisabledPage';
 import ProfileAnalyticsPage from './pages/ProfileAnalyticsPage';
 import ContentAnalyticsPage from './pages/ContentAnalyticsPage';
-import Sidebar from './components/Sidebar';
+import Sidebar from './app/components/Sidebar';
 
 function EnabledDashboardApp() {
   const {
@@ -79,7 +79,7 @@ function EnabledDashboardApp() {
             <Route path="/analytics/comments" element={<BlankDashboardPage title="Comment Analytics" />} />
             <Route path="/settings/profile" element={<BlankDashboardPage title="Manage account" />} />
             <Route path="/settings/api-extension" element={<BlankDashboardPage title="API & Extension" />} />
-            <Route path="/subscription" element={<BlankDashboardPage title="Subscription" />} />
+            <Route path="/subscription" element={<BlankDashboardPage title="Pro plan — In development" />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </main>

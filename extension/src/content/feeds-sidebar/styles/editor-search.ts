@@ -168,7 +168,7 @@ export const EDITORSEARCH_CSS = `.lfa-toast {
     flex-direction: column;
     gap: 14px;
   }
-  .lfa-feed-modal-input--search {
+  .lfa-feed-search-input-wrap .lfs-input.lfa-feed-modal-input--search {
     min-height: 48px !important;
     padding-left: 42px !important;
     font-size: 15px !important;
@@ -196,6 +196,7 @@ export const EDITORSEARCH_CSS = `.lfa-toast {
     transform: translateY(-50%);
     color: #98a2b3;
     z-index: 1;
+    pointer-events: none;
   }
   .lfa-feed-people-results {
     flex: 1;

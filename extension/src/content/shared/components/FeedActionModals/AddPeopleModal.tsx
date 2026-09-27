@@ -97,6 +97,7 @@ export function AddPeopleModal({ feedName, onClose, onSearch, onAddPeople }: Add
   return (
     <LfsModal
       title={CONTENT_COPY.feedModals.addPeopleTitle(feedName)}
+      variant="search"
       centeredTitle
       size="lg"
       onClose={onClose}
@@ -142,7 +143,14 @@ export function AddPeopleModal({ feedName, onClose, onSearch, onAddPeople }: Add
               <div className="lfa-feed-people-empty-icon">
                 <svg viewBox="0 0 64 64" width="56" height="56" fill="none" aria-hidden="true">
                   <defs>
-                    <linearGradient id="lfaPeopleEmptyIconGradient" x1="14" y1="12" x2="52" y2="52" gradientUnits="userSpaceOnUse">
+                    <linearGradient
+                      id="lfaPeopleEmptyIconGradient"
+                      x1="14"
+                      y1="12"
+                      x2="52"
+                      y2="52"
+                      gradientUnits="userSpaceOnUse"
+                    >
                       <stop stopColor="#cfd8ea" />
                       <stop offset="1" stopColor="#aebcd6" />
                     </linearGradient>
@@ -155,7 +163,14 @@ export function AddPeopleModal({ feedName, onClose, onSearch, onAddPeople }: Add
                     strokeWidth="3"
                     strokeLinecap="round"
                   />
-                  <circle cx="41.5" cy="41.5" r="9.5" fill="#fff" stroke="url(#lfaPeopleEmptyIconGradient)" strokeWidth="3" />
+                  <circle
+                    cx="41.5"
+                    cy="41.5"
+                    r="9.5"
+                    fill="#fff"
+                    stroke="url(#lfaPeopleEmptyIconGradient)"
+                    strokeWidth="3"
+                  />
                   <path
                     d="m48 48 5 5"
                     stroke="url(#lfaPeopleEmptyIconGradient)"

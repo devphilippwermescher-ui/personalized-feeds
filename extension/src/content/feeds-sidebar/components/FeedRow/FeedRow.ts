@@ -1,10 +1,5 @@
 import type { FeedInfo } from '../../types';
-
-function escapeHtml(text: string): string {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
-}
+import { escapeHtml } from '../../../shared/escape-html';
 
 interface RenderFeedRowOptions {
   feed: FeedInfo;
@@ -16,7 +11,13 @@ interface RenderFeedRowOptions {
 export function renderFeedRow({ feed, expanded, previewHtml, expandedContentHtml = '' }: RenderFeedRowOptions): string {
   const isShared = Boolean(feed.isShared);
   const isSystem = Boolean(feed.isSystem);
+  const isLockedByPlan = feed.isLockedByPlan === true;
   const isProfileViewers = feed.systemType === 'profileViewers';
+  const collectionProgress = isProfileViewers ? feed.profileViewersCollectionProgress : undefined;
+  const collectionStatusText =
+    collectionProgress?.phase === 'private_summary'
+      ? 'Checking private and recruiter views…'
+      : 'Collecting profile visitors…';
   const hasPrivateViewerCount =
     isProfileViewers && Number.isSafeInteger(feed.privateViewerCount) && (feed.privateViewerCount || 0) >= 0;
   const privateViewerCount = feed.privateViewerCount || 0;
@@ -33,6 +34,13 @@ export function renderFeedRow({ feed, expanded, previewHtml, expandedContentHtml
   const viewerCountLabel = hasHiddenViewerCount
     ? `${visibleEntryCount} / ${hiddenViewerCount}`
     : `${visibleEntryCount}`;
+  const activeMemberCount = feed.activeMemberCount ?? feed.memberCount ?? 0;
+  const lockedMemberCount = feed.lockedMemberCount ?? Math.max(0, (feed.memberCount || 0) - activeMemberCount);
+  const hasMemberOverflow = !isLockedByPlan && lockedMemberCount > 0;
+  const planLimitTooltip = `${activeMemberCount} active ${activeMemberCount === 1 ? 'profile' : 'profiles'} and ${lockedMemberCount} locked. ${isShared ? 'The feed owner needs Pro' : 'Pro is in development'}; these profiles remain locked.`;
+  const feedLockTooltip = isShared
+    ? 'This feed is locked by the owner’s plan. The feed owner needs Pro to unlock it.'
+    : 'Free includes up to 3 custom feeds. Pro is in development; this feed remains locked.';
   const hiddenViewerDetails = [
     privateViewerCount > 0
       ? `${privateViewerCount} private-mode ${privateViewerCount === 1 ? 'visitor' : 'visitors'}`
@@ -50,11 +58,18 @@ export function renderFeedRow({ feed, expanded, previewHtml, expandedContentHtml
     'lfa-feed-item',
     isShared ? 'lfa-feed-item--shared' : '',
     isSystem ? 'lfa-feed-item--system' : '',
+    isLockedByPlan ? 'lfa-feed-item--locked' : '',
     expanded ? 'lfa-feed-item--expanded' : '',
   ]
     .filter(Boolean)
     .join(' ');
-  const groupClasses = ['lfa-feed-group', isProfileViewers ? 'lfa-feed-group--system' : ''].filter(Boolean).join(' ');
+  const groupClasses = [
+    'lfa-feed-group',
+    isProfileViewers ? 'lfa-feed-group--system' : '',
+    hasMemberOverflow ? 'lfa-feed-group--plan-limited' : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
   const leadingIcon = isProfileViewers
     ? `
         <span class="lfa-feed-pin-wrap">
@@ -81,11 +96,12 @@ export function renderFeedRow({ feed, expanded, previewHtml, expandedContentHtml
 
   return `
     <div class="${groupClasses}" data-feed-group-id="${escapeHtml(feed.id)}">
-      <div class="${itemClasses}" data-feed-id="${escapeHtml(feed.id)}" draggable="${isSystem ? 'false' : 'true'}">
+      <div class="${itemClasses}" data-feed-id="${escapeHtml(feed.id)}" data-plan-locked="${String(isLockedByPlan)}" draggable="${isSystem || isLockedByPlan ? 'false' : 'true'}">
         ${leadingIcon}
         <div class="lfa-feed-name-wrap">
           <div class="lfa-feed-title-row">
             <button class="lfa-feed-name" type="button">${escapeHtml(feed.name)}</button>
+            ${isLockedByPlan ? `<span class="lfa-feed-plan-lock" title="${escapeHtml(feedLockTooltip)}">Locked</span>` : ''}
             ${
               isProfileViewers
                 ? `
@@ -120,7 +136,14 @@ export function renderFeedRow({ feed, expanded, previewHtml, expandedContentHtml
                   <span class="lfa-profile-viewer-count-tooltip" role="tooltip">${escapeHtml(viewerCountTooltip)}</span>
                 </span>
               `
-              : `<span>${escapeHtml(viewerCountLabel)}</span>`
+              : hasMemberOverflow
+                ? `
+                  <span class="lfa-profile-viewer-count-wrap">
+                    <span class="lfa-profile-viewer-count" tabindex="0" aria-label="${escapeHtml(planLimitTooltip)}">${activeMemberCount} / ${lockedMemberCount}</span>
+                    <span class="lfa-profile-viewer-count-tooltip" role="tooltip">${escapeHtml(planLimitTooltip)}</span>
+                  </span>
+                `
+                : `<span>${feed.memberCount || 0}</span>`
           }
           <span class="lfa-feed-chevron ${expanded ? 'expanded' : ''}">
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
@@ -129,6 +152,18 @@ export function renderFeedRow({ feed, expanded, previewHtml, expandedContentHtml
           </span>
         </div>
       </div>
+      ${
+        collectionProgress
+          ? `
+            <div class="lfa-profile-viewers-collection" role="status" aria-live="polite">
+              <span class="lfa-profile-viewers-collection-label">${collectionStatusText}</span>
+              <span class="lfa-profile-viewers-progress" role="progressbar" aria-label="${collectionStatusText}">
+                <span class="lfa-profile-viewers-progress-bar"></span>
+              </span>
+            </div>
+          `
+          : ''
+      }
       ${expanded ? `<div class="lfa-feed-expanded">${expandedContentHtml}</div>` : ''}
     </div>
   `;

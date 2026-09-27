@@ -3,15 +3,21 @@ import { LfsButton, LfsDropdown, LfsModal } from '../../../../shared/ui';
 import { getMemberInitials } from '../../../feeds-sidebar/utils';
 import { CONTENT_COPY } from '../../copy';
 import type { FeedShareRecipient } from './types';
+import type { SharingLimitDetails } from 'shared/types';
 
 interface ShareFeedModalProps {
   onClose: () => void;
   onLoadShares: () => Promise<FeedShareRecipient[]>;
-  onShareByEmail: (email: string, role: 'reader' | 'editor') => Promise<{ success: boolean; error?: string }>;
+  onWatchShares: (onShares: (shares: FeedShareRecipient[]) => void) => () => void;
+  onShareByEmail: (
+    email: string,
+    role: 'reader' | 'editor'
+  ) => Promise<{ success: boolean; error?: string; sharingLimit?: SharingLimitDetails }>;
   onUpdateShareRole: (targetUid: string, role: 'reader' | 'editor') => Promise<{ success: boolean; error?: string }>;
   onRemoveShare: (targetUid: string) => Promise<{ success: boolean; error?: string }>;
   onGetLink: () => Promise<{ success: boolean; url?: string; error?: string }>;
   onNotify?: (message: string, tone?: 'success' | 'error') => void;
+  onSharingLimit: (details: SharingLimitDetails) => void;
 }
 
 type ShareTab = 'email' | 'link';
@@ -20,11 +26,13 @@ type ShareListState = 'loading' | 'ready' | 'error';
 export function ShareFeedModal({
   onClose,
   onLoadShares,
+  onWatchShares,
   onShareByEmail,
   onUpdateShareRole,
   onRemoveShare,
   onGetLink,
   onNotify,
+  onSharingLimit,
 }: ShareFeedModalProps) {
   const [activeTab, setActiveTab] = useState<ShareTab>('email');
   const [email, setEmail] = useState('');
@@ -38,13 +46,18 @@ export function ShareFeedModal({
   const [updatingShareUid, setUpdatingShareUid] = useState('');
   const [removingShareUid, setRemovingShareUid] = useState('');
   const emailRef = useRef<HTMLInputElement | null>(null);
+  const realtimeSharesVersionRef = useRef(0);
 
   const loadShares = async (preservePendingRole = false) => {
+    const realtimeVersionAtStart = realtimeSharesVersionRef.current;
     setSharesState((current) => (preservePendingRole && shares.length > 0 ? current : 'loading'));
 
     try {
       const nextShares = await onLoadShares();
       setShares((current) => {
+        if (realtimeSharesVersionRef.current !== realtimeVersionAtStart) {
+          return current;
+        }
         if (!preservePendingRole || !updatingShareUid) {
           return nextShares;
         }
@@ -56,6 +69,10 @@ export function ShareFeedModal({
       });
       setSharesState('ready');
     } catch {
+      if (realtimeSharesVersionRef.current !== realtimeVersionAtStart) {
+        setSharesState('ready');
+        return;
+      }
       setShares([]);
       setSharesState('error');
     }
@@ -64,6 +81,16 @@ export function ShareFeedModal({
   useEffect(() => {
     void loadShares();
   }, [onLoadShares]);
+
+  useEffect(
+    () =>
+      onWatchShares((nextShares) => {
+        realtimeSharesVersionRef.current += 1;
+        setShares(nextShares);
+        setSharesState('ready');
+      }),
+    [onWatchShares]
+  );
 
   useEffect(() => {
     if (activeTab === 'email') {
@@ -101,6 +128,10 @@ export function ShareFeedModal({
     setSubmitting(false);
 
     if (!result.success) {
+      if (result.sharingLimit) {
+        onSharingLimit(result.sharingLimit);
+        return;
+      }
       setError(result.error || 'Failed to share this feed');
       return;
     }
@@ -172,6 +203,7 @@ export function ShareFeedModal({
   return (
     <LfsModal
       title="Share my feed"
+      variant="tabs"
       centeredTitle
       size="lg"
       className="lfa-share-modal-shell"
@@ -198,9 +230,7 @@ export function ShareFeedModal({
 
         {activeTab === 'email' ? (
           <div className="lfa-share-panel">
-            <div className="lfa-share-panel-title">
-              Enter the email address they used to login to MyFeedIn:
-            </div>
+            <div className="lfa-share-panel-title">Enter the email address they used to login to MyFeedIn:</div>
             <div className="lfa-share-email-row">
               <input
                 ref={emailRef}
@@ -262,7 +292,17 @@ export function ShareFeedModal({
         {sharesState === 'ready' && shares.length === 0 ? (
           <div className="lfa-share-empty">
             <div className="lfa-share-empty-icon">
-              <svg viewBox="0 0 48 48" width="46" height="46" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <svg
+                viewBox="0 0 48 48"
+                width="46"
+                height="46"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.4"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
                 <circle cx="18" cy="15" r="7" />
                 <path d="M8 36c0-6.2 4.8-10 10-10s10 3.8 10 10" />
                 <circle cx="35" cy="17" r="7" />
@@ -327,7 +367,14 @@ export function ShareFeedModal({
                       {removingShareUid === share.targetUid ? (
                         <div className="lfa-spinner lfa-spinner--small" />
                       ) : (
-                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2">
+                        <svg
+                          viewBox="0 0 24 24"
+                          width="16"
+                          height="16"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                        >
                           <polyline points="3 6 5 6 21 6" />
                           <path d="M19 6l-1 14H6L5 6" />
                           <path d="M10 11v6" />
@@ -338,7 +385,9 @@ export function ShareFeedModal({
                     </button>
                   </div>
                   <div className="lfa-share-recipient-actions">
-                    {updatingShareUid === share.targetUid ? <div className="lfa-share-recipient-role-status">Saving...</div> : null}
+                    {updatingShareUid === share.targetUid ? (
+                      <div className="lfa-share-recipient-role-status">Saving...</div>
+                    ) : null}
                   </div>
                 </div>
               </div>

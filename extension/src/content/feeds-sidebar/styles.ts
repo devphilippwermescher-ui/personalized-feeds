@@ -5,11 +5,6 @@ import { MEMBERS_CSS } from './styles/members';
 import { MODALS_CSS } from './styles/modals';
 import { EDITORSEARCH_CSS } from './styles/editor-search';
 
-export const FEEDS_SIDEBAR_CSS = [
-  SHELL_CSS,
-  CONTENT_CSS,
-  FEEDS_CSS,
-  MEMBERS_CSS,
-  MODALS_CSS,
-  EDITORSEARCH_CSS,
-].join('');
+export const FEEDS_SIDEBAR_CSS = [SHELL_CSS, CONTENT_CSS, FEEDS_CSS, MEMBERS_CSS, MODALS_CSS, EDITORSEARCH_CSS].join(
+  ''
+);

@@ -2,10 +2,7 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
 
-const nestedFirebaseModules = path.resolve(
-  __dirname,
-  'node_modules/firebase/node_modules',
-);
+const nestedFirebaseModules = path.resolve(__dirname, 'node_modules/firebase/node_modules');
 
 export default defineConfig({
   plugins: [react()],
@@ -18,6 +15,8 @@ export default defineConfig({
   resolve: {
     alias: {
       shared: path.resolve(__dirname, '../shared'),
+      react: path.resolve(__dirname, 'node_modules/react'),
+      'react-dom': path.resolve(__dirname, 'node_modules/react-dom'),
       '@firebase/auth': path.resolve(nestedFirebaseModules, '@firebase/auth'),
     },
     dedupe: ['firebase', '@firebase/app', '@firebase/auth', '@firebase/firestore'],
