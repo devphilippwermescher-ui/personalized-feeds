@@ -136,6 +136,13 @@ function cacheResolvedStatus(username: string, result: RelationshipStatusResult)
   );
 }
 
+export function rememberLinkedInRelationshipStatus(
+  username: string,
+  result: RelationshipResolution
+): void {
+  cacheResolvedStatus(username, normalizeRelationshipResolution(result));
+}
+
 function shouldPreserveWithdrawnStatus(
   currentStatus: FeedMemberInfo['status'],
   nextStatus?: RelationshipResolution['status']

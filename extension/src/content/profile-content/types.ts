@@ -31,13 +31,3 @@ export interface FeedMembership {
   feedName: string;
   memberId: string;
 }
-
-export interface RelationshipState {
-  status?: 'connected' | 'pending' | 'connect' | 'following';
-  connectionDegree?: string;
-  canMessage?: boolean;
-  canFollow?: boolean;
-  canConnect?: boolean;
-  isFollowing?: boolean;
-  isPremium?: boolean;
-}

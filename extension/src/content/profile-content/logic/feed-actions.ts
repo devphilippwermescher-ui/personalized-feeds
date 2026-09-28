@@ -1,7 +1,3 @@
-import {
-  syncCurrentProfileMembershipStatuses,
-  syncCurrentProfileViewerStatus,
-} from './relationship';
 import type { FeedInfo, FeedMembership, ProfileData } from '../types';
 import { feedAddedMessage, profileAlreadyInFeedMessage, profileRemovedFromFeedMessage } from '../../shared/toast-messages';
 import { CONTENT_COPY } from '../../shared/copy';
@@ -198,7 +194,7 @@ export function createFeedActions(deps: FeedActionDeps) {
   }
 
   async function refreshCardState(): Promise<void> {
-    const currentProfileData = await getEnrichedCurrentProfileData();
+    const currentProfileData = deps.getCurrentProfileData();
     if (!currentProfileData) {
       return;
     }
@@ -214,17 +210,7 @@ export function createFeedActions(deps: FeedActionDeps) {
     const list = memberships?.memberships || [];
     const cards = Array.from(document.querySelectorAll<HTMLElement>('[data-pf-feed-card="true"]'));
 
-    await syncCurrentProfileViewerStatus({
-      getCurrentProfileData: deps.getCurrentProfileData,
-      sendMessageToBackground: deps.sendMessageToBackground,
-    });
-
     if (list.length > 0) {
-      await syncCurrentProfileMembershipStatuses(list, {
-        getCurrentProfileData: deps.getCurrentProfileData,
-        sendMessageToBackground: deps.sendMessageToBackground,
-      });
-
       cards.forEach((card) => {
         const infoText = card.querySelector<HTMLElement>('.pf-feed-info-text');
         const membershipsEl = card.querySelector<HTMLElement>('.pf-feed-memberships');
@@ -326,10 +312,5 @@ export function createFeedActions(deps: FeedActionDeps) {
     showCreateFeedOverlay,
     showAuthModal,
     refreshCardState,
-    syncProfileViewerStatus: () =>
-      syncCurrentProfileViewerStatus({
-        getCurrentProfileData: deps.getCurrentProfileData,
-        sendMessageToBackground: deps.sendMessageToBackground,
-      }),
   };
 }

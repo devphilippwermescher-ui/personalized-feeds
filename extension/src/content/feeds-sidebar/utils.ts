@@ -1,6 +1,4 @@
 import type { FeedMemberInfo } from './types';
-import { getLinkedInDomFollowState, getLinkedInDomStatus } from '../linkedin-dom-status';
-import { invalidateCacheForUser } from '../linkedin-relationship-status';
 
 export type MemberStatus = NonNullable<FeedMemberInfo['status']>;
 
@@ -17,48 +15,6 @@ function isFirstDegreeConnection(value?: string): boolean {
 }
 
 export function getMemberStatus(member: FeedMemberInfo): MemberStatus {
-  const domStatus = getLinkedInDomStatus(member);
-  const domFollowState = getLinkedInDomFollowState(member);
-  if (typeof domFollowState === 'boolean') {
-    member.isFollowing = domFollowState;
-  }
-
-  if (
-    domStatus &&
-    domStatus !== member.status &&
-    member.status !== 'withdrawn' &&
-    member.status !== 'unavailable' &&
-    member.linkedinUsername
-  ) {
-    invalidateCacheForUser(member.linkedinUsername);
-    member.status = domStatus;
-    if (domStatus === 'pending' || domStatus === 'connected') {
-      member.canConnect = false;
-    }
-  }
-
-  if (member.status === 'withdrawn' && (domStatus === 'connect' || domStatus === 'following')) {
-    if (domStatus === 'following') {
-      member.isFollowing = true;
-    }
-    return 'withdrawn';
-  }
-
-  if (
-    member.status === 'unavailable' &&
-    (domStatus === 'connect' || domStatus === 'following' || domStatus === 'pending')
-  ) {
-    member.isFollowing = false;
-    return 'unavailable';
-  }
-
-  if (domStatus) {
-    if (domStatus === 'following') {
-      member.isFollowing = true;
-    }
-    return domStatus;
-  }
-
   if (
     isFirstDegreeConnection(member.connectionDegree) &&
     member.status !== 'pending' &&
