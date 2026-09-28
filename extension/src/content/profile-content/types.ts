@@ -23,6 +23,7 @@ export interface FeedInfo {
   name: string;
   color?: string;
   memberCount: number;
+  isLockedByPlan?: boolean;
 }
 
 export interface FeedMembership {

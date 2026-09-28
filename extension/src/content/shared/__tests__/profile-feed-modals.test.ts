@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { ensureProfileFeedModals } from '../profile-feed-modals';
+import { ensureProfileFeedModals, renderFeedModalOption } from '../profile-feed-modals';
 
 describe('profile feed modal shells', () => {
   beforeEach(() => {
@@ -47,5 +47,24 @@ describe('profile feed modal shells', () => {
     overlay.dispatchEvent(new MouseEvent('click', { bubbles: true }));
 
     expect(overlay.style.display).toBe('none');
+  });
+
+  it('marks plan-locked feeds and prevents selecting them', () => {
+    const html = renderFeedModalOption({
+      id: 'locked-feed',
+      name: 'Archived prospects',
+      memberCount: 1,
+      isLockedByPlan: true,
+      element: 'button',
+    });
+
+    document.body.innerHTML = html;
+    const option = document.querySelector<HTMLButtonElement>('.pf-feed-option');
+
+    expect(option?.classList.contains('plan-locked')).toBe(true);
+    expect(option?.dataset.planLocked).toBe('true');
+    expect(option?.disabled).toBe(true);
+    expect(option?.getAttribute('aria-disabled')).toBe('true');
+    expect(option?.querySelector('.pf-feed-option-plan-lock')?.textContent).toBe('Locked');
   });
 });

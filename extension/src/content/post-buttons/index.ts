@@ -181,6 +181,7 @@ function renderFeedOptions(feeds: FeedSummary[], memberships: Map<string, string
         color: feed.color,
         memberCount: feed.memberCount,
         isMember: memberships.has(feed.id),
+        isLockedByPlan: feed.isLockedByPlan,
         element: 'button',
       });
     })
@@ -301,7 +302,7 @@ async function openFeedModal(profile: PostAuthorProfile, feeds: FeedSummary[]): 
     ${renderFeedOptions(feeds, memberships)}
   `;
 
-  body.querySelectorAll<HTMLButtonElement>('.pf-feed-option:not(.already-added)').forEach((button) => {
+  body.querySelectorAll<HTMLButtonElement>('.pf-feed-option:not(.already-added):not(.plan-locked)').forEach((button) => {
     button.addEventListener('click', async () => {
       if (!activeProfile) {
         return;

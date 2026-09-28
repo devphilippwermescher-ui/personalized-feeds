@@ -9,4 +9,5 @@ export interface FeedSummary {
   name: string;
   color?: string;
   memberCount: number;
+  isLockedByPlan?: boolean;
 }

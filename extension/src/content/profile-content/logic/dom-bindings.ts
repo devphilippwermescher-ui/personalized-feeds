@@ -57,8 +57,10 @@ function setupOverlayClose(buttonId: string, overlayId: string): void {
 }
 
 export function setupProfileContentDomBindings(deps: DomBindingDeps): void {
-  bindClickOnce(document.getElementById('pf-add-to-feed-btn'), () => {
-    void deps.handleAddToFeed();
+  document.querySelectorAll('.pf-add-to-feed-button').forEach((button) => {
+    bindClickOnce(button, () => {
+      void deps.handleAddToFeed();
+    });
   });
 
   setupOverlayClose('pf-feed-modal-close', 'pf-feed-modal-overlay');

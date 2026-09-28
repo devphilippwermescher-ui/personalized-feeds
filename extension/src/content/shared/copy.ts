@@ -32,6 +32,7 @@ export const CONTENT_COPY = {
     premiumTitle: 'Personalized Feeds',
     premiumDescription: 'More Pro features are currently in development.',
     premiumHint: 'See what is coming',
+    freeFeedLockedHint: 'Free includes up to 3 custom feeds. Pro is in development; this feed remains locked.',
   },
   profile: {
     addToFeedTitle: 'Add to Feed',

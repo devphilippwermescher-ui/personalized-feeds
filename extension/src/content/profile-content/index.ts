@@ -2,7 +2,8 @@ import { dispatchFeedMemberAdded } from '../feeds-sidebar/sync-events';
 import { handlePendingProfileAction } from '../linkedin-profile-actions';
 import { setupProfileContentDomBindings } from './logic/dom-bindings';
 import { createFeedActions } from './logic/feed-actions';
-import { extractProfileData, findProfileTopCardRoot } from './logic/profile-data';
+import { insertFeedCardIntoPrimaryTopCard, insertFeedCardIntoTopCard } from './logic/feed-card-placement';
+import { extractProfileData, findPrimaryProfileTopCardRoot, findProfileTopCardRoot } from './logic/profile-data';
 import { injectProfileContentStyles } from './styles';
 import { createFeedCard, unmountFeedCard } from './template';
 import type { ProfileData } from './types';
@@ -16,8 +17,11 @@ let currentProfileData: ProfileData | null = null;
 let lastUrl = window.location.href;
 let cardRemovalObserver: MutationObserver | null = null;
 let profileRelationshipObserver: MutationObserver | null = null;
+let stickySurfaceObserver: MutationObserver | null = null;
 let pendingReinjectTimer: number | null = null;
 let pendingRelationshipSyncTimer: number | null = null;
+let pendingStickySurfaceFrame: number | null = null;
+let stickySurfaceScrollHandler: (() => void) | null = null;
 let lastRelationshipSignature = '';
 
 type DispatchedMember = Parameters<typeof dispatchFeedMemberAdded>[0]['member'];
@@ -45,67 +49,6 @@ const feedActions = createFeedActions({
   emitFeedMemberAdded,
 });
 
-function getModernProfileActionElements(root: HTMLElement): HTMLElement[] {
-  const selectors = [
-    'a[href*="/preload/custom-invite/"]',
-    'a[href*="/messaging/compose/"]',
-    'button[aria-label*="Message"]',
-    'button[aria-label*="Connect"]',
-    'button[aria-label*="Invite"]',
-    'button[aria-label*="Pending"]',
-    'button[aria-expanded="false"]',
-  ];
-
-  const elements = selectors.flatMap((selector) => Array.from(root.querySelectorAll<HTMLElement>(selector)));
-  return Array.from(new Set(elements));
-}
-
-function countModernProfileActionElements(root: ParentNode): number {
-  return getModernProfileActionElements(root as HTMLElement).filter((element) => root.contains(element)).length;
-}
-
-function findModernActionBarContainer(root: HTMLElement): HTMLElement | null {
-  const actions = getModernProfileActionElements(root);
-  for (const action of actions) {
-    let current = action.parentElement;
-
-    while (current && current !== root) {
-      if (countModernProfileActionElements(current) >= 2) {
-        return current;
-      }
-      current = current.parentElement;
-    }
-  }
-
-  return null;
-}
-
-function isModernTopCardSection(element: HTMLElement): boolean {
-  const componentKey = element.getAttribute('componentkey') || '';
-  return /topcard/i.test(componentKey);
-}
-
-function findModernInlineInsertionTarget(root: HTMLElement): HTMLElement | null {
-  const mutualConnectionsLink = root.querySelector<HTMLElement>(
-    'a[href*="/search/results/people/"][href*="connectionOf="]'
-  );
-  if (mutualConnectionsLink?.parentElement === root) {
-    return mutualConnectionsLink;
-  }
-
-  const modernActionBar = findModernActionBarContainer(root);
-  if (!modernActionBar) {
-    return null;
-  }
-
-  let current: HTMLElement | null = modernActionBar;
-  while (current?.parentElement && current.parentElement !== root) {
-    current = current.parentElement;
-  }
-
-  return current && current.parentElement === root ? current : modernActionBar;
-}
-
 function clearPendingReinject(): void {
   if (pendingReinjectTimer !== null) {
     window.clearTimeout(pendingReinjectTimer);
@@ -132,6 +75,21 @@ function disconnectProfileRelationshipObserver(): void {
   }
 }
 
+function disconnectStickySurfaceObserver(): void {
+  stickySurfaceObserver?.disconnect();
+  stickySurfaceObserver = null;
+
+  if (stickySurfaceScrollHandler) {
+    window.removeEventListener('scroll', stickySurfaceScrollHandler);
+    stickySurfaceScrollHandler = null;
+  }
+
+  if (pendingStickySurfaceFrame !== null) {
+    window.cancelAnimationFrame(pendingStickySurfaceFrame);
+    pendingStickySurfaceFrame = null;
+  }
+}
+
 function scheduleReinject(): void {
   clearPendingReinject();
   pendingReinjectTimer = window.setTimeout(() => {
@@ -143,21 +101,24 @@ function scheduleReinject(): void {
   }, 300);
 }
 
-function observeCardRemoval(card: HTMLElement): void {
+function getRenderedFeedCards(): HTMLElement[] {
+  return Array.from(document.querySelectorAll<HTMLElement>('[data-pf-feed-card="true"], #pf-feed-card'));
+}
+
+function observeCardRemoval(cards: HTMLElement[]): void {
   disconnectCardRemovalObserver();
 
-  const parent = card.parentElement;
-  if (!parent) {
+  if (cards.length === 0) {
     return;
   }
 
   cardRemovalObserver = new MutationObserver((_mutations) => {
-    const cardStillConnected = document.getElementById('pf-feed-card')?.isConnected === true;
-    if (cardStillConnected) {
+    if (cards.every((card) => card.isConnected)) {
       return;
     }
 
     disconnectCardRemovalObserver();
+    disconnectStickySurfaceObserver();
     scheduleReinject();
   });
 
@@ -165,15 +126,18 @@ function observeCardRemoval(card: HTMLElement): void {
 }
 
 function removeExistingCard(): void {
-  const existingCard = document.getElementById('pf-feed-card');
-  if (!existingCard) {
+  disconnectStickySurfaceObserver();
+  const existingCards = getRenderedFeedCards();
+  if (existingCards.length === 0) {
     return;
   }
 
   disconnectCardRemovalObserver();
   disconnectProfileRelationshipObserver();
-  unmountFeedCard(existingCard);
-  existingCard.remove();
+  existingCards.forEach((card) => {
+    unmountFeedCard(card);
+    card.remove();
+  });
 }
 
 function getRelationshipDomSignature(root: ParentNode): string {
@@ -186,11 +150,12 @@ function getRelationshipDomSignature(root: ParentNode): string {
         .toLowerCase();
       return `${text}|${label}`;
     })
-    .filter((value) =>
-      hasRelationshipSignal({ text: value, label: '' }) ||
-      /connect|invite|pending|withdraw|message|follow|unfollow|встановити|повідомлення|розглядається|скасувати/i.test(
-        value
-      )
+    .filter(
+      (value) =>
+        hasRelationshipSignal({ text: value, label: '' }) ||
+        /connect|invite|pending|withdraw|message|follow|unfollow|встановити|повідомлення|розглядається|скасувати/i.test(
+          value
+        )
     )
     .sort();
   const degree = root.querySelector('.dist-value')?.textContent?.replace(/\s+/g, ' ').trim().toLowerCase() || '';
@@ -205,11 +170,15 @@ function getRelationshipDomSignature(root: ParentNode): string {
         element.getAttribute('xlink:href'),
         element.id,
         element.className,
-      ].map((value) => String(value || '')).join(' ')
+      ]
+        .map((value) => String(value || ''))
+        .join(' ')
     )
-    .some((value) =>
-      /\b(?:linkedin\s+premium|premium\s+profile|premium\s+member|profile\s+enhanced\s+with\s+premium)\b/i.test(value) ||
-      /(?:linkedin-bug|premium-badge|premium_profile|premium-profile)/i.test(value)
+    .some(
+      (value) =>
+        /\b(?:linkedin\s+premium|premium\s+profile|premium\s+member|profile\s+enhanced\s+with\s+premium)\b/i.test(
+          value
+        ) || /(?:linkedin-bug|premium-badge|premium_profile|premium-profile)/i.test(value)
     )
     ? 'premium'
     : '';
@@ -262,6 +231,49 @@ function setupEventListeners(): void {
   });
 }
 
+function observeMissingStickySurface(profile: ProfileData, primaryTopCard: HTMLElement, cards: HTMLElement[]): void {
+  disconnectStickySurfaceObserver();
+
+  const tryInjectStickyCard = () => {
+    pendingStickySurfaceFrame = null;
+    if (!primaryTopCard.isConnected || !isBaseProfilePage()) {
+      return;
+    }
+
+    const stickyTopCard = findProfileTopCardRoot(profile.linkedinUsername, primaryTopCard);
+    if (!stickyTopCard) {
+      return;
+    }
+
+    const stickyCard = createFeedCard(profile, false);
+    stickyCard.dataset.pfFeedSurface = 'sticky';
+    insertFeedCardIntoTopCard(stickyCard, stickyTopCard);
+    cards.push(stickyCard);
+    setupEventListeners();
+    disconnectStickySurfaceObserver();
+
+    void feedActions.checkAuth().then((isAuth) => {
+      if (isAuth) {
+        void feedActions.refreshCardState();
+      }
+    });
+  };
+
+  const scheduleStickyCheck = () => {
+    if (pendingStickySurfaceFrame !== null) {
+      return;
+    }
+
+    pendingStickySurfaceFrame = window.requestAnimationFrame(tryInjectStickyCard);
+  };
+
+  stickySurfaceObserver = new MutationObserver(scheduleStickyCheck);
+  stickySurfaceObserver.observe(document.body, { childList: true, subtree: true });
+  stickySurfaceScrollHandler = scheduleStickyCheck;
+  window.addEventListener('scroll', stickySurfaceScrollHandler, { passive: true });
+  scheduleStickyCheck();
+}
+
 function injectFeedCard(): void {
   if (feedCardInjected) {
     return;
@@ -273,85 +285,40 @@ function injectFeedCard(): void {
   }
 
   currentProfileData = profile;
-  const topCardSection = findProfileTopCardRoot(profile.linkedinUsername);
-  if (!topCardSection) {
+  const primaryTopCard = findPrimaryProfileTopCardRoot(profile.linkedinUsername);
+  const stickyTopCard = findProfileTopCardRoot(profile.linkedinUsername, primaryTopCard);
+  if (!primaryTopCard && !stickyTopCard) {
     return;
   }
 
   removeExistingCard();
 
   injectProfileContentStyles();
-  const card = createFeedCard(profile);
-  const insertionTargets = ['.ph5.pb5', '.ph5', '.mt2.relative', '.pv-text-details__left-panel', '.display-flex.ph5'];
+  const cards: HTMLElement[] = [];
 
-  let inserted = false;
-  if (isModernTopCardSection(topCardSection)) {
-    const modernInlineTarget = findModernInlineInsertionTarget(topCardSection);
-    if (modernInlineTarget) {
-      modernInlineTarget.insertAdjacentElement('afterend', card);
-      inserted = true;
-    }
+  if (primaryTopCard) {
+    const primaryCard = createFeedCard(profile);
+    primaryCard.dataset.pfFeedSurface = 'primary';
+    insertFeedCardIntoPrimaryTopCard(primaryCard, primaryTopCard);
+    cards.push(primaryCard);
   }
 
-  for (const selector of insertionTargets) {
-    if (inserted) {
-      break;
-    }
-
-    const target = topCardSection.querySelector(selector);
-    if (!target) {
-      continue;
-    }
-
-    if (selector === '.mt2.relative') {
-      target.insertAdjacentElement('afterend', card);
-    } else {
-      target.appendChild(card);
-    }
-
-    inserted = true;
-    break;
-  }
-
-  if (!inserted) {
-    const actionContainer =
-      topCardSection.querySelector('.pv-top-card-v2-ctas') ||
-      topCardSection.querySelector('.entry-point')?.parentElement;
-
-    if (actionContainer?.parentElement) {
-      actionContainer.insertAdjacentElement('afterend', card);
-      inserted = true;
-    }
-  }
-
-  if (!inserted) {
-    const modernActionContainer =
-      topCardSection.querySelector('a[href*="/preload/custom-invite/"]')?.closest('div[style*="min-width"]') ||
-      topCardSection.querySelector('a[href*="/messaging/compose/"]')?.closest('div[style*="min-width"]');
-
-    if (modernActionContainer?.parentElement) {
-      modernActionContainer.insertAdjacentElement('afterend', card);
-      inserted = true;
-    }
-  }
-
-  if (!inserted) {
-    const modernActionBar = findModernActionBarContainer(topCardSection);
-    if (modernActionBar?.parentElement) {
-      modernActionBar.insertAdjacentElement('afterend', card);
-      inserted = true;
-    }
-  }
-
-  if (!inserted) {
-    topCardSection.appendChild(card);
+  if (stickyTopCard) {
+    const stickyCard = createFeedCard(profile, cards.length === 0);
+    stickyCard.dataset.pfFeedSurface = 'sticky';
+    insertFeedCardIntoTopCard(stickyCard, stickyTopCard);
+    cards.push(stickyCard);
   }
 
   feedCardInjected = true;
   clearPendingReinject();
-  observeCardRemoval(card);
-  observeProfileRelationshipChanges(topCardSection);
+  observeCardRemoval(cards);
+  observeProfileRelationshipChanges(primaryTopCard || stickyTopCard!);
   setupEventListeners();
+
+  if (primaryTopCard && !stickyTopCard) {
+    observeMissingStickySurface(profile, primaryTopCard, cards);
+  }
 
   void feedActions.checkAuth().then((isAuth) => {
     if (isAuth) {
@@ -365,13 +332,13 @@ function waitForProfile(): void {
     return;
   }
 
-  if (findProfileTopCardRoot()) {
+  if (findPrimaryProfileTopCardRoot() || findProfileTopCardRoot()) {
     injectFeedCard();
     return;
   }
 
   const observer = new MutationObserver((_mutations, obs) => {
-    if (findProfileTopCardRoot()) {
+    if (findPrimaryProfileTopCardRoot() || findProfileTopCardRoot()) {
       obs.disconnect();
       injectFeedCard();
     }

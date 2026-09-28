@@ -1,7 +1,17 @@
 export const FEED_CARD_CSS = `
-  #pf-feed-card {
+  .pf-feed-card {
     margin: 0px 24px 20px;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  }
+
+  .pf-feed-card.pf-feed-card--primary {
+    margin-top: 16px;
+  }
+
+  .pf-feed-card[data-pf-feed-surface='sticky'] {
+    margin-top: 20px;
+    margin-bottom: 20px;
+    align-self: center;
   }
 
   .pf-feed-card-inner {

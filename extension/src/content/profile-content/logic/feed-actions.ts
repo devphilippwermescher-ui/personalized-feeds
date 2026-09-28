@@ -43,28 +43,25 @@ export function createFeedActions(deps: FeedActionDeps) {
   }
 
   function setAddToFeedButtonLoading(isLoading: boolean): void {
-    const button = document.getElementById('pf-add-to-feed-btn') as HTMLButtonElement | null;
-    if (!button) {
-      return;
-    }
+    document.querySelectorAll<HTMLButtonElement>('.pf-add-to-feed-button').forEach((button) => {
+      if (!button.dataset.defaultLabel) {
+        button.dataset.defaultLabel = button.textContent?.trim() || 'Add to feed';
+      }
 
-    if (!button.dataset.defaultLabel) {
-      button.dataset.defaultLabel = button.textContent?.trim() || 'Add to feed';
-    }
+      if (isLoading) {
+        button.disabled = true;
+        button.classList.add('is-loading');
+        button.innerHTML = `
+          <span class="pf-inline-spinner" aria-hidden="true"></span>
+          <span>${CONTENT_COPY.profile.addToFeedLoading}</span>
+        `;
+        return;
+      }
 
-    if (isLoading) {
-      button.disabled = true;
-      button.classList.add('is-loading');
-      button.innerHTML = `
-        <span class="pf-inline-spinner" aria-hidden="true"></span>
-        <span>${CONTENT_COPY.profile.addToFeedLoading}</span>
-      `;
-      return;
-    }
-
-    button.disabled = false;
-    button.classList.remove('is-loading');
-    button.textContent = button.dataset.defaultLabel;
+      button.disabled = false;
+      button.classList.remove('is-loading');
+      button.textContent = button.dataset.defaultLabel;
+    });
   }
 
   function renderFeedModalLoadingState(body: HTMLElement): void {
@@ -110,11 +107,12 @@ export function createFeedActions(deps: FeedActionDeps) {
           color: feed.color,
           memberCount: feed.memberCount,
           isMember: membershipMap.has(feed.id),
+          isLockedByPlan: feed.isLockedByPlan,
         });
       })
       .join('');
 
-    body.querySelectorAll('.pf-feed-option:not(.already-added)').forEach((element) => {
+    body.querySelectorAll('.pf-feed-option:not(.already-added):not(.plan-locked)').forEach((element) => {
       element.addEventListener('click', async () => {
         const feedId = element.getAttribute('data-feed-id');
         const feedName = element.getAttribute('data-feed-name');
@@ -214,10 +212,7 @@ export function createFeedActions(deps: FeedActionDeps) {
     })) as { memberships: FeedMembership[] } | null;
 
     const list = memberships?.memberships || [];
-    const infoText = document.getElementById('pf-feed-info-text');
-    const membershipsEl = document.getElementById('pf-feed-memberships');
-    const statusBadge = document.getElementById('pf-feed-status-badge');
-    const statusIcon = document.getElementById('pf-feed-status-icon');
+    const cards = Array.from(document.querySelectorAll<HTMLElement>('[data-pf-feed-card="true"]'));
 
     await syncCurrentProfileViewerStatus({
       getCurrentProfileData: deps.getCurrentProfileData,
@@ -230,59 +225,73 @@ export function createFeedActions(deps: FeedActionDeps) {
         sendMessageToBackground: deps.sendMessageToBackground,
       });
 
-      if (infoText) {
-        infoText.innerHTML = `<strong>${escapeHtml(currentProfileData.displayName)}</strong> is in ${list.length} feed${list.length > 1 ? 's' : ''}`;
-      }
+      cards.forEach((card) => {
+        const infoText = card.querySelector<HTMLElement>('.pf-feed-info-text');
+        const membershipsEl = card.querySelector<HTMLElement>('.pf-feed-memberships');
+        const statusBadge = card.querySelector<HTMLElement>('.pf-feed-status-badge');
+        const statusIcon = card.querySelector<HTMLElement>('.pf-feed-status-icon');
 
-      if (membershipsEl) {
-        membershipsEl.innerHTML = list
-          .map(
-            (membership) =>
-              `<span class="pf-feed-membership-tag" style="background:#615DEC" data-feed-id="${membership.feedId}" data-member-id="${membership.memberId}">${escapeHtml(membership.feedName)}<span class="pf-remove-tag" title="Remove from feed">&times;</span></span>`
-          )
-          .join('');
+        if (infoText) {
+          infoText.innerHTML = `<strong>${escapeHtml(currentProfileData.displayName)}</strong> is in ${list.length} feed${list.length > 1 ? 's' : ''}`;
+        }
 
-        membershipsEl.querySelectorAll('.pf-remove-tag').forEach((button) => {
-          button.addEventListener('click', async (event) => {
-            event.stopPropagation();
-            const tag = button.closest('.pf-feed-membership-tag') as HTMLElement | null;
-            const feedId = tag?.getAttribute('data-feed-id');
-            const memberId = tag?.getAttribute('data-member-id');
-            if (!feedId || !memberId) {
-              return;
-            }
+        if (membershipsEl) {
+          membershipsEl.innerHTML = list
+            .map(
+              (membership) =>
+                `<span class="pf-feed-membership-tag" style="background:#615DEC" data-feed-id="${membership.feedId}" data-member-id="${membership.memberId}">${escapeHtml(membership.feedName)}<span class="pf-remove-tag" title="Remove from feed">&times;</span></span>`
+            )
+            .join('');
 
-            const result = (await deps.sendMessageToBackground({
-              type: 'FEEDS_REMOVE_MEMBER',
-              feedId,
-              memberId,
-            })) as { success: boolean } | null;
+          membershipsEl.querySelectorAll('.pf-remove-tag').forEach((button) => {
+            button.addEventListener('click', async (event) => {
+              event.stopPropagation();
+              const tag = button.closest('.pf-feed-membership-tag') as HTMLElement | null;
+              const feedId = tag?.getAttribute('data-feed-id');
+              const memberId = tag?.getAttribute('data-member-id');
+              if (!feedId || !memberId) {
+                return;
+              }
 
-            if (result?.success) {
-              deps.showToast(profileRemovedFromFeedMessage(), 'success');
-              await refreshCardState();
-            }
+              const result = (await deps.sendMessageToBackground({
+                type: 'FEEDS_REMOVE_MEMBER',
+                feedId,
+                memberId,
+              })) as { success: boolean } | null;
+
+              if (result?.success) {
+                deps.showToast(profileRemovedFromFeedMessage(), 'success');
+                await refreshCardState();
+              }
+            });
           });
-        });
-      }
+        }
 
-      statusBadge?.classList.add('in-feed');
-      if (statusIcon) {
-        statusIcon.textContent = '\u2713';
-      }
+        statusBadge?.classList.add('in-feed');
+        if (statusIcon) {
+          statusIcon.textContent = '\u2713';
+        }
+      });
       return;
     }
 
-    if (infoText) {
-      infoText.innerHTML = `<strong>${escapeHtml(currentProfileData.displayName)}</strong> is not in any feed`;
-    }
-    if (membershipsEl) {
-      membershipsEl.innerHTML = '';
-    }
-    statusBadge?.classList.remove('in-feed');
-    if (statusIcon) {
-      statusIcon.textContent = '\u2717';
-    }
+    cards.forEach((card) => {
+      const infoText = card.querySelector<HTMLElement>('.pf-feed-info-text');
+      const membershipsEl = card.querySelector<HTMLElement>('.pf-feed-memberships');
+      const statusBadge = card.querySelector<HTMLElement>('.pf-feed-status-badge');
+      const statusIcon = card.querySelector<HTMLElement>('.pf-feed-status-icon');
+
+      if (infoText) {
+        infoText.innerHTML = `<strong>${escapeHtml(currentProfileData.displayName)}</strong> is not in any feed`;
+      }
+      if (membershipsEl) {
+        membershipsEl.innerHTML = '';
+      }
+      statusBadge?.classList.remove('in-feed');
+      if (statusIcon) {
+        statusIcon.textContent = '\u2717';
+      }
+    });
   }
 
   async function handleAddToFeed(): Promise<void> {

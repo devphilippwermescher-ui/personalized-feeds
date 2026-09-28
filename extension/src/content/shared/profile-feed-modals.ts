@@ -17,6 +17,7 @@ interface FeedOptionRenderOptions {
   color?: string;
   memberCount?: number;
   isMember?: boolean;
+  isLockedByPlan?: boolean;
   element?: 'button' | 'div';
 }
 
@@ -251,24 +252,29 @@ export function renderFeedModalOption({
   color,
   memberCount,
   isMember = false,
+  isLockedByPlan = false,
   element = 'div',
 }: FeedOptionRenderOptions): string {
   const tag = element;
+  const isDisabled = isMember || isLockedByPlan;
   const roleAttributes =
     tag === 'button'
-      ? `type="button" ${isMember ? 'disabled' : ''}`
-      : `${isMember ? '' : 'role="button" tabindex="0"'}`;
+      ? `type="button" ${isDisabled ? 'disabled aria-disabled="true"' : ''}`
+      : `${isDisabled ? 'aria-disabled="true"' : 'role="button" tabindex="0"'}`;
 
   return `
     <${tag}
-      class="pf-feed-option${isMember ? ' already-added' : ''}"
+      class="pf-feed-option${isMember ? ' already-added' : ''}${isLockedByPlan ? ' plan-locked' : ''}"
       data-feed-id="${escapeHtml(id)}"
       data-feed-name="${escapeHtml(name)}"
+      data-plan-locked="${String(isLockedByPlan)}"
+      ${isLockedByPlan ? `title="${escapeHtml(CONTENT_COPY.sidebar.freeFeedLockedHint)}"` : ''}
       ${roleAttributes}
     >
       <span class="pf-feed-option-left">
         <span class="pf-feed-option-dot" style="background:${escapeHtml(color || '#615DEC')}"></span>
         <span class="pf-feed-option-name">${escapeHtml(name)}</span>
+        ${isLockedByPlan ? '<span class="pf-feed-option-plan-lock">Locked</span>' : ''}
         <span class="pf-feed-option-count">${getMemberCountLabel(memberCount ?? 0)}</span>
       </span>
       <span class="pf-feed-option-status">
@@ -424,6 +430,19 @@ export const PROFILE_FEED_MODALS_CSS = `
     color: #9ca3af;
   }
 
+  .pf-feed-option-plan-lock {
+    flex-shrink: 0;
+    padding: 3px 6px;
+    border-radius: 999px;
+    background: #e2e8f0;
+    color: #475569;
+    font-size: 9px;
+    font-weight: 800;
+    line-height: 1;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
   .pf-feed-option-check {
     font-size: 18px;
     color: #059669;
@@ -441,6 +460,16 @@ export const PROFILE_FEED_MODALS_CSS = `
   .pf-feed-option.already-added {
     opacity: 0.6;
     cursor: default;
+  }
+
+  .pf-feed-option.plan-locked {
+    background: #f8fafc;
+    opacity: 0.68;
+    cursor: not-allowed;
+  }
+
+  .pf-feed-option.plan-locked:hover {
+    background: #f8fafc;
   }
 
   .pf-feed-modal-footer {
