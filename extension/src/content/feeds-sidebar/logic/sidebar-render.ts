@@ -20,6 +20,7 @@ interface RenderSidebarInnerParams {
   sidebarSearchQuery: string;
   activeFeedTab: 'owned' | 'shared';
   expandedFeedId: string | null;
+  animateExpandedFeed: boolean;
   activeMemberEditor: MemberEditorState | null;
   renderSidebarHeader: (params: {
     logoUrl: string;
@@ -124,6 +125,7 @@ export function renderSidebarInnerMarkup(params: RenderSidebarInnerParams): void
     sidebarSearchQuery,
     activeFeedTab,
     expandedFeedId,
+    animateExpandedFeed,
     activeMemberEditor,
     renderSidebarHeader,
     renderSidebarBody,
@@ -161,6 +163,7 @@ export function renderSidebarInnerMarkup(params: RenderSidebarInnerParams): void
       renderFeedRow({
         feed,
         expanded: expandedFeedId === feed.id,
+        animateExpandedContent: animateExpandedFeed,
         previewHtml: renderFeedPreview(feed.id),
         expandedContentHtml: expandedFeedId === feed.id ? renderMembersList(feed) : '',
       })

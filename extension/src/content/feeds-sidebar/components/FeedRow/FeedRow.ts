@@ -5,11 +5,18 @@ import { CONTENT_COPY } from '../../../shared/copy';
 interface RenderFeedRowOptions {
   feed: FeedInfo;
   expanded: boolean;
+  animateExpandedContent?: boolean;
   previewHtml: string;
   expandedContentHtml?: string;
 }
 
-export function renderFeedRow({ feed, expanded, previewHtml, expandedContentHtml = '' }: RenderFeedRowOptions): string {
+export function renderFeedRow({
+  feed,
+  expanded,
+  animateExpandedContent = true,
+  previewHtml,
+  expandedContentHtml = '',
+}: RenderFeedRowOptions): string {
   const isShared = Boolean(feed.isShared);
   const isSystem = Boolean(feed.isSystem);
   const isLockedByPlan = feed.isLockedByPlan === true;
@@ -165,7 +172,7 @@ export function renderFeedRow({ feed, expanded, previewHtml, expandedContentHtml
           `
           : ''
       }
-      ${expanded ? `<div class="lfa-feed-expanded">${expandedContentHtml}</div>` : ''}
+      ${expanded ? `<div class="lfa-feed-expanded${animateExpandedContent ? '' : ' lfa-feed-expanded--stable'}">${expandedContentHtml}</div>` : ''}
     </div>
   `;
 }

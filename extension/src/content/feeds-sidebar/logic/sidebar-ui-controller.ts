@@ -137,6 +137,7 @@ export function createSidebarUiController(deps: SidebarUiControllerDeps): {
       sidebarSearchQuery,
       activeFeedTab: deps.getActiveFeedTab(),
       expandedFeedId: deps.getExpandedFeedId(),
+      animateExpandedFeed: shouldCenterFeed,
       activeMemberEditor: deps.getActiveMemberEditor(),
       renderSidebarHeader,
       renderSidebarBody,

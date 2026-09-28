@@ -33,6 +33,21 @@ interface FeedMembersDeps {
   getFeeds: () => FeedInfo[];
 }
 
+function getRelationshipStateSignature(member: FeedMemberInfo): string {
+  return JSON.stringify({
+    status: member.status,
+    connectionDegree: member.connectionDegree,
+    profileUrn: member.profileUrn,
+    memberNumericId: member.memberNumericId,
+    canMessage: member.canMessage,
+    canFollow: member.canFollow,
+    canConnect: member.canConnect,
+    isFollowing: member.isFollowing,
+    isPremium: member.isPremium,
+    profileImageUrl: member.profileImageUrl,
+  });
+}
+
 function startBackgroundStatusRefresh(feedId: string, members: FeedMemberInfo[], deps: FeedMembersDeps): void {
   const feed = deps.getFeeds().find((item) => item.id === feedId);
   const isProfileViewers = feed?.systemType === 'profileViewers';
@@ -46,6 +61,10 @@ function startBackgroundStatusRefresh(feedId: string, members: FeedMemberInfo[],
     return;
   }
 
+  const lastRenderedStateByMemberId = new Map(
+    profileMembers.map((member) => [member.id, getRelationshipStateSignature(member)])
+  );
+
   deps.getStatusFetchController()?.abort();
   const controller = new AbortController();
   deps.setStatusFetchController(controller);
@@ -54,6 +73,11 @@ function startBackgroundStatusRefresh(feedId: string, members: FeedMemberInfo[],
     .fetchStatusesProgressively(
       profileMembers,
       (member) => {
+        const nextState = getRelationshipStateSignature(member);
+        if (lastRenderedStateByMemberId.get(member.id) === nextState) {
+          return;
+        }
+        lastRenderedStateByMemberId.set(member.id, nextState);
         void deps.persistResolvedMemberState(feedId, member);
         if (!deps.updateRenderedMemberState(feedId, member)) {
           deps.renderSidebarContent();
@@ -153,11 +177,7 @@ export async function loadFeedMembers(feedId: string, deps: FeedMembersDeps): Pr
   const resp = await deps.sendMsg({ type: 'FEEDS_GET_MEMBERS', ownerId: feed?.ownerId, feedId });
   const members = ((resp?.members as FeedMemberInfo[]) || []).map((member) => ({
     ...member,
-    status: member.isLockedByPlan
-      ? member.status
-      : !feed?.isShared
-        ? ('loading' as const)
-        : member.status || ('loading' as const),
+    status: member.isLockedByPlan ? member.status : member.status || ('loading' as const),
   }));
 
   deps.setFeedMembersById({
@@ -207,16 +227,7 @@ export async function toggleFeedExpansion(feedId: string, deps: FeedMembersDeps)
   const feed = deps.getFeeds().find((item) => item.id === feedId);
   const cachedMembers = deps.getFeedMembersById()[feedId] || [];
   const isProfileViewersFeed = feed?.systemType === 'profileViewers';
-  let membersForRefresh = cachedMembers;
-  if (!feed?.isShared && !isProfileViewersFeed && cachedMembers.length > 0) {
-    membersForRefresh = cachedMembers.map((member) =>
-      member.isLockedByPlan ? member : { ...member, status: 'loading' as const }
-    );
-    deps.setFeedMembersById({
-      ...deps.getFeedMembersById(),
-      [feedId]: membersForRefresh,
-    });
-  }
+  const membersForRefresh = cachedMembers;
   const retryState = deps.getFeedMembersRetryState();
   const shouldRetryEmptyState =
     cachedMembers.length === 0 && (feed?.memberCount || 0) > 0 && retryState[feedId] !== true;

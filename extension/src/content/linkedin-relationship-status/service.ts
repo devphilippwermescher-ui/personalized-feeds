@@ -136,10 +136,7 @@ function cacheResolvedStatus(username: string, result: RelationshipStatusResult)
   );
 }
 
-export function rememberLinkedInRelationshipStatus(
-  username: string,
-  result: RelationshipResolution
-): void {
+export function rememberLinkedInRelationshipStatus(username: string, result: RelationshipResolution): void {
   cacheResolvedStatus(username, normalizeRelationshipResolution(result));
 }
 
@@ -449,11 +446,27 @@ export async function fetchStatusesProgressively(
   const processMember = async (member: FeedMemberInfo): Promise<void> => {
     if (signal?.aborted) return;
 
+    const previousRelationship = {
+      status: member.status,
+      profileUrn: member.profileUrn,
+      canMessage: member.canMessage,
+      canFollow: member.canFollow,
+      canConnect: member.canConnect,
+      isFollowing: member.isFollowing,
+      memberNumericId: member.memberNumericId,
+      isPremium: member.isPremium,
+      profileImageUrl: member.profileImageUrl,
+    };
+
     let canonicalUsername = '';
     try {
       canonicalUsername = await ensureCanonicalIdentity(member);
     } catch {
-      member.status = 'connect';
+      if (previousRelationship.status && previousRelationship.status !== 'loading') {
+        Object.assign(member, previousRelationship);
+      } else {
+        member.status = 'connect';
+      }
       onUpdate(member);
       return;
     }
@@ -488,11 +501,15 @@ export async function fetchStatusesProgressively(
       const result = await fetchSingleStatus(member, options);
       applyRelationshipResultToMemberWithOptions(member, result, options);
     } catch {
-      member.status = undefined;
-      member.canMessage = undefined;
-      member.canFollow = undefined;
-      member.canConnect = undefined;
-      member.isFollowing = undefined;
+      if (previousRelationship.status && previousRelationship.status !== 'loading') {
+        Object.assign(member, previousRelationship);
+      } else {
+        member.status = undefined;
+        member.canMessage = undefined;
+        member.canFollow = undefined;
+        member.canConnect = undefined;
+        member.isFollowing = undefined;
+      }
     }
 
     onUpdate(member);

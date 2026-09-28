@@ -22,6 +22,38 @@ interface ExternalMemberSyncDeps {
 
 let listenerAttached = false;
 
+function canPatchMemberRows(currentMembers: FeedMemberInfo[], nextMembers: FeedMemberInfo[]): boolean {
+  return (
+    currentMembers.length === nextMembers.length &&
+    currentMembers.every((currentMember, index) => {
+      const nextMember = nextMembers[index];
+      return (
+        nextMember?.id === currentMember.id &&
+        nextMember.itemType === currentMember.itemType &&
+        nextMember.isLockedByPlan === currentMember.isLockedByPlan &&
+        nextMember.headline === currentMember.headline &&
+        nextMember.viewedAgoText === currentMember.viewedAgoText &&
+        nextMember.mutualConnectionsText === currentMember.mutualConnectionsText &&
+        nextMember.searchKey === currentMember.searchKey
+      );
+    })
+  );
+}
+
+function getFeedPreviewSignature(members: FeedMemberInfo[]): string {
+  return JSON.stringify(
+    members
+      .filter((member) => !member.isLockedByPlan)
+      .slice(0, 3)
+      .map((member) => ({
+        id: member.id,
+        itemType: member.itemType,
+        displayName: member.displayName,
+        profileImageUrl: member.profileImageUrl,
+      }))
+  );
+}
+
 export function insertAddedMemberIntoCache(
   existingMembers: FeedMemberInfo[],
   incomingMember: FeedMemberInfo
@@ -48,24 +80,36 @@ export function applyRealtimeFeedMembers(
     | 'setSharedFeeds'
     | 'getFeedMembersById'
     | 'setFeedMembersById'
+    | 'getExpandedFeedId'
+    | 'updateRenderedMemberState'
     | 'getActiveMemberEditor'
     | 'setActiveMemberEditor'
     | 'renderSidebarContent'
   >
 ): boolean {
   const matchesFeed = (feed: FeedInfo): boolean => feed.id === detail.feedId && feed.ownerId === detail.ownerId;
-  if (![...deps.getFeeds(), ...deps.getSharedFeeds()].some(matchesFeed)) return false;
+  const currentFeed = [...deps.getFeeds(), ...deps.getSharedFeeds()].find(matchesFeed);
+  if (!currentFeed) return false;
 
   const activeMemberCount = detail.members.filter((member) => !member.isLockedByPlan).length;
+  const lockedMemberCount = Math.max(0, detail.memberCount - activeMemberCount);
   const updateFeed = (feed: FeedInfo): FeedInfo =>
     matchesFeed(feed)
       ? {
           ...feed,
           memberCount: detail.memberCount,
           activeMemberCount,
-          lockedMemberCount: Math.max(0, detail.memberCount - activeMemberCount),
+          lockedMemberCount,
         }
       : feed;
+  const currentMembers = deps.getFeedMembersById()[detail.feedId] || [];
+  const expandedFeedId = deps.getExpandedFeedId();
+  const canPatchExpandedFeed = expandedFeedId === detail.feedId && canPatchMemberRows(currentMembers, detail.members);
+  const collapsedPresentationChanged =
+    currentFeed.memberCount !== detail.memberCount ||
+    (currentFeed.activeMemberCount ?? currentFeed.memberCount) !== activeMemberCount ||
+    (currentFeed.lockedMemberCount ?? 0) !== lockedMemberCount ||
+    getFeedPreviewSignature(currentMembers) !== getFeedPreviewSignature(detail.members);
 
   deps.setFeeds(deps.getFeeds().map(updateFeed));
   deps.setSharedFeeds(deps.getSharedFeeds().map(updateFeed));
@@ -80,6 +124,14 @@ export function applyRealtimeFeedMembers(
     !detail.members.some((member) => member.id === activeEditor.member.id)
   ) {
     deps.setActiveMemberEditor(null);
+  }
+
+  if (canPatchExpandedFeed && detail.members.every((member) => deps.updateRenderedMemberState(detail.feedId, member))) {
+    return true;
+  }
+
+  if (expandedFeedId !== detail.feedId && !collapsedPresentationChanged) {
+    return true;
   }
 
   deps.renderSidebarContent();
