@@ -8,6 +8,7 @@ import {
   showEditFeedModal,
   showShareFeedModal,
   showShareNotificationModal,
+  showShareLinkSignInModal,
   showSharingLimitModal,
   showSharedFeedFollowedModal,
   unfollowSharedFeed,
@@ -130,6 +131,7 @@ export function startFeedsSidebar(): void {
     setSharedFeeds: (feeds) => {
       sharedFeedsList = feeds;
     },
+    openSidebar: () => sidebarUiController?.openSidebar(),
     selectSharedTab: () => {
       activeFeedTab = 'shared';
     },
@@ -137,6 +139,9 @@ export function startFeedsSidebar(): void {
     showToast,
     showFollowedModal: (sharedFeed) => {
       showSharedFeedFollowedModal(sharedFeed.name, sharedFeed.ownerDisplayName || 'Unknown user', getFeedActionDeps());
+    },
+    showSignInRequired: () => {
+      showShareLinkSignInModal(getFeedActionDeps());
     },
     showSharingLimit: (details) => {
       showSharingLimitModal(details, 'link', getFeedActionDeps());

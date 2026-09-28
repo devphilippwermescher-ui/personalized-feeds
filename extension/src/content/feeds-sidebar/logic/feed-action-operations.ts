@@ -17,6 +17,7 @@ import {
   DeleteFeedModal,
   EditFeedModal,
   ShareFeedModal,
+  ShareLinkSignInModal,
   ShareNotificationModal,
   SharingLimitModal,
   SharedFeedFollowedModal,
@@ -453,6 +454,15 @@ export function showShareNotificationModal(notification: ShareNotification, deps
         closeFeedActionModal(deps);
         deps.showPlanModal('sharing');
       },
+    }),
+    deps
+  );
+}
+
+export function showShareLinkSignInModal(deps: FeedActionDeps): void {
+  openFeedActionModal(
+    createElement(ShareLinkSignInModal, {
+      onClose: () => closeFeedActionModal(deps),
     }),
     deps
   );

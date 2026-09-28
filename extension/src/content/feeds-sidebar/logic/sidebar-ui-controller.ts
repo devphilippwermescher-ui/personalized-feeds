@@ -26,7 +26,6 @@ import {
   restoreSidebarDomSnapshot,
 } from './sidebar-render';
 import { ensureInit, toggleSidebar } from './sidebar-session';
-import { getSharefeedTokenFromLocation } from './sharefeed-location';
 import { onFeatureSettingsChange } from '../../feature-settings';
 import type { FeedActionDeps } from './feed-actions';
 import type { MemberActionDeps } from './member-actions';
@@ -376,10 +375,6 @@ export function createSidebarUiController(deps: SidebarUiControllerDeps): {
         init,
       });
       deps.schedulePendingShareRetries();
-
-      if (getSharefeedTokenFromLocation()) {
-        void deps.checkAuth();
-      }
     },
   };
 }

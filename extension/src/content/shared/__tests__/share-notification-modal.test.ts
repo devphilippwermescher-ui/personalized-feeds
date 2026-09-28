@@ -3,11 +3,33 @@ import { flushSync } from 'react-dom';
 import { createRoot } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ShareNotification } from 'shared/types';
+import { ShareLinkSignInModal } from '../components/FeedActionModals/ShareLinkSignInModal';
 import { ShareNotificationModal } from '../components/FeedActionModals/ShareNotificationModal';
 
 describe('successful email share notification', () => {
   afterEach(() => {
     document.body.innerHTML = '';
+  });
+
+  it('explains that a shared-feed link requires extension sign-in and can be closed', () => {
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const root = createRoot(host);
+    const onClose = vi.fn();
+
+    flushSync(() => {
+      root.render(createElement(ShareLinkSignInModal, { onClose }));
+    });
+
+    expect(document.body.textContent).toContain('Sign in to view this shared feed');
+    expect(document.body.textContent).toContain('Sign in to myFeedPilot in the sidebar to open it.');
+    expect(document.body.textContent).toContain('Your shared-feed link will remain available after you sign in.');
+
+    const closeButton = [...document.querySelectorAll('button')].find((button) => button.textContent === 'Close');
+    closeButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+    root.unmount();
   });
 
   it('tells the recipient who shared the feed and opens Shared feeds', async () => {

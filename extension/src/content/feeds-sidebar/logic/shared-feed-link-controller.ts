@@ -15,10 +15,12 @@ interface SharedFeedLinkControllerDeps {
   sendMsg: (message: Record<string, unknown>) => Promise<Record<string, unknown>>;
   getSharedFeeds: () => FeedInfo[];
   setSharedFeeds: (feeds: FeedInfo[]) => void;
+  openSidebar: () => void;
   selectSharedTab: () => void;
   renderSidebarContent: () => void;
   showToast: (message: string, type?: 'success' | 'error') => void;
   showFollowedModal: (feed: FeedInfo) => void;
+  showSignInRequired: () => void;
   showSharingLimit: (details: SharingLimitDetails) => void;
 }
 
@@ -33,6 +35,7 @@ export function createSharedFeedLinkController(deps: SharedFeedLinkControllerDep
   let locationWatcherStarted = false;
   let lastObservedDirectToken: string | null = null;
   let handledTerminalToken: string | null = null;
+  let signInPromptedToken: string | null = null;
 
   const stopRetryWindow = (): void => {
     if (retryIntervalId !== null) {
@@ -42,22 +45,35 @@ export function createSharedFeedLinkController(deps: SharedFeedLinkControllerDep
   };
 
   const handlePendingSharedFeedLink = async (): Promise<void> => {
-    if (!deps.getCurrentUser()) {
-      await deps.checkAuth();
-
-      if (!deps.getCurrentUser()) {
-        return;
-      }
-    }
-
     const token = getSharefeedTokenFromLocation();
     if (!token || shareFollowInFlightToken === token || handledTerminalToken === token) {
       return;
     }
 
+    storePendingSharefeedToken(token);
     shareFollowInFlightToken = token;
 
     try {
+      if (!deps.getCurrentUser()) {
+        const shouldPromptForSignIn = signInPromptedToken !== token;
+        if (shouldPromptForSignIn) {
+          deps.openSidebar();
+        }
+        await deps.checkAuth();
+
+        if (!deps.getCurrentUser()) {
+          if (shouldPromptForSignIn) {
+            signInPromptedToken = token;
+            deps.showSignInRequired();
+          }
+          return;
+        }
+      }
+
+      if (signInPromptedToken === token) {
+        signInPromptedToken = null;
+      }
+
       const response = await deps.sendMsg({ type: 'FEEDS_FOLLOW_SHARE_LINK', token });
       if (!response?.success || !response.sharedFeed) {
         const sharingLimit = response?.sharingLimit as SharingLimitDetails | undefined;
@@ -173,7 +189,7 @@ export function createSharedFeedLinkController(deps: SharedFeedLinkControllerDep
     handlePendingSharedFeedLink,
     schedulePendingShareRetries: () => {
       startLocationWatcher();
-      startRetryWindow();
+      handlePotentialSharefeedLocationChange();
     },
     stop: () => {
       stopRetryWindow();
@@ -188,6 +204,7 @@ export function createSharedFeedLinkController(deps: SharedFeedLinkControllerDep
       locationWatcherStarted = false;
       lastObservedDirectToken = null;
       handledTerminalToken = null;
+      signInPromptedToken = null;
     },
   };
 }
