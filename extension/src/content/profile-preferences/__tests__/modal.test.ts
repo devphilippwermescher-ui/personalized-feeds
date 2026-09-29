@@ -57,4 +57,47 @@ describe('Profile modal', () => {
       });
     });
   });
+
+  it('removes an uploaded avatar from the photo control and saves the Google fallback', async () => {
+    sendMessage.mockImplementation(async (message: { type?: string; preferences?: unknown }) => ({
+      success: true,
+      preferences:
+        message.type === 'PROFILE_PREFERENCES_UPDATE'
+          ? message.preferences
+          : { displayName: '', avatarDataUrl: 'data:image/webp;base64,custom-avatar' },
+      user: {
+        userId: 'user-1',
+        displayName: 'Google Name',
+        authDisplayName: 'Google Name',
+        email: 'user@example.com',
+        photoURL: 'data:image/webp;base64,custom-avatar',
+        authPhotoURL: 'https://example.com/google-avatar.jpg',
+      },
+    }));
+
+    await openProfilePreferencesModal();
+    await vi.waitFor(() => expect(document.body.textContent).toContain('Profile'));
+
+    document.querySelector<HTMLButtonElement>('[aria-label="Remove uploaded profile photo"]')?.click();
+
+    await vi.waitFor(() => {
+      expect(document.querySelector<HTMLImageElement>('.mfp-profile-preferences-avatar')?.src).toBe(
+        'https://example.com/google-avatar.jpg'
+      );
+    });
+
+    Array.from(document.querySelectorAll<HTMLButtonElement>('button'))
+      .find((button) => button.textContent?.includes('Save changes'))
+      ?.click();
+
+    await vi.waitFor(() => {
+      expect(sendMessage).toHaveBeenCalledWith({
+        type: 'PROFILE_PREFERENCES_UPDATE',
+        preferences: {
+          displayName: '',
+          avatarDataUrl: '',
+        },
+      });
+    });
+  });
 });

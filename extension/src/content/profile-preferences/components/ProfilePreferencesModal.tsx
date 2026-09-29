@@ -35,6 +35,12 @@ export function ProfilePreferencesModal({ initialPreferences, user, onClose, onS
   const effectiveName = displayName.trim() || authDisplayName;
   const initials = useMemo(() => getInitials(effectiveName), [effectiveName]);
 
+  const removeUploadedAvatar = (): void => {
+    setAvatarDataUrl('');
+    setAvatarError(false);
+    setError('');
+  };
+
   const chooseAvatar = async (file?: File): Promise<void> => {
     if (!file) return;
     setError('');
@@ -101,13 +107,33 @@ export function ProfilePreferencesModal({ initialPreferences, user, onClose, onS
       }
     >
       <div className="mfp-profile-preferences-avatar-row">
-        {avatarUrl && !avatarError ? (
-          <img className="mfp-profile-preferences-avatar" src={avatarUrl} alt="" onError={() => setAvatarError(true)} />
-        ) : (
-          <div className="mfp-profile-preferences-avatar-fallback" aria-hidden="true">
-            {initials}
-          </div>
-        )}
+        <div className="mfp-profile-preferences-avatar-wrap">
+          {avatarUrl && !avatarError ? (
+            <img
+              className="mfp-profile-preferences-avatar"
+              src={avatarUrl}
+              alt=""
+              onError={() => setAvatarError(true)}
+            />
+          ) : (
+            <div className="mfp-profile-preferences-avatar-fallback" aria-hidden="true">
+              {initials}
+            </div>
+          )}
+          {avatarDataUrl ? (
+            <button
+              className="mfp-profile-preferences-avatar-remove"
+              type="button"
+              aria-label="Remove uploaded profile photo"
+              title="Remove uploaded photo"
+              onClick={removeUploadedAvatar}
+            >
+              <svg viewBox="0 0 16 16" aria-hidden="true">
+                <path d="M4 4l8 8M12 4l-8 8" />
+              </svg>
+            </button>
+          ) : null}
+        </div>
         <div className="mfp-profile-preferences-avatar-copy">
           <p className="mfp-profile-preferences-avatar-title">Profile photo</p>
           <div className="mfp-profile-preferences-avatar-actions">
@@ -119,14 +145,7 @@ export function ProfilePreferencesModal({ initialPreferences, user, onClose, onS
               Upload photo
             </button>
             {avatarDataUrl ? (
-              <button
-                className="mfp-profile-preferences-small-button"
-                type="button"
-                onClick={() => {
-                  setAvatarDataUrl('');
-                  setAvatarError(false);
-                }}
-              >
+              <button className="mfp-profile-preferences-small-button" type="button" onClick={removeUploadedAvatar}>
                 Use Google photo
               </button>
             ) : null}

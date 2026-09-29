@@ -47,7 +47,7 @@ export function createSidebarFeedActionsController(deps: SidebarFeedActionsContr
     renderSidebarContent: deps.renderSidebarContent,
     openSidebar: deps.openSidebar,
     loadFeeds: deps.loadFeeds,
-    getFeeds: () => [...deps.getFeeds(), ...deps.getSharedFeeds()],
+    getFeeds: deps.getFeeds,
     setFeeds: deps.setFeeds,
     getSharedFeeds: deps.getSharedFeeds,
     setSharedFeeds: deps.setSharedFeeds,

@@ -26,11 +26,18 @@ export const PROFILE_PREFERENCES_CSS = `
     align-items: center;
     gap: 18px;
   }
+  .mfp-profile-preferences-avatar-wrap {
+    position: relative;
+    display: grid;
+    width: 82px;
+    height: 82px;
+    flex: 0 0 82px;
+    place-items: center;
+  }
   .mfp-profile-preferences-avatar,
   .mfp-profile-preferences-avatar-fallback {
     width: 76px;
     height: 76px;
-    flex: 0 0 76px;
     border-radius: 50%;
   }
   .mfp-profile-preferences-avatar {
@@ -47,6 +54,38 @@ export const PROFILE_PREFERENCES_CSS = `
     box-shadow: 0 10px 24px rgba(79, 70, 229, .24);
     font-size: 26px;
     font-weight: 700;
+  }
+  .mfp-profile-preferences-avatar-remove {
+    position: absolute;
+    z-index: 1;
+    top: 0;
+    right: 0;
+    display: grid;
+    width: 23px;
+    height: 23px;
+    padding: 0;
+    place-items: center;
+    border: 2px solid #fff;
+    border-radius: 50%;
+    color: #dc2626;
+    background: #fff;
+    box-shadow: 0 2px 8px rgba(15, 23, 42, .22);
+    cursor: pointer;
+  }
+  .mfp-profile-preferences-avatar-remove svg {
+    width: 11px;
+    height: 11px;
+    fill: none;
+    stroke: currentColor;
+    stroke-linecap: round;
+    stroke-width: 2;
+  }
+  .mfp-profile-preferences-avatar-remove:hover,
+  .mfp-profile-preferences-avatar-remove:focus-visible {
+    color: #b91c1c;
+    background: #fef2f2;
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(220, 38, 38, .14), 0 2px 8px rgba(15, 23, 42, .22);
   }
   .mfp-profile-preferences-avatar-copy {
     min-width: 0;
