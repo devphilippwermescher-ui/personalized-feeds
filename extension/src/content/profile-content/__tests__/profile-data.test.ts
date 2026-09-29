@@ -53,14 +53,38 @@ describe('profile data extraction', () => {
       </main>
     `;
 
-    expect(findPrimaryProfileTopCardRoot('kishan-dobariya')).toBe(
-      document.querySelector('#initial-profile-hero > div')
-    );
+    expect(findPrimaryProfileTopCardRoot('kishan-dobariya')).toBe(document.querySelector('#initial-profile-hero'));
     expect(findProfileTopCardRoot('kishan-dobariya')).toBe(document.querySelector('#sticky-profile-header'));
     expect(extractProfileData()).toMatchObject({
       linkedinUsername: 'kishan-dobariya',
       displayName: 'Kishan Dobariya',
       headline: 'Team Lead | Senior Flutter Developer',
+    });
+  });
+
+  it('uses structural profile signals instead of localized LinkedIn labels', () => {
+    window.history.pushState({}, '', '/in/henrie-dennis/');
+    document.body.innerHTML = `
+      <main class="scaffold-layout__main">
+        <section id="localized-top-card" componentkey="ProfileTopcard">
+          <div>
+            <h2>Контактные сведения</h2>
+            <h2>Dr. Henrie Dennis</h2>
+            <p>Museum & Art Curator</p>
+            <a href="/overlay/contact-info/">Контактные сведения</a>
+            <div>
+              <a href="/messaging/compose/?recipient=profile">Отправить сообщение</a>
+              <button aria-expanded="false"><svg id="overflow-web-ios-small"></svg><span>Еще</span></button>
+            </div>
+          </div>
+        </section>
+      </main>
+    `;
+
+    expect(findPrimaryProfileTopCardRoot('henrie-dennis')).toBe(document.querySelector('#localized-top-card'));
+    expect(extractProfileData()).toMatchObject({
+      linkedinUsername: 'henrie-dennis',
+      displayName: 'Dr. Henrie Dennis',
     });
   });
 

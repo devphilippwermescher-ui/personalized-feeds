@@ -1,20 +1,87 @@
-function getModernProfileActionElements(root: HTMLElement): HTMLElement[] {
-  const selectors = [
-    'a[href*="/preload/custom-invite/"]',
-    'a[href*="/messaging/compose/"]',
-    'button[aria-label*="Message"]',
-    'button[aria-label*="Connect"]',
-    'button[aria-label*="Invite"]',
-    'button[aria-label*="Pending"]',
-    'button[aria-expanded="false"]',
-  ];
+import { isProfileToolbarActionElement } from './profile-action-elements';
 
-  const elements = selectors.flatMap((selector) => Array.from(root.querySelectorAll<HTMLElement>(selector)));
-  return Array.from(new Set(elements));
+function getModernProfileActionElements(root: HTMLElement): HTMLElement[] {
+  return Array.from(root.querySelectorAll<HTMLElement>('a, button, [role="button"], [role="menuitem"]')).filter(
+    isProfileToolbarActionElement
+  );
 }
 
 function countModernProfileActionElements(root: ParentNode): number {
   return getModernProfileActionElements(root as HTMLElement).filter((element) => root.contains(element)).length;
+}
+
+interface ActionContentBounds {
+  left: number;
+  bottom: number;
+}
+
+function getVisibleActionContentBounds(actionBar: HTMLElement): ActionContentBounds {
+  const visibleActionRects = getModernProfileActionElements(actionBar)
+    .map((element) => element.getBoundingClientRect())
+    .filter((rect) => rect.width > 0 || rect.height > 0);
+
+  if (visibleActionRects.length === 0) {
+    const actionBarRect = actionBar.getBoundingClientRect();
+    return { left: actionBarRect.left, bottom: actionBarRect.bottom };
+  }
+
+  return {
+    left: Math.min(...visibleActionRects.map((rect) => rect.left)),
+    bottom: Math.max(...visibleActionRects.map((rect) => rect.bottom)),
+  };
+}
+
+function findFollowingContentTop(card: HTMLElement, boundary: HTMLElement): number | null {
+  let current: HTMLElement | null = card;
+
+  while (current && current !== boundary) {
+    let sibling = current.nextElementSibling;
+    while (sibling) {
+      if (sibling instanceof HTMLElement) {
+        const rect = sibling.getBoundingClientRect();
+        if (rect.height > 0 && rect.top >= card.getBoundingClientRect().bottom) {
+          return rect.top;
+        }
+      }
+      sibling = sibling.nextElementSibling;
+    }
+    current = current.parentElement;
+  }
+
+  const boundaryRect = boundary.getBoundingClientRect();
+  return boundaryRect.height > 0 ? boundaryRect.bottom : null;
+}
+
+function balancePrimaryCardVerticalSpacing(
+  card: HTMLElement,
+  primaryTopCard: HTMLElement,
+  actionBottom: number,
+  cardRect: DOMRect
+): void {
+  const requiredGap = 16;
+  const topGap = cardRect.top - actionBottom;
+  const currentMarginTop = Number.parseFloat(window.getComputedStyle(card).marginTop) || 0;
+
+  if (topGap < requiredGap) {
+    card.style.marginTop = `${currentMarginTop + requiredGap - topGap}px`;
+    return;
+  }
+
+  const followingContentTop = findFollowingContentTop(card, primaryTopCard);
+  if (followingContentTop === null) {
+    return;
+  }
+
+  const bottomGap = followingContentTop - cardRect.bottom;
+  const maxBalanceableGap = 200;
+  if (topGap > maxBalanceableGap || bottomGap < 0 || bottomGap > maxBalanceableGap) {
+    return;
+  }
+
+  const balanceDelta = (bottomGap - topGap) / 2;
+  const currentMarginBottom = Number.parseFloat(window.getComputedStyle(card).marginBottom) || 0;
+  card.style.marginTop = `${currentMarginTop + balanceDelta}px`;
+  card.style.marginBottom = `${currentMarginBottom - balanceDelta}px`;
 }
 
 function findModernActionBarContainer(root: HTMLElement): HTMLElement | null {
@@ -122,15 +189,18 @@ export function insertFeedCardIntoPrimaryTopCard(card: HTMLElement, primaryTopCa
       return;
     }
 
-    const actionRect = actionBar.getBoundingClientRect();
-    const cardRect = card.getBoundingClientRect();
-    const requiredGap = 16;
-    const overlap = actionRect.bottom + requiredGap - cardRect.top;
-    if (overlap <= 0) {
-      return;
+    const cardContainerRect = card.parentElement?.getBoundingClientRect();
+    const actionContentBounds = getVisibleActionContentBounds(actionBar);
+    const inlineInset = cardContainerRect ? actionContentBounds.left - cardContainerRect.left : Number.NaN;
+    if (
+      Number.isFinite(inlineInset) &&
+      inlineInset >= 0 &&
+      (!cardContainerRect || cardContainerRect.width <= 0 || inlineInset < cardContainerRect.width / 3)
+    ) {
+      card.style.setProperty('--pf-primary-card-inline-inset', `${inlineInset}px`);
     }
 
-    const currentMarginTop = Number.parseFloat(window.getComputedStyle(card).marginTop) || 0;
-    card.style.marginTop = `${currentMarginTop + overlap}px`;
+    const cardRect = card.getBoundingClientRect();
+    balancePrimaryCardVerticalSpacing(card, primaryTopCard, actionContentBounds.bottom, cardRect);
   });
 }
