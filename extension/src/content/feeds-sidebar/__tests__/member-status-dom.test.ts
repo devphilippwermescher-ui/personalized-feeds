@@ -22,92 +22,35 @@ describe('getMemberStatus', () => {
     document.body.innerHTML = '';
   });
 
-  it('prefers the current LinkedIn profile DOM status over a stale stored status', () => {
+  it('does not let native profile DOM overwrite an authoritative stored status', () => {
+    document.body.innerHTML = `
+      <section componentkey="Topcard-main">
+        <h1>Yuliia Biliavtseva</h1>
+        <a role="button" aria-label="Pending, click to withdraw invitation">Pending</a>
+      </section>
+    `;
+    const testMember = member({ status: 'connect', canConnect: true });
+
+    expect(getMemberStatus(testMember)).toBe('connect');
+    expect(testMember).toMatchObject({ status: 'connect', canConnect: true });
+  });
+
+  it('keeps Pending even when the open profile DOM currently shows Connect', () => {
     document.body.innerHTML = `
       <section class="pv-top-card">
         <button aria-label="Invite Yuliia to connect">Connect</button>
       </section>
     `;
 
-    expect(getMemberStatus(member({ status: 'pending' }))).toBe('connect');
+    expect(getMemberStatus(member({ status: 'pending' }))).toBe('pending');
   });
 
-  it('uses the current profile name as a fallback when the stored username differs', () => {
-    window.history.pushState({}, '', '/in/yuliia-biliavtseva-canonical/');
-    document.body.innerHTML = `
-      <main>
-        <section componentkey="Topcard">
-          <h1>Yuliia Biliavtseva</h1>
-          <button aria-label="Invite Yuliia to connect">Connect</button>
-        </section>
-      </main>
-    `;
-
-    expect(
-      getMemberStatus(
-        member({
-          linkedinUsername: 'old-yuliia-slug',
-          linkedinUrl: 'https://www.linkedin.com/in/old-yuliia-slug/',
-          status: 'pending',
-        })
-      )
-    ).toBe('connect');
-  });
-
-  it('does not let a profile DOM Connect button override a stored resend-later cooldown', () => {
-    document.body.innerHTML = `
-      <section class="pv-top-card">
-        <h1>Yuliia Biliavtseva</h1>
-        <button aria-label="Invite Yuliia to connect">Connect</button>
-      </section>
-    `;
-
-    expect(getMemberStatus(member({ status: 'withdrawn', canConnect: false }))).toBe('withdrawn');
-  });
-
-  it('keeps resend-later cooldown while taking Following from the profile DOM', () => {
-    document.body.innerHTML = `
-      <section class="pv-top-card">
-        <h1>Yuliia Biliavtseva</h1>
-        <button aria-label="Following Yuliia">Following</button>
-      </section>
-    `;
-    const testMember = member({ status: 'withdrawn', canConnect: false, isFollowing: false });
-
-    expect(getMemberStatus(testMember)).toBe('withdrawn');
-    expect(testMember.isFollowing).toBe(true);
-  });
-
-  it('prefers an open profile menu Following signal over the top-card Connect button without dropping resend-later', () => {
-    document.body.innerHTML = `
-      <section class="pv-top-card">
-        <h1>Yuliia Biliavtseva</h1>
-        <button aria-label="Invite Yuliia to connect">Connect</button>
-      </section>
-      <div role="menu">
-        <button aria-label="Following Yuliia">Following</button>
-      </div>
-    `;
-    const testMember = member({ status: 'withdrawn', canConnect: false, isFollowing: false });
-
-    expect(getMemberStatus(testMember)).toBe('withdrawn');
-    expect(testMember.isFollowing).toBe(true);
-  });
-
-  it('clears stale following state when an open profile menu shows Follow', () => {
-    document.body.innerHTML = `
-      <section class="pv-top-card">
-        <h1>Yuliia Biliavtseva</h1>
-        <button aria-label="Invite Yuliia to connect">Connect</button>
-      </section>
-      <div role="menu">
-        <button aria-label="Follow Yuliia">Follow</button>
-      </div>
-    `;
+  it('does not mutate following state from unrelated or stale DOM menus', () => {
+    document.body.innerHTML = '<div role="menu"><button aria-label="Following Yuliia">Following</button></div>';
     const testMember = member({ status: 'withdrawn', canConnect: false, isFollowing: true });
 
     expect(getMemberStatus(testMember)).toBe('withdrawn');
-    expect(testMember.isFollowing).toBe(false);
+    expect(testMember.isFollowing).toBe(true);
   });
 
   it('uses first-degree connection as Connected when stored status is stale connect', () => {

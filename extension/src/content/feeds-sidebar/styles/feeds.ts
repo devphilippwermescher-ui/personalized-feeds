@@ -16,13 +16,19 @@ export const FEEDS_CSS = `.lfa-feed-list {
   .lfa-feed-group--system {
     overflow: visible;
   }
-  .lfa-feed-group--system .lfa-feed-item {
+  .lfa-feed-group--plan-limited {
+    overflow: visible;
+  }
+  .lfa-feed-group--system .lfa-feed-item,
+  .lfa-feed-group--plan-limited .lfa-feed-item {
     border-radius: 13px;
   }
-  .lfa-feed-group--system .lfa-feed-item--expanded {
+  .lfa-feed-group--system .lfa-feed-item--expanded,
+  .lfa-feed-group--plan-limited .lfa-feed-item--expanded {
     border-radius: 13px 13px 0 0;
   }
-  .lfa-feed-group--system .lfa-feed-expanded {
+  .lfa-feed-group--system .lfa-feed-expanded,
+  .lfa-feed-group--plan-limited .lfa-feed-expanded {
     border-radius: 0 0 13px 13px;
   }
   .lfa-feed-group--system:has(.lfa-feed-info:hover),
@@ -30,7 +36,9 @@ export const FEEDS_CSS = `.lfa-feed-list {
   .lfa-feed-group--system:has(.lfa-feed-pin:hover),
   .lfa-feed-group--system:has(.lfa-feed-pin:focus-visible),
   .lfa-feed-group--system:has(.lfa-profile-viewer-count:hover),
-  .lfa-feed-group--system:has(.lfa-profile-viewer-count:focus-visible) {
+  .lfa-feed-group--system:has(.lfa-profile-viewer-count:focus-visible),
+  .lfa-feed-group--plan-limited:has(.lfa-profile-viewer-count:hover),
+  .lfa-feed-group--plan-limited:has(.lfa-profile-viewer-count:focus-visible) {
     position: relative;
     z-index: 4;
   }
@@ -57,6 +65,26 @@ export const FEEDS_CSS = `.lfa-feed-list {
   .lfa-feed-item--system {
     background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
   }
+  .lfa-feed-item--locked {
+    background: #f8fafc;
+    opacity: 0.68;
+  }
+  .lfa-feed-item--locked:hover,
+  .lfa-feed-item--locked.lfa-feed-item--expanded {
+    background: #f1f5f9;
+  }
+  .lfa-feed-plan-lock {
+    flex-shrink: 0;
+    padding: 3px 6px;
+    border-radius: 999px;
+    background: #e2e8f0;
+    color: #475569;
+    font-size: 9px;
+    font-weight: 800;
+    line-height: 1;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
   .lfa-feed-item:hover,
   .lfa-feed-item--expanded,
   .lfa-feed-item--settling {
@@ -70,6 +98,53 @@ export const FEEDS_CSS = `.lfa-feed-list {
   }
   .lfa-feed-item--system.lfa-feed-item--expanded {
     background: #eef6ff;
+  }
+  .lfa-profile-viewers-collection {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 0 16px 12px 42px;
+    background: #f8fbff;
+  }
+  .lfa-feed-item--expanded .lfa-profile-viewers-collection {
+    background: #eef6ff;
+  }
+  .lfa-profile-viewers-collection-label {
+    color: #475569;
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 1.25;
+  }
+  .lfa-profile-viewers-progress {
+    position: relative;
+    display: block;
+    width: 100%;
+    height: 4px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: rgba(97, 93, 236, 0.14);
+  }
+  .lfa-profile-viewers-progress-bar {
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 42%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, #643bee 0%, #1ea7e8 100%);
+    animation: lfa-profile-viewers-progress 1.15s ease-in-out infinite;
+  }
+  @keyframes lfa-profile-viewers-progress {
+    from {
+      transform: translateX(-120%);
+    }
+    to {
+      transform: translateX(340%);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .lfa-profile-viewers-progress-bar {
+      width: 100%;
+      animation: none;
+    }
   }
   .lfa-feed-grip {
     width: 16px;
@@ -358,6 +433,9 @@ export const FEEDS_CSS = `.lfa-feed-list {
   }
   .lfa-feed-expanded--collapsing {
     pointer-events: none;
+  }
+  .lfa-feed-expanded--stable {
+    animation: none;
   }
   .lfa-feed-expanded-header {
     display: flex;

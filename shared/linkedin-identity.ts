@@ -1,4 +1,5 @@
-import type { FeedMember, LinkedInProfileData } from './types';
+import type { FeedMember, LinkedInProfileData, ProfileViewerInput } from './types';
+import { normalizeLinkedInProfileImageUrl } from './linkedin-profile-image';
 
 const RESERVED_LINKEDIN_PROFILE_USERNAMES = new Set([
   'me',
@@ -38,6 +39,26 @@ export function getUsernameFromLinkedInUrl(urlValue: string | undefined): string
   } catch {
     return '';
   }
+}
+
+/**
+ * The common persistence boundary for Profile Visitors. Keeping this check in
+ * one platform-neutral module prevents an unresolved LinkedIn identity from
+ * consuming a product limit in the collector while Firestore silently skips
+ * the same record later.
+ */
+export function isPersistableProfileViewerIdentity(viewer: ProfileViewerInput): boolean {
+  const urlUsername = normalizeLinkedInUsername(getUsernameFromLinkedInUrl(viewer.linkedinUrl));
+  const linkedinUsername = normalizeLinkedInUsername(
+    viewer.linkedinUsername || urlUsername
+  );
+
+  return (
+    viewer.identityUncertain !== true &&
+    isValidLinkedInProfileUsername(linkedinUsername) &&
+    urlUsername === linkedinUsername &&
+    Boolean(viewer.displayName.trim())
+  );
 }
 
 export function normalizeMemberNumericId(value: string | undefined): string {
@@ -135,8 +156,12 @@ export function buildMemberUpsertPatch(
   if (profileData.headline && profileData.headline !== existing.headline) {
     patch.headline = profileData.headline;
   }
-  if (profileData.profileImageUrl && profileData.profileImageUrl !== existing.profileImageUrl) {
-    patch.profileImageUrl = profileData.profileImageUrl;
+  const incomingProfileImageUrl = normalizeLinkedInProfileImageUrl(profileData.profileImageUrl);
+  const existingProfileImageUrl = normalizeLinkedInProfileImageUrl(existing.profileImageUrl);
+  if (incomingProfileImageUrl && incomingProfileImageUrl !== existing.profileImageUrl) {
+    patch.profileImageUrl = incomingProfileImageUrl;
+  } else if (existing.profileImageUrl && !existingProfileImageUrl) {
+    patch.profileImageUrl = '';
   }
   if (profileData.company && profileData.company !== existing.company) {
     patch.company = profileData.company;

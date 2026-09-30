@@ -1,7 +1,9 @@
-import type { FeedInfo, MemberEditorState, UserInfo } from '../types';
+import type { FeedInfo, MemberEditorState, SidebarAuthMode, UserInfo } from '../types';
 import type { UserFeatureSettings } from 'shared/types';
 import { renderMemberEditorOverlay } from '../components/MemberEditor/MemberEditor';
 import { renderFeedRow } from '../components/FeedRow/FeedRow';
+
+export { escapeHtml } from '../../shared/escape-html';
 
 export interface SidebarDomSnapshot {
   feedListScrollTop: number;
@@ -18,11 +20,13 @@ interface RenderSidebarInnerParams {
   sidebarSearchQuery: string;
   activeFeedTab: 'owned' | 'shared';
   expandedFeedId: string | null;
+  animateExpandedFeed: boolean;
   activeMemberEditor: MemberEditorState | null;
   renderSidebarHeader: (params: {
     logoUrl: string;
     currentUser: UserInfo | null;
     isPremium: boolean;
+    isPlanLoading?: boolean;
     featureSettings: UserFeatureSettings;
   }) => string;
   renderSidebarBody: (params: {
@@ -31,6 +35,7 @@ interface RenderSidebarInnerParams {
     isPremium: boolean;
     currentUser: UserInfo | null;
     authErrorMessage: string;
+    authMode?: SidebarAuthMode;
     sidebarSearchQuery: string;
     activeFeedTab: 'owned' | 'shared';
     feedsListCount: number;
@@ -43,6 +48,7 @@ interface RenderSidebarInnerParams {
   isInitializing: boolean;
   isPremium: boolean;
   authErrorMessage: string;
+  authMode?: SidebarAuthMode;
   getLogoUrl: () => string;
 }
 
@@ -91,13 +97,8 @@ export function renderEditorOverlay(activeMemberEditor: MemberEditorState | null
   return renderMemberEditorOverlay(activeMemberEditor, feedsList);
 }
 
-export function getDisplaySidebarFeeds(
-  feeds: FeedInfo[],
-  featureSettings: UserFeatureSettings
-): FeedInfo[] {
-  return featureSettings.hideProfileViewers
-    ? feeds.filter((feed) => feed.systemType !== 'profileViewers')
-    : feeds;
+export function getDisplaySidebarFeeds(feeds: FeedInfo[], featureSettings: UserFeatureSettings): FeedInfo[] {
+  return featureSettings.hideProfileViewers ? feeds.filter((feed) => feed.systemType !== 'profileViewers') : feeds;
 }
 
 export function getVisibleSidebarFeeds(
@@ -124,6 +125,7 @@ export function renderSidebarInnerMarkup(params: RenderSidebarInnerParams): void
     sidebarSearchQuery,
     activeFeedTab,
     expandedFeedId,
+    animateExpandedFeed,
     activeMemberEditor,
     renderSidebarHeader,
     renderSidebarBody,
@@ -133,6 +135,7 @@ export function renderSidebarInnerMarkup(params: RenderSidebarInnerParams): void
     isInitializing,
     isPremium,
     authErrorMessage,
+    authMode,
     getLogoUrl,
   } = params;
 
@@ -144,6 +147,7 @@ export function renderSidebarInnerMarkup(params: RenderSidebarInnerParams): void
     logoUrl: getLogoUrl(),
     currentUser,
     isPremium,
+    isPlanLoading: isInitializing,
     featureSettings,
   });
   container.appendChild(header);
@@ -159,6 +163,7 @@ export function renderSidebarInnerMarkup(params: RenderSidebarInnerParams): void
       renderFeedRow({
         feed,
         expanded: expandedFeedId === feed.id,
+        animateExpandedContent: animateExpandedFeed,
         previewHtml: renderFeedPreview(feed.id),
         expandedContentHtml: expandedFeedId === feed.id ? renderMembersList(feed) : '',
       })
@@ -171,6 +176,7 @@ export function renderSidebarInnerMarkup(params: RenderSidebarInnerParams): void
     isPremium,
     currentUser,
     authErrorMessage,
+    authMode,
     sidebarSearchQuery,
     activeFeedTab,
     feedsListCount: displayFeeds.length,
@@ -184,16 +190,10 @@ export function renderSidebarInnerMarkup(params: RenderSidebarInnerParams): void
   container.appendChild(content);
 }
 
-export function escapeHtml(text: string): string {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
-}
-
 export function getLogoUrl(): string {
   return chrome.runtime.getURL('icons/icon48.png');
 }
 
 export function getLauncherLogoUrl(): string {
-  return chrome.runtime.getURL('icons/logo-mark.svg');
+  return chrome.runtime.getURL('icons/launcher-logo.png');
 }

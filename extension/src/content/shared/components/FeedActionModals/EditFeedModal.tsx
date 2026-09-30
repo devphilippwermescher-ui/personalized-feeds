@@ -48,6 +48,7 @@ export function EditFeedModal({ feedName, existingFeedNames, onClose, onSave }: 
   return (
     <LfsModal
       title={CONTENT_COPY.feedModals.editFeedTitle}
+      variant="form"
       footer={
         <LfsButton
           label={CONTENT_COPY.feedModals.saveChangesAction}

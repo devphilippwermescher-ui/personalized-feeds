@@ -1,5 +1,5 @@
 import type { FeedInfo, FeedMemberInfo } from '../types';
-import { canMemberReceiveMessage, getMemberStatus } from '../utils';
+import { canMemberReceiveMessage, getMemberInitials, getMemberStatus } from '../utils';
 import {
   profileMovedToFeedMessage,
   profileRemovedFromFeedMessage,
@@ -14,6 +14,7 @@ import {
   renderMessageButton,
 } from './member-action-render';
 import { escapeHtml } from './escape-html';
+import { SHOW_LINKEDIN_PREMIUM_ICONS } from '../constants';
 
 function replaceFeedMembers(
   current: Record<string, FeedMemberInfo[]>,
@@ -30,11 +31,59 @@ function isProfileViewersFeed(feed?: FeedInfo): boolean {
   return feed?.systemType === 'profileViewers';
 }
 
+function removeRuntimeBindingMarkers(root: Element): void {
+  [root, ...Array.from(root.querySelectorAll('*'))].forEach((element) => {
+    Array.from(element.attributes).forEach((attribute) => {
+      if (attribute.name.startsWith('data-lfa-bound-')) {
+        element.removeAttribute(attribute.name);
+      }
+    });
+  });
+}
+
+function hasEquivalentMarkup(current: Element, next: Element): boolean {
+  const currentClone = current.cloneNode(true) as Element;
+  const nextClone = next.cloneNode(true) as Element;
+  removeRuntimeBindingMarkers(currentClone);
+  removeRuntimeBindingMarkers(nextClone);
+  return currentClone.isEqualNode(nextClone);
+}
+
+function hasCurrentAvatar(memberMain: HTMLElement, member: FeedMemberInfo): boolean {
+  const avatarElements = Array.from(memberMain.children).filter(
+    (child): child is HTMLElement => child instanceof HTMLElement && child.classList.contains('lfa-member-avatar')
+  );
+  const currentImage = avatarElements.find(
+    (element): element is HTMLImageElement => element instanceof HTMLImageElement
+  );
+  const currentFallback = avatarElements.find((element) => element.classList.contains('lfa-member-avatar--fallback'));
+
+  if (member.profileImageUrl) {
+    return currentImage?.getAttribute('src') === member.profileImageUrl && Boolean(currentFallback);
+  }
+
+  return !currentImage && currentFallback?.textContent?.trim() === getMemberInitials(member.displayName);
+}
+
 export function updateRenderedMemberState(
   sidebarEl: HTMLElement | null,
   feedId: string,
   member: FeedMemberInfo,
-  deps: Pick<MemberActionDeps, 'openLinkedInMessage' | 'openLinkedInProfile' | 'fetchLinkedInRelationshipStatus' | 'resolveProfileUrn' | 'sendLinkedInConnectRequest' | 'sendLinkedInFollowState' | 'invalidateCacheForUser' | 'getFeedMembersById' | 'getFeeds' | 'showToast' | 'renderSidebarContent' | 'getMessagingButtonsEnabled'>
+  deps: Pick<
+    MemberActionDeps,
+    | 'openLinkedInMessage'
+    | 'openLinkedInProfile'
+    | 'fetchLinkedInRelationshipStatus'
+    | 'resolveProfileUrn'
+    | 'sendLinkedInConnectRequest'
+    | 'sendLinkedInFollowState'
+    | 'invalidateCacheForUser'
+    | 'getFeedMembersById'
+    | 'getFeeds'
+    | 'showToast'
+    | 'renderSidebarContent'
+    | 'getMessagingButtonsEnabled'
+  >
 ): boolean {
   const row = sidebarEl?.querySelector<HTMLElement>(
     `.lfa-member-row[data-feed-id="${CSS.escape(feedId)}"][data-member-id="${CSS.escape(member.id)}"]`
@@ -46,9 +95,7 @@ export function updateRenderedMemberState(
 
   const status = getMemberStatus(member);
   const canMessage = canMemberReceiveMessage(member, status, {
-    allowUnverifiedProfileMessage: isProfileViewersFeed(
-      deps.getFeeds().find((item) => item.id === feedId)
-    ),
+    allowUnverifiedProfileMessage: isProfileViewersFeed(deps.getFeeds().find((item) => item.id === feedId)),
   });
   const showMessagingButtons = deps.getMessagingButtonsEnabled?.() ?? true;
   const actions = row.querySelector('.lfa-member-actions');
@@ -59,7 +106,7 @@ export function updateRenderedMemberState(
     const wrapper = document.createElement('div');
     wrapper.innerHTML = renderMessageButton(feedId, member, canMessage).trim();
     const nextButton = wrapper.firstElementChild as HTMLElement | null;
-    if (nextButton) {
+    if (nextButton && !hasEquivalentMarkup(currentMessageButton, nextButton)) {
       currentMessageButton.replaceWith(nextButton);
       bindMemberActionButtons(actions || row, deps as MemberActionDeps);
     }
@@ -71,27 +118,30 @@ export function updateRenderedMemberState(
     const wrapper = document.createElement('div');
     wrapper.innerHTML = renderMemberStatusAction(feedId, member, status).trim();
     const nextStatusNode = wrapper.firstElementChild as HTMLElement | null;
-    if (nextStatusNode) {
+    if (nextStatusNode && !hasEquivalentMarkup(currentStatusNode, nextStatusNode)) {
       currentStatusNode.replaceWith(nextStatusNode);
       bindMemberActionButtons(actions || row, deps as MemberActionDeps);
     }
   }
 
-  // Update premium icon inside the member name button.
-  // This is the only place that reflects isPremium after an in-place status refresh —
-  // the name button is not part of the message or status node swaps above.
   const nameButton = row.querySelector<HTMLElement>('.lfa-member-name');
   if (nameButton) {
+    const hasExpectedName = nameButton.querySelector('.lfa-member-name-text')?.textContent === member.displayName;
+    const hasPremiumIcon = Boolean(nameButton.querySelector('.lfa-member-premium-icon'));
+    const shouldShowPremiumIcon = SHOW_LINKEDIN_PREMIUM_ICONS && Boolean(member.isPremium);
     const escapedName = escapeHtml(member.displayName);
-    const premiumIconHtml = member.isPremium
-      ? ' <span class="lfa-member-premium-icon" title="LinkedIn Premium" aria-label="LinkedIn Premium">✦</span>'
-      : '';
-    nameButton.innerHTML = `<span class="lfa-member-name-text">${escapedName}</span>${premiumIconHtml}`;
+    const premiumIconHtml =
+      SHOW_LINKEDIN_PREMIUM_ICONS && member.isPremium
+        ? ' <span class="lfa-member-premium-icon" title="LinkedIn Premium" aria-label="LinkedIn Premium">✦</span>'
+        : '';
+    if (!hasExpectedName || hasPremiumIcon !== shouldShowPremiumIcon) {
+      nameButton.innerHTML = `<span class="lfa-member-name-text">${escapedName}</span>${premiumIconHtml}`;
+    }
   }
 
   const memberMain = row.querySelector<HTMLElement>('.lfa-member-main');
   const memberInfo = memberMain?.querySelector<HTMLElement>('.lfa-member-info');
-  if (memberMain && memberInfo) {
+  if (memberMain && memberInfo && !hasCurrentAvatar(memberMain, member)) {
     Array.from(memberMain.children).forEach((child) => {
       if (child instanceof HTMLElement && child.classList.contains('lfa-member-avatar')) {
         child.remove();
@@ -203,7 +253,18 @@ export async function persistResolvedMemberState(
 export async function handleMemberDelete(
   feedId: string,
   memberId: string,
-  deps: Pick<MemberActionDeps, 'sendMsg' | 'showToast' | 'getFeedMembersById' | 'setFeedMembersById' | 'getActiveMemberEditor' | 'setActiveMemberEditor' | 'loadFeeds' | 'renderSidebarContent' | 'getFeeds'>
+  deps: Pick<
+    MemberActionDeps,
+    | 'sendMsg'
+    | 'showToast'
+    | 'getFeedMembersById'
+    | 'setFeedMembersById'
+    | 'getActiveMemberEditor'
+    | 'setActiveMemberEditor'
+    | 'loadFeeds'
+    | 'renderSidebarContent'
+    | 'getFeeds'
+  >
 ): Promise<void> {
   const feed = deps.getFeeds().find((item) => item.id === feedId);
   const result = await deps.sendMsg(
@@ -226,7 +287,9 @@ export async function handleMemberDelete(
   }
 
   deps.setFeedMembersById(
-    replaceFeedMembers(deps.getFeedMembersById(), feedId, (members) => members.filter((member) => member.id !== memberId))
+    replaceFeedMembers(deps.getFeedMembersById(), feedId, (members) =>
+      members.filter((member) => member.id !== memberId)
+    )
   );
 
   if (deps.getActiveMemberEditor()?.member.id === memberId) {
@@ -239,7 +302,21 @@ export async function handleMemberDelete(
 }
 
 export async function handleMemberSave(
-  deps: Pick<MemberActionDeps, 'sendMsg' | 'showToast' | 'getActiveMemberEditor' | 'setActiveMemberEditor' | 'getFeedMembersById' | 'setFeedMembersById' | 'loadFeeds' | 'renderSidebarContent' | 'setExpandedFeedId' | 'loadFeedMembers' | 'getFeeds'>
+  deps: Pick<
+    MemberActionDeps,
+    | 'sendMsg'
+    | 'showToast'
+    | 'showPlanModal'
+    | 'getActiveMemberEditor'
+    | 'setActiveMemberEditor'
+    | 'getFeedMembersById'
+    | 'setFeedMembersById'
+    | 'loadFeeds'
+    | 'renderSidebarContent'
+    | 'setExpandedFeedId'
+    | 'loadFeedMembers'
+    | 'getFeeds'
+  >
 ): Promise<void> {
   const editorState = deps.getActiveMemberEditor();
   if (!editorState) {
@@ -247,12 +324,15 @@ export async function handleMemberSave(
   }
 
   const displayName = (document.getElementById('lfa-member-edit-name') as HTMLInputElement | null)?.value?.trim();
-  const headline = (document.getElementById('lfa-member-edit-headline') as HTMLInputElement | null)?.value?.trim() || '';
+  const headline =
+    (document.getElementById('lfa-member-edit-headline') as HTMLInputElement | null)?.value?.trim() || '';
   const email = (document.getElementById('lfa-member-edit-email') as HTMLInputElement | null)?.value?.trim() || '';
   const company = (document.getElementById('lfa-member-edit-company') as HTMLInputElement | null)?.value?.trim() || '';
-  const location = (document.getElementById('lfa-member-edit-location') as HTMLInputElement | null)?.value?.trim() || '';
+  const location =
+    (document.getElementById('lfa-member-edit-location') as HTMLInputElement | null)?.value?.trim() || '';
   const linkedinUrl = (document.getElementById('lfa-member-edit-url') as HTMLInputElement | null)?.value?.trim() || '';
-  const selectedFeedId = (document.getElementById('lfa-member-edit-feed') as HTMLInputElement | null)?.value || editorState.feedId;
+  const selectedFeedId =
+    (document.getElementById('lfa-member-edit-feed') as HTMLInputElement | null)?.value || editorState.feedId;
   const currentFeed = deps.getFeeds().find((feed) => feed.id === editorState.feedId);
 
   const updates = {
@@ -282,6 +362,10 @@ export async function handleMemberSave(
     });
 
     if (!addResult?.success || !addResult.member) {
+      if (addResult?.code === 'PLAN_LIMIT_REACHED') {
+        deps.showPlanModal?.();
+        return;
+      }
       deps.showToast((addResult?.error as string) || 'Failed to move profile to another feed', 'error');
       return;
     }
@@ -320,7 +404,10 @@ export async function handleMemberSave(
     );
 
     if (!removeResult?.success) {
-      deps.showToast((removeResult?.error as string) || 'Profile was copied but not removed from previous feed', 'error');
+      deps.showToast(
+        (removeResult?.error as string) || 'Profile was copied but not removed from previous feed',
+        'error'
+      );
       return;
     }
 

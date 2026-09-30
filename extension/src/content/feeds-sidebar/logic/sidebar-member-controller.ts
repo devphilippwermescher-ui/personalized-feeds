@@ -8,10 +8,7 @@ import {
   sendLinkedInFollowState,
 } from '../../linkedin-relationship-status';
 import { openLinkedInMessage, openLinkedInProfile } from '../../linkedin-profile-actions';
-import {
-  animateExpandedFeedCollapse,
-  stabilizeCollapsedFeedItem,
-} from './feed-expansion-motion';
+import { animateExpandedFeedCollapse, stabilizeCollapsedFeedItem } from './feed-expansion-motion';
 import {
   loadFeedMembers as loadFeedMembersLogic,
   renderMembersList as renderMembersListMarkup,
@@ -26,6 +23,7 @@ import {
 interface SidebarMemberControllerDeps {
   sendMsg: (message: Record<string, unknown>) => Promise<Record<string, unknown>>;
   showToast: (message: string, type?: 'success' | 'error') => void;
+  showPlanModal: () => void;
   renderSidebarContent: () => void;
   loadFeeds: () => Promise<void>;
   getFeeds: () => FeedInfo[];
@@ -51,10 +49,7 @@ export function createSidebarMemberController(deps: SidebarMemberControllerDeps)
   let collapsingFeedId: string | null = null;
   let feedMembersRetryState: Record<string, boolean> = {};
 
-  const persistResolvedMemberState = (
-    feedId: string,
-    member: FeedMemberInfo
-  ): Promise<void> =>
+  const persistResolvedMemberState = (feedId: string, member: FeedMemberInfo): Promise<void> =>
     persistResolvedMemberStateToStore(feedId, member, {
       sendMsg: deps.sendMsg,
       getFeeds: deps.getFeeds,
@@ -86,12 +81,12 @@ export function createSidebarMemberController(deps: SidebarMemberControllerDeps)
     getFeeds: deps.getFeeds,
   });
 
-  const loadFeedMembers = (feedId: string): Promise<void> =>
-    loadFeedMembersLogic(feedId, sharedFeedMemberDeps());
+  const loadFeedMembers = (feedId: string): Promise<void> => loadFeedMembersLogic(feedId, sharedFeedMemberDeps());
 
   const getMemberActionDeps = (): MemberActionDeps => ({
     sendMsg: deps.sendMsg,
     showToast: deps.showToast,
+    showPlanModal: deps.showPlanModal,
     renderSidebarContent: deps.renderSidebarContent,
     openLinkedInMessage,
     openLinkedInProfile,
@@ -112,16 +107,8 @@ export function createSidebarMemberController(deps: SidebarMemberControllerDeps)
     loadFeedMembers,
   });
 
-  function updateRenderedMemberStateLocal(
-    feedId: string,
-    member: FeedMemberInfo
-  ): boolean {
-    return updateRenderedMemberState(
-      deps.getSidebarEl(),
-      feedId,
-      member,
-      getMemberActionDeps()
-    );
+  function updateRenderedMemberStateLocal(feedId: string, member: FeedMemberInfo): boolean {
+    return updateRenderedMemberState(deps.getSidebarEl(), feedId, member, getMemberActionDeps());
   }
 
   return {
@@ -141,6 +128,16 @@ export function createSidebarMemberController(deps: SidebarMemberControllerDeps)
 
       const currentlyExpandedFeedId = deps.getExpandedFeedId();
       const sidebarEl = deps.getSidebarEl();
+      if (currentlyExpandedFeedId && currentlyExpandedFeedId !== feedId) {
+        const currentlyExpandedFeed = deps.getFeeds().find((item) => item.id === currentlyExpandedFeedId);
+        if (currentlyExpandedFeed?.ownerId && currentlyExpandedFeed.systemType !== 'profileViewers') {
+          void deps.sendMsg({
+            type: 'FEEDS_UNWATCH_MEMBERS',
+            ownerId: currentlyExpandedFeed.ownerId,
+            feedId: currentlyExpandedFeedId,
+          });
+        }
+      }
       if (currentlyExpandedFeedId && sidebarEl) {
         collapsingFeedId = currentlyExpandedFeedId;
         await animateExpandedFeedCollapse(sidebarEl, currentlyExpandedFeedId);

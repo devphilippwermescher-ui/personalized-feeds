@@ -38,12 +38,25 @@ jobs:
           cache-dependency-path: |
             package-lock.json
             extension/package-lock.json
+            functions/package-lock.json
 
       - name: Install root dependencies
         run: npm ci
 
       - name: Install extension dependencies
         run: npm ci --prefix extension
+
+      - name: Install Functions dependencies
+        run: npm ci --prefix functions
+
+      - name: Type check Functions
+        run: npm run type-check --prefix functions
+
+      - name: Test Functions
+        run: npm test --prefix functions
+
+      - name: Build Functions
+        run: npm run build --prefix functions
 
       - name: Type check extension
         run: npm run type-check --prefix extension

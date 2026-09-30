@@ -22,11 +22,18 @@ Thumbs.db
 # Environment
 .env
 .env.local
+.env.*
+!.env.example
 .env.*.local
+.secret.local
+.secret.*.local
+!.secret.local.example
 
 # Firebase
 .firebase/
 firebase-debug.log
+functions/lib/
+.local-tools/
 
 # Local AI tooling
 CLAUDE.md

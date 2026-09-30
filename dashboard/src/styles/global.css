@@ -1,6 +1,5 @@
 @import './base.css';
-@import './page-settings.css';
-@import './subscription.css';
+@import './page-layout.css';
 @import './analytics-range-control.css';
 @import './profile-analytics.css';
 @import './content-analytics.css';

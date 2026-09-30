@@ -17,16 +17,23 @@ import {
   DeleteFeedModal,
   EditFeedModal,
   ShareFeedModal,
+  ShareLinkSignInModal,
+  ShareNotificationModal,
+  SharingLimitModal,
   SharedFeedFollowedModal,
   type LinkedInTypeaheadPerson,
 } from '../../shared/components/FeedActionModals/FeedActionModals';
+import type { ShareNotification, SharingLimitDetails } from 'shared/types';
 import { enrichProfileDataForFeed } from '../../shared/enrich-profile-data';
 import { searchLinkedInPeople, toLinkedInProfileData } from './linkedin-search';
 import type { FeedActionDeps } from './feed-action-types';
 
 export async function createNewFeed(
   name: string,
-  deps: Pick<FeedActionDeps, 'getFeeds' | 'setFeeds' | 'sendMsg' | 'showToast' | 'loadFeeds' | 'renderSidebarContent'>
+  deps: Pick<
+    FeedActionDeps,
+    'getFeeds' | 'setFeeds' | 'sendMsg' | 'showToast' | 'showPlanModal' | 'loadFeeds' | 'renderSidebarContent'
+  >
 ): Promise<boolean> {
   const { getFeeds, setFeeds, sendMsg, showToast, loadFeeds, renderSidebarContent } = deps;
   const colors = ['#615DEC', '#E74C3C', '#27AE60', '#F39C12', '#3498DB', '#9B59B6'];
@@ -48,6 +55,10 @@ export async function createNewFeed(
   const response = await sendMsg({ type: 'FEEDS_CREATE', name: normalizedName, description: '', color });
 
   if (!response?.success) {
+    if (response?.code === 'PLAN_LIMIT_REACHED') {
+      deps.showPlanModal('feeds');
+      return false;
+    }
     showToast((response?.error as string) || 'Failed to create feed', 'error');
     return false;
   }
@@ -64,9 +75,7 @@ export async function createNewFeed(
     await loadFeeds();
   } catch {
     setFeeds(
-      createdFeed
-        ? [createdFeed, ...previousFeeds.filter((feed) => feed.id !== createdFeed.id)]
-        : previousFeeds
+      createdFeed ? [createdFeed, ...previousFeeds.filter((feed) => feed.id !== createdFeed.id)] : previousFeeds
     );
   }
 
@@ -104,9 +113,7 @@ export async function moveFeed(
   }
 
   const isSharedReorder = getActiveFeedTab() === 'shared';
-  const currentFeeds = isSharedReorder
-    ? getSharedFeeds()
-    : getFeeds().filter((feed) => !feed.isShared);
+  const currentFeeds = isSharedReorder ? getSharedFeeds() : getFeeds().filter((feed) => !feed.isShared);
   const fromIndex = currentFeeds.findIndex((feed) => feed.id === dragFeedId);
   const toIndex = currentFeeds.findIndex((feed) => feed.id === targetFeedId);
 
@@ -115,6 +122,11 @@ export async function moveFeed(
   }
 
   if (currentFeeds[fromIndex]?.isSystem || currentFeeds[toIndex]?.isSystem) {
+    return;
+  }
+
+  if (Boolean(currentFeeds[fromIndex]?.isLockedByPlan) !== Boolean(currentFeeds[toIndex]?.isLockedByPlan)) {
+    showToast('Free includes up to 3 custom feeds. Pro is currently in development.', 'error');
     return;
   }
 
@@ -144,18 +156,20 @@ export async function moveFeed(
   }
   renderSidebarContent();
 
-  const response = await sendMsg(isSharedReorder
-    ? {
-      type: 'FEEDS_REORDER_SHARED',
-      followedFeedIds: reorderedFeeds
-        .filter((feed) => !feed.isSystem)
-        .map((feed) => feed.followedFeedId)
-        .filter((followedFeedId): followedFeedId is string => Boolean(followedFeedId)),
-    }
-    : {
-      type: 'FEEDS_REORDER',
-      feedIds: reorderedFeeds.filter((feed) => !feed.isSystem).map((feed) => feed.id),
-    });
+  const response = await sendMsg(
+    isSharedReorder
+      ? {
+          type: 'FEEDS_REORDER_SHARED',
+          followedFeedIds: reorderedFeeds
+            .filter((feed) => !feed.isSystem)
+            .map((feed) => feed.followedFeedId)
+            .filter((followedFeedId): followedFeedId is string => Boolean(followedFeedId)),
+        }
+      : {
+          type: 'FEEDS_REORDER',
+          feedIds: reorderedFeeds.filter((feed) => !feed.isSystem).map((feed) => feed.id),
+        }
+  );
 
   if (!response?.success) {
     if (isSharedReorder) {
@@ -164,13 +178,14 @@ export async function moveFeed(
       setFeeds(previousFeeds);
     }
     renderSidebarContent();
-    showToast((response?.error as string) || (isSharedReorder ? 'Failed to reorder shared feeds' : 'Failed to reorder feeds'), 'error');
+    showToast(
+      (response?.error as string) || (isSharedReorder ? 'Failed to reorder shared feeds' : 'Failed to reorder feeds'),
+      'error'
+    );
   }
 }
 
-export function closeFeedActionModal(
-  deps: Pick<FeedActionDeps, 'getModalState' | 'setModalState'>
-): void {
+export function closeFeedActionModal(deps: Pick<FeedActionDeps, 'getModalState' | 'setModalState'>): void {
   const { el, root } = deps.getModalState();
   root?.unmount();
   el?.remove();
@@ -193,7 +208,10 @@ export function showEditFeedModal(feed: FeedInfo, deps: FeedActionDeps): void {
   openFeedActionModal(
     createElement(EditFeedModal, {
       feedName: feed.name,
-      existingFeedNames: deps.getFeeds().filter((item) => item.id !== feed.id).map((item) => item.name),
+      existingFeedNames: deps
+        .getFeeds()
+        .filter((item) => item.id !== feed.id)
+        .map((item) => item.name),
       onClose: () => closeFeedActionModal(deps),
       onSave: async (nextName: string) => {
         if (!nextName) {
@@ -241,7 +259,13 @@ export function showAddPeopleModal(feed: FeedInfo, deps: FeedActionDeps): void {
             ownerId: feed.ownerId,
             feedId: feed.id,
             profileData: enrichedProfileData,
-          })) as { success?: boolean; member?: FeedMemberInfo; alreadyExists?: boolean; error?: string };
+          })) as { success?: boolean; member?: FeedMemberInfo; alreadyExists?: boolean; error?: string; code?: string };
+
+          if (result?.code === 'PLAN_LIMIT_REACHED') {
+            closeFeedActionModal(deps);
+            deps.showPlanModal('members');
+            return { success: false };
+          }
 
           if (result?.success && result.alreadyExists) {
             duplicateCount += 1;
@@ -290,13 +314,36 @@ export function showShareFeedModal(feed: FeedInfo, deps: FeedActionDeps): void {
           feedId: feed.id,
         });
 
-        return (response?.shares as Array<{
-          targetUid: string;
-          targetEmail: string;
-          displayName: string;
-          photoURL?: string;
-          role: 'reader' | 'editor';
-        }>) || [];
+        return (
+          (response?.shares as Array<{
+            targetUid: string;
+            targetEmail: string;
+            displayName: string;
+            photoURL?: string;
+            role: 'reader' | 'editor';
+          }>) || []
+        );
+      },
+      onWatchShares: (onShares) => {
+        const listener = (message: Record<string, unknown>) => {
+          if (message.type !== 'FEEDS_FEED_SHARES_UPDATED' || message.feedId !== feed.id) return;
+          onShares(
+            (Array.isArray(message.shares) ? message.shares : []) as Array<{
+              targetUid: string;
+              targetEmail: string;
+              displayName: string;
+              photoURL?: string;
+              role: 'reader' | 'editor';
+            }>
+          );
+        };
+        chrome.runtime.onMessage.addListener(listener);
+        void deps.sendMsg({ type: 'FEEDS_WATCH_FEED_SHARES', feedId: feed.id });
+
+        return () => {
+          chrome.runtime.onMessage.removeListener(listener);
+          void deps.sendMsg({ type: 'FEEDS_UNWATCH_FEED_SHARES', feedId: feed.id });
+        };
       },
       onShareByEmail: async (email: string, role: 'reader' | 'editor') => {
         const response = await deps.sendMsg({
@@ -307,7 +354,11 @@ export function showShareFeedModal(feed: FeedInfo, deps: FeedActionDeps): void {
         });
 
         if (!response?.success) {
-          return { success: false, error: (response?.error as string) || 'Failed to share this feed' };
+          return {
+            success: false,
+            error: (response?.error as string) || 'Failed to share this feed',
+            sharingLimit: response?.sharingLimit as SharingLimitDetails | undefined,
+          };
         }
 
         deps.showToast(feedSharedMessage(feed.name), 'success');
@@ -355,6 +406,63 @@ export function showShareFeedModal(feed: FeedInfo, deps: FeedActionDeps): void {
         return { success: true, url: response.url as string };
       },
       onNotify: deps.showToast,
+      onSharingLimit: (details: SharingLimitDetails) => showSharingLimitModal(details, 'email', deps),
+    }),
+    deps
+  );
+}
+
+export function showSharingLimitModal(
+  details: SharingLimitDetails,
+  source: 'email' | 'link' | 'notification',
+  deps: FeedActionDeps
+): void {
+  openFeedActionModal(
+    createElement(SharingLimitModal, {
+      details,
+      source,
+      onClose: () => closeFeedActionModal(deps),
+      onUpgrade: () => {
+        closeFeedActionModal(deps);
+        deps.showPlanModal('sharing');
+      },
+    }),
+    deps
+  );
+}
+
+export function showShareNotificationModal(notification: ShareNotification, deps: FeedActionDeps): void {
+  openFeedActionModal(
+    createElement(ShareNotificationModal, {
+      notification,
+      onClose: () => closeFeedActionModal(deps),
+      onDismiss: async () => {
+        const response = await deps.sendMsg({
+          type: 'FEEDS_DISMISS_SHARE_NOTIFICATION',
+          notificationId: notification.id,
+        });
+        if (!response?.success) {
+          throw new Error((response?.error as string) || 'Failed to dismiss notification');
+        }
+      },
+      onViewSharedFeeds: () => {
+        closeFeedActionModal(deps);
+        deps.selectFeedTab('shared');
+        deps.openSidebar();
+      },
+      onUpgrade: () => {
+        closeFeedActionModal(deps);
+        deps.showPlanModal('sharing');
+      },
+    }),
+    deps
+  );
+}
+
+export function showShareLinkSignInModal(deps: FeedActionDeps): void {
+  openFeedActionModal(
+    createElement(ShareLinkSignInModal, {
+      onClose: () => closeFeedActionModal(deps),
     }),
     deps
   );
@@ -372,6 +480,11 @@ export function showDuplicateSharedFeedModal(feed: FeedInfo, deps: FeedActionDep
         });
 
         if (!response?.success) {
+          if (response?.code === 'PLAN_LIMIT_REACHED') {
+            closeFeedActionModal(deps);
+            deps.showPlanModal(response.limitKind === 'members' ? 'members' : 'feeds');
+            return;
+          }
           deps.showToast((response?.error as string) || 'Failed to duplicate shared feed', 'error');
           return;
         }
@@ -412,7 +525,9 @@ export async function unfollowSharedFeed(feed: FeedInfo, deps: FeedActionDeps): 
           return { success: false };
         }
 
-        deps.setSharedFeeds(deps.getSharedFeeds().filter((item) => !(item.id === feed.id && item.ownerId === feed.ownerId)));
+        deps.setSharedFeeds(
+          deps.getSharedFeeds().filter((item) => !(item.id === feed.id && item.ownerId === feed.ownerId))
+        );
         if (deps.getExpandedFeedId() === feed.id) {
           deps.setExpandedFeedId(null);
         }
@@ -440,11 +555,8 @@ export function showSharedFeedFollowedModal(
       onClose: () => closeFeedActionModal(deps),
       onViewSharedFeeds: () => {
         closeFeedActionModal(deps);
+        deps.selectFeedTab('shared');
         deps.openSidebar();
-        deps.renderSidebarContent();
-        requestAnimationFrame(() => {
-          document.getElementById('lfa-tab-shared')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-        });
       },
     }),
     deps

@@ -1,8 +1,25 @@
+import type { ProfileViewersCollectionProgress } from '../../shared/profile-viewers-progress';
+
+export type SidebarAuthMode = 'sign-in' | 'sign-up';
+
+export interface EmailPasswordSignInInput {
+  email: string;
+  password: string;
+}
+
+export interface EmailPasswordSignUpInput extends EmailPasswordSignInInput {
+  firstName: string;
+  lastName: string;
+  acceptedPersonalData: boolean;
+}
+
 export interface UserInfo {
   userId: string;
   displayName: string;
   email: string;
   photoURL: string;
+  authDisplayName?: string;
+  authPhotoURL?: string;
 }
 
 export interface FeedInfo {
@@ -11,6 +28,9 @@ export interface FeedInfo {
   description?: string;
   color: string;
   memberCount: number;
+  activeMemberCount?: number;
+  lockedMemberCount?: number;
+  isLockedByPlan?: boolean;
   sortOrder?: number;
   ownerId?: string;
   isShared?: boolean;
@@ -26,6 +46,7 @@ export interface FeedInfo {
   systemType?: 'profileViewers';
   privateViewerCount?: number;
   recruiterViewerCount?: number;
+  profileViewersCollectionProgress?: ProfileViewersCollectionProgress;
   isRefreshingProfileViewers?: boolean;
   isConfirmingProfileViewersRefresh?: boolean;
 }
@@ -58,6 +79,7 @@ export interface FeedMemberInfo {
   status?: 'connected' | 'pending' | 'connect' | 'following' | 'withdrawn' | 'unavailable' | 'loading';
   transientAction?: 'connect' | 'follow';
   addedAt: number;
+  isLockedByPlan?: boolean;
 }
 
 export interface MemberEditorState {

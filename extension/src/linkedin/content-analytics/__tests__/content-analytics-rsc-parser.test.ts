@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { parseContentAnalyticsRsc } from '../content-analytics-rsc-parser';
-import { isDashboardAnalyticsError } from '../../../background/dashboard-analytics/dashboard-analytics-errors';
+import { isDashboardAnalyticsError } from '../../../background/features/dashboard-analytics/dashboard-analytics-errors';
 import { buildContentAnalyticsRscFixture } from './fixtures/content-analytics-rsc';
 
 describe('parseContentAnalyticsRsc', () => {

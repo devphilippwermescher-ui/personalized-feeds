@@ -1,5 +1,5 @@
 import type { ContentAnalyticsMetricCoverage, ContentAnalyticsMetricValues } from 'shared/types';
-import { DashboardAnalyticsError } from '../../background/dashboard-analytics/dashboard-analytics-errors';
+import { DashboardAnalyticsError } from '../../background/features/dashboard-analytics/dashboard-analytics-errors';
 import { getRscRecordText, parseOrderedRscFlightRecords, toUtcDateKey } from '../rsc-flight-records';
 import { findRscHighlightValue, findRscRowValue, normalizeRscLabel } from './rsc-metric-rows';
 
@@ -172,11 +172,7 @@ export function parseContentAnalyticsRsc(payload: string): ContentAnalyticsRscRe
 
   const seriesBlocks = parseSeriesBlocks(payload);
   const dailyImpressions = selectDailySeries(seriesBlocks, IMPRESSIONS_LABEL, metrics.impressions);
-  const dailyLinkedInEngagements = selectDailySeries(
-    seriesBlocks,
-    ENGAGEMENTS_LABEL,
-    metrics.linkedInEngagements
-  );
+  const dailyLinkedInEngagements = selectDailySeries(seriesBlocks, ENGAGEMENTS_LABEL, metrics.linkedInEngagements);
 
   if (!impressionsFound && !dailyImpressions) {
     throw new DashboardAnalyticsError(

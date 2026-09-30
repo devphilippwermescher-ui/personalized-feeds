@@ -1,7 +1,8 @@
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { getFirebaseDb } from '../firebase-config';
-import type { UserFeatureSettings, UserProfile } from '../types';
-import { emailIndexCollection, normalizeEmail, settingsDoc } from './refs';
+import type { UserFeatureSettings, UserProfile, UserProfilePreferences } from '../types';
+import { normalizeUserProfilePreferences } from '../user-profile-preferences';
+import { emailIndexCollection, normalizeEmail, profilePreferencesDoc, settingsDoc } from './refs';
 
 const DEFAULT_USER_FEATURE_SETTINGS: UserFeatureSettings = {
   messagingButtons: true,
@@ -16,20 +17,28 @@ export async function createUserProfile(profile: UserProfile): Promise<void> {
   const userRef = doc(getFirebaseDb(), 'users', profile.uid);
   const existing = await getDoc(userRef);
   const createdAt = existing.exists()
-    ? ((existing.data() as UserProfile).createdAt || profile.createdAt)
+    ? (existing.data() as UserProfile).createdAt || profile.createdAt
     : profile.createdAt;
-
-  await setDoc(userRef, {
+  const normalizedProfile: UserProfile = {
     ...profile,
-    createdAt,
-  });
+    photoURL: profile.photoURL || '',
+  };
 
-  if (profile.email.trim()) {
-    await setDoc(doc(emailIndexCollection(), normalizeEmail(profile.email)), {
-      uid: profile.uid,
-      email: profile.email.trim(),
-      displayName: profile.displayName,
-      photoURL: profile.photoURL || '',
+  await setDoc(
+    userRef,
+    {
+      ...normalizedProfile,
+      createdAt,
+    },
+    { merge: true }
+  );
+
+  if (normalizedProfile.email.trim()) {
+    await setDoc(doc(emailIndexCollection(), normalizeEmail(normalizedProfile.email)), {
+      uid: normalizedProfile.uid,
+      email: normalizedProfile.email.trim(),
+      displayName: normalizedProfile.displayName,
+      photoURL: normalizedProfile.photoURL,
       updatedAt: Date.now(),
     });
   }
@@ -67,6 +76,20 @@ export async function updateUserFeatureSettings(
 
   await setDoc(settingsDoc(userId), next, { merge: true });
   return next;
+}
+
+export async function getUserProfilePreferences(userId: string): Promise<UserProfilePreferences> {
+  const snap = await getDoc(profilePreferencesDoc(userId));
+  return normalizeUserProfilePreferences(snap.exists() ? (snap.data() as Partial<UserProfilePreferences>) : null);
+}
+
+export async function updateUserProfilePreferences(
+  userId: string,
+  preferences: UserProfilePreferences
+): Promise<UserProfilePreferences> {
+  const normalized = normalizeUserProfilePreferences(preferences);
+  await setDoc(profilePreferencesDoc(userId), normalized, { merge: true });
+  return normalized;
 }
 
 export async function findUserProfileByEmail(email: string): Promise<UserProfile | null> {

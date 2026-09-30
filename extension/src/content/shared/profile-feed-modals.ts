@@ -1,4 +1,9 @@
+import { createElement, type ReactElement } from 'react';
+import { flushSync } from 'react-dom';
+import { createRoot } from 'react-dom/client';
+import { Modal } from 'shared/ui/modal';
 import { CONTENT_COPY, getMemberCountLabel } from './copy';
+import { escapeHtml } from './escape-html';
 
 export const PROFILE_FEED_MODAL_COLORS = ['#615DEC', '#2563EB', '#059669', '#DC2626', '#D97706', '#7C3AED'] as const;
 
@@ -6,23 +11,13 @@ const FEED_MODAL_OVERLAY_ID = 'pf-feed-modal-overlay';
 const CREATE_FEED_OVERLAY_ID = 'pf-create-feed-overlay';
 export type ProfileFeedModalContext = 'profile' | 'post';
 
-interface BaseModalOptions {
-  overlayId: string;
-  overlayClassName: string;
-  modalId?: string;
-  modalClassName: string;
-  title: string;
-  closeButtonId: string;
-  body: string;
-  footer?: string;
-}
-
 interface FeedOptionRenderOptions {
   id: string;
   name: string;
   color?: string;
   memberCount?: number;
   isMember?: boolean;
+  isLockedByPlan?: boolean;
   element?: 'button' | 'div';
 }
 
@@ -33,109 +28,138 @@ interface CreateFeedModalElements {
   submitButton: HTMLButtonElement;
 }
 
-function escapeHtml(value: string): string {
-  const div = document.createElement('div');
-  div.textContent = value;
-  return div.innerHTML;
+function createCloseIcon(): ReactElement {
+  return createElement(
+    'svg',
+    { viewBox: '0 0 24 24', width: 18, height: 18, fill: 'currentColor', 'aria-hidden': true, focusable: false },
+    createElement('path', {
+      d: 'M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z',
+    })
+  );
 }
 
-function closeIcon(): string {
-  return `
-    <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true" focusable="false">
-      <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"></path>
-    </svg>
-  `;
+function createModalHeader(title: string, closeButtonId: string): ReactElement {
+  return createElement(
+    'div',
+    { className: 'lfs-modal__header pf-feed-modal-header' },
+    createElement('h3', { className: 'lfs-modal__title' }, title),
+    createElement(
+      'button',
+      {
+        className: 'lfs-modal__close pf-feed-modal-close',
+        id: closeButtonId,
+        'aria-label': CONTENT_COPY.common.close,
+      },
+      createCloseIcon()
+    )
+  );
 }
 
-function renderBaseModal({
-  overlayId,
-  overlayClassName,
-  modalId,
-  modalClassName,
-  title,
-  closeButtonId,
-  body,
-  footer,
-}: BaseModalOptions): string {
-  return `
-    <div class="lfs-modal-overlay ${overlayClassName}" id="${overlayId}" style="display: none;">
-      <div class="lfs-modal lfs-modal--md ${modalClassName}"${modalId ? ` id="${modalId}"` : ''}>
-        <div class="lfs-modal__header pf-feed-modal-header">
-          <h3 class="lfs-modal__title">${title}</h3>
-          <button class="lfs-modal__close pf-feed-modal-close" id="${closeButtonId}" aria-label="${CONTENT_COPY.common.close}">
-            ${closeIcon()}
-          </button>
-        </div>
-        ${body}
-        ${footer || ''}
-      </div>
+function mountModal(hostId: string, modal: ReactElement): void {
+  if (document.getElementById(hostId)) {
+    return;
+  }
+
+  const host = document.createElement('div');
+  host.id = hostId;
+  document.body.appendChild(host);
+  const root = createRoot(host);
+  flushSync(() => root.render(modal));
+}
+
+function mountFeedSelectionModal(): void {
+  mountModal(
+    'pf-feed-modal-react-root',
+    createElement(Modal, {
+      open: false,
+      keepMounted: true,
+      closeOnBackdrop: false,
+      closeOnEscape: false,
+      title: CONTENT_COPY.profile.addToFeedTitle,
+      variant: 'default',
+      onClose: () => undefined,
+      portalTarget: document.body,
+      overlayId: FEED_MODAL_OVERLAY_ID,
+      overlayClassName: 'pf-feed-modal-overlay',
+      dialogId: 'pf-feed-modal',
+      dialogClassName: 'lfs-modal--md pf-feed-modal',
+      bodyId: 'pf-feed-modal-body',
+      bodyClassName: 'pf-feed-modal-body',
+      bodyHtml: renderFeedModalLoading(CONTENT_COPY.profile.loadingFeeds, true),
+      classNames: {
+        overlay: 'lfs-modal-overlay',
+        dialog: 'lfs-modal',
+        body: 'lfs-modal__body',
+        footer: 'lfs-modal__footer',
+      },
+      header: createModalHeader(CONTENT_COPY.profile.addToFeedTitle, 'pf-feed-modal-close'),
+      footerClassName: 'pf-feed-modal-footer',
+      footer: createElement(
+        'button',
+        { className: 'pf-feed-modal-create', id: 'pf-feed-modal-create' },
+        CONTENT_COPY.profile.createFeedAction
+      ),
+    })
+  );
+}
+
+function mountCreateFeedModal(): void {
+  const bodyHtml = `
+    <input
+      type="text"
+      class="pf-create-feed-input"
+      id="pf-create-feed-name"
+      placeholder="${CONTENT_COPY.profile.createFeedNamePlaceholder}"
+    />
+    <!--
+      Description is intentionally hidden for now. Keep this field in the
+      template so it can be restored without rebuilding the modal flow.
+      <input
+        type="text"
+        class="pf-create-feed-input"
+        id="pf-create-feed-desc"
+        placeholder="${CONTENT_COPY.profile.createFeedDescriptionPlaceholder}"
+      />
+    -->
+    <div class="pf-create-feed-colors" id="pf-create-feed-colors">
+      ${PROFILE_FEED_MODAL_COLORS.map(
+        (color, index) => `
+        <span
+          class="pf-color-option${index === 0 ? ' active' : ''}"
+          data-color="${color}"
+          style="background: ${color}; color: ${color}"
+        ></span>
+      `
+      ).join('')}
     </div>
+    <button class="pf-create-feed-submit" id="pf-create-feed-submit">
+      ${CONTENT_COPY.profile.createFeedSubmit}
+    </button>
   `;
-}
 
-function renderFeedSelectionModal(): string {
-  return renderBaseModal({
-    overlayId: FEED_MODAL_OVERLAY_ID,
-    overlayClassName: 'pf-feed-modal-overlay',
-    modalId: 'pf-feed-modal',
-    modalClassName: 'pf-feed-modal',
-    title: CONTENT_COPY.profile.addToFeedTitle,
-    closeButtonId: 'pf-feed-modal-close',
-    body: `
-      <div class="lfs-modal__body pf-feed-modal-body" id="pf-feed-modal-body">
-        ${renderFeedModalLoading(CONTENT_COPY.profile.loadingFeeds, true)}
-      </div>
-    `,
-    footer: `
-      <div class="lfs-modal__footer pf-feed-modal-footer">
-        <button class="pf-feed-modal-create" id="pf-feed-modal-create">
-          ${CONTENT_COPY.profile.createFeedAction}
-        </button>
-      </div>
-    `,
-  });
-}
-
-function renderCreateFeedModal(): string {
-  return renderBaseModal({
-    overlayId: CREATE_FEED_OVERLAY_ID,
-    overlayClassName: 'pf-create-feed-overlay',
-    modalClassName: 'pf-create-feed-modal',
-    title: CONTENT_COPY.profile.createFeedTitle,
-    closeButtonId: 'pf-create-feed-close',
-    body: `
-      <div class="pf-create-feed-body">
-        <input
-          type="text"
-          class="pf-create-feed-input"
-          id="pf-create-feed-name"
-          placeholder="${CONTENT_COPY.profile.createFeedNamePlaceholder}"
-        />
-        <!--
-          Description is intentionally hidden for now. Keep this field in the
-          template so it can be restored without rebuilding the modal flow.
-          <input
-            type="text"
-            class="pf-create-feed-input"
-            id="pf-create-feed-desc"
-            placeholder="${CONTENT_COPY.profile.createFeedDescriptionPlaceholder}"
-          />
-        -->
-        <div class="pf-create-feed-colors" id="pf-create-feed-colors">
-          ${PROFILE_FEED_MODAL_COLORS.map((color, index) => `
-            <span
-              class="pf-color-option${index === 0 ? ' active' : ''}"
-              data-color="${color}"
-              style="background: ${color}; color: ${color}"
-            ></span>
-          `).join('')}
-        </div>
-        <button class="pf-create-feed-submit" id="pf-create-feed-submit">
-          ${CONTENT_COPY.profile.createFeedSubmit}
-        </button>
-      </div>
-    `,
-  });
+  mountModal(
+    'pf-create-feed-modal-react-root',
+    createElement(Modal, {
+      open: false,
+      keepMounted: true,
+      closeOnBackdrop: false,
+      closeOnEscape: false,
+      title: CONTENT_COPY.profile.createFeedTitle,
+      variant: 'form',
+      onClose: () => undefined,
+      portalTarget: document.body,
+      overlayId: CREATE_FEED_OVERLAY_ID,
+      overlayClassName: 'pf-create-feed-overlay',
+      dialogClassName: 'lfs-modal--md pf-create-feed-modal',
+      bodyHtml,
+      classNames: {
+        overlay: 'lfs-modal-overlay',
+        dialog: 'lfs-modal',
+        body: 'pf-create-feed-body',
+      },
+      header: createModalHeader(CONTENT_COPY.profile.createFeedTitle, 'pf-create-feed-close'),
+    })
+  );
 }
 
 function bindOverlayClose(overlay: HTMLElement, closeSelector: string): void {
@@ -156,10 +180,10 @@ function bindOverlayClose(overlay: HTMLElement, closeSelector: string): void {
 
 export function ensureProfileFeedModals(): void {
   if (!document.getElementById(FEED_MODAL_OVERLAY_ID)) {
-    document.body.insertAdjacentHTML('beforeend', renderFeedSelectionModal());
+    mountFeedSelectionModal();
   }
   if (!document.getElementById(CREATE_FEED_OVERLAY_ID)) {
-    document.body.insertAdjacentHTML('beforeend', renderCreateFeedModal());
+    mountCreateFeedModal();
   }
 
   const feedOverlay = document.getElementById(FEED_MODAL_OVERLAY_ID);
@@ -228,23 +252,29 @@ export function renderFeedModalOption({
   color,
   memberCount,
   isMember = false,
+  isLockedByPlan = false,
   element = 'div',
 }: FeedOptionRenderOptions): string {
   const tag = element;
-  const roleAttributes = tag === 'button'
-    ? `type="button" ${isMember ? 'disabled' : ''}`
-    : `${isMember ? '' : 'role="button" tabindex="0"'}`;
+  const isDisabled = isMember || isLockedByPlan;
+  const roleAttributes =
+    tag === 'button'
+      ? `type="button" ${isDisabled ? 'disabled aria-disabled="true"' : ''}`
+      : `${isDisabled ? 'aria-disabled="true"' : 'role="button" tabindex="0"'}`;
 
   return `
     <${tag}
-      class="pf-feed-option${isMember ? ' already-added' : ''}"
+      class="pf-feed-option${isMember ? ' already-added' : ''}${isLockedByPlan ? ' plan-locked' : ''}"
       data-feed-id="${escapeHtml(id)}"
       data-feed-name="${escapeHtml(name)}"
+      data-plan-locked="${String(isLockedByPlan)}"
+      ${isLockedByPlan ? `title="${escapeHtml(CONTENT_COPY.sidebar.freeFeedLockedHint)}"` : ''}
       ${roleAttributes}
     >
       <span class="pf-feed-option-left">
         <span class="pf-feed-option-dot" style="background:${escapeHtml(color || '#615DEC')}"></span>
         <span class="pf-feed-option-name">${escapeHtml(name)}</span>
+        ${isLockedByPlan ? '<span class="pf-feed-option-plan-lock">Locked</span>' : ''}
         <span class="pf-feed-option-count">${getMemberCountLabel(memberCount ?? 0)}</span>
       </span>
       <span class="pf-feed-option-status">
@@ -400,6 +430,19 @@ export const PROFILE_FEED_MODALS_CSS = `
     color: #9ca3af;
   }
 
+  .pf-feed-option-plan-lock {
+    flex-shrink: 0;
+    padding: 3px 6px;
+    border-radius: 999px;
+    background: #e2e8f0;
+    color: #475569;
+    font-size: 9px;
+    font-weight: 800;
+    line-height: 1;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
   .pf-feed-option-check {
     font-size: 18px;
     color: #059669;
@@ -417,6 +460,16 @@ export const PROFILE_FEED_MODALS_CSS = `
   .pf-feed-option.already-added {
     opacity: 0.6;
     cursor: default;
+  }
+
+  .pf-feed-option.plan-locked {
+    background: #f8fafc;
+    opacity: 0.68;
+    cursor: not-allowed;
+  }
+
+  .pf-feed-option.plan-locked:hover {
+    background: #f8fafc;
   }
 
   .pf-feed-modal-footer {

@@ -7,7 +7,7 @@ import type {
   ProfileViewerSummary,
   ProfileAnalyticsSyncStatus,
 } from 'shared/types';
-import { sendMessageToExtension } from '../../../utils/extensionMessaging';
+import { sendMessageToExtension } from '../../../services/extension-messaging';
 import {
   deleteProfileAnalyticsCache,
   readProfileAnalyticsCache,
