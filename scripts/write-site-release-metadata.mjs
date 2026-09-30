@@ -12,7 +12,7 @@ const serverUrl = process.env.GITHUB_SERVER_URL || 'https://github.com';
 const commit = (process.env.GITHUB_SHA || 'local').slice(0, 7);
 const releasedAt = process.env.RELEASED_AT || new Date().toISOString();
 const releaseUrl = `${serverUrl}/${repository}/releases/tag/v${version}`;
-const productionDownloadUrl = `${serverUrl}/${repository}/releases/download/v${version}/personalized-feeds-v${version}.zip`;
+const productionDownloadUrl = `${serverUrl}/${repository}/releases/download/v${version}/myfeedpilot-v${version}.zip`;
 
 const metadata =
   site === 'landing'

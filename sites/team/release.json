@@ -1,19 +1,19 @@
 {
-  "version": "0.1.5",
-  "commit": "b04c3fb",
-  "publishedAt": null,
+  "version": "0.1.6",
+  "commit": "a9d2068",
+  "publishedAt": "2026-09-30T22:24:33.735Z",
   "environments": {
     "development": {
-      "label": "main development · b04c3fb",
+      "label": "main development · a9d2068",
       "downloadUrl": "./downloads/myfeedpilot-development-latest.zip"
     },
     "staging": {
-      "label": "main staging · b04c3fb",
+      "label": "main staging · a9d2068",
       "downloadUrl": "./downloads/myfeedpilot-staging-latest.zip"
     },
     "production": {
-      "label": "v0.1.5",
-      "downloadUrl": "https://github.com/devphilippwermescher-ui/personalized-feeds/releases/download/v0.1.5/personalized-feeds-v0.1.5.zip"
+      "label": "v0.1.6",
+      "downloadUrl": "https://github.com/devphilippwermescher-ui/personalized-feeds/releases/download/v0.1.6/myfeedpilot-v0.1.6.zip"
     }
   }
 }
