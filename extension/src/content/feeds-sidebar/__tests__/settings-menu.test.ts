@@ -74,7 +74,7 @@ describe('settings menu', () => {
     expect(headerHtml).not.toContain('id="lfa-header-dashboard-btn"');
     expect(headerHtml).not.toContain('id="lfa-manage-account-btn"');
     expect(headerHtml).toContain('id="lfa-profile-settings-btn"');
-    expect(headerHtml).toContain('<span>Profile</span>');
+    expect(headerHtml).toContain('<span>Profile &amp; billing</span>');
     expect(headerHtml).not.toContain('id="lfa-subscription-btn"');
     expect(signedOutBodyHtml).not.toContain('id="lfa-open-dashboard-btn"');
     expect(freeUserBodyHtml).not.toContain('id="lfa-open-subscription-btn"');

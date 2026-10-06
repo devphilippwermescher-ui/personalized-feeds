@@ -39,13 +39,25 @@ describe('plan modal', () => {
     expect(document.body.textContent).toContain('Share without limits with Pro');
   });
 
-  it('opens the pricing flow from Upgrade to Pro', () => {
+  it('confirms opening the pricing flow only after the background succeeds', async () => {
     openPlanModal({ plan: 'free', context: 'feeds' });
     document.querySelector<HTMLButtonElement>('.mfp-plan-cta')?.click();
 
     expect(sendMessage).toHaveBeenCalledWith({ type: 'BILLING_OPEN_PRICING' });
-    expect(document.querySelector('.mfp-plan-note')?.textContent).toContain('Pricing opened');
+    await vi.waitFor(() => {
+      expect(document.querySelector('.mfp-plan-note')?.textContent).toContain('Pricing opened');
+    });
     expect(sendMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'BILLING_OPEN_CHECKOUT' }));
+  });
+
+  it('shows the background error instead of claiming that pricing opened', async () => {
+    sendMessage.mockResolvedValueOnce({ success: false, error: 'No pricing connection' });
+    openPlanModal({ plan: 'free', context: 'feeds' });
+    document.querySelector<HTMLButtonElement>('.mfp-plan-cta')?.click();
+
+    await vi.waitFor(() => {
+      expect(document.querySelector('.mfp-plan-note')?.textContent).toContain('No pricing connection');
+    });
   });
 
   it('closes from Escape without leaving the overlay behind', () => {

@@ -7,12 +7,19 @@ describe('pricing page navigation', () => {
     vi.restoreAllMocks();
   });
 
-  it('asks the background service to open pricing with an authenticated handoff', () => {
+  it('asks the background service to open pricing with an authenticated handoff', async () => {
     const sendMessage = vi.fn().mockResolvedValue({ success: true });
     vi.stubGlobal('chrome', { runtime: { sendMessage } });
 
-    openPricingPage();
+    await expect(openPricingPage()).resolves.toBeUndefined();
 
     expect(sendMessage).toHaveBeenCalledWith({ type: 'BILLING_OPEN_PRICING' });
+  });
+
+  it('surfaces a failed background action', async () => {
+    const sendMessage = vi.fn().mockResolvedValue({ success: false, error: 'Pricing is unavailable' });
+    vi.stubGlobal('chrome', { runtime: { sendMessage } });
+
+    await expect(openPricingPage()).rejects.toThrow('Pricing is unavailable');
   });
 });

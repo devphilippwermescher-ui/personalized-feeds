@@ -208,7 +208,8 @@ export function createSidebarUiController(deps: SidebarUiControllerDeps): {
             );
           });
         },
-        openManagePlan: () => openPlanModal({ plan: 'free', context: 'feeds' }),
+        openManagePlan: () =>
+          openPlanModal({ plan: deps.getIsPremium() ? 'pro' : 'free', context: 'feeds' }),
         updateFeatureSetting: async (key, value) => {
           const response = await deps.sendMsg({
             type: 'SETTINGS_UPDATE',

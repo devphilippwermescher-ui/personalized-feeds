@@ -30,7 +30,9 @@ import { findChangedSharedFeedRole } from './services/shared-feed-role-storage';
 import { createSidebarFeedsController } from './controllers/sidebar-feeds-controller';
 import { createSidebarFeedActionsController } from './controllers/sidebar-feed-actions-controller';
 import { createSidebarProfileViewersController } from './controllers/sidebar-profile-viewers-controller';
+import { registerPlanRuntimeController } from './controllers/plan-runtime-controller';
 import { createShareNotificationController } from './controllers/share-notification-controller';
+import { createBillingNoticeController } from './controllers/billing-notice-controller';
 
 export function startFeedsSidebar(): void {
   const DASHBOARD_URL = getDashboardOrigin();
@@ -88,6 +90,11 @@ export function startFeedsSidebar(): void {
   async function loadCurrentPlan(force = false): Promise<void> {
     const response = await sendMsg({ type: 'PLAN_GET', force });
     currentPlan = response?.success === true && response.plan === 'pro' ? 'pro' : 'free';
+  }
+
+  async function refreshCurrentPlan(force = false): Promise<AppPlan> {
+    await loadCurrentPlan(force);
+    return currentPlan;
   }
 
   const { sendMsg, checkAuth, handleSignIn, handleEmailSignIn, handleEmailSignUp, handleSignOut } =
@@ -375,7 +382,48 @@ export function startFeedsSidebar(): void {
     showToast,
   });
 
+  const billingNoticeController = createBillingNoticeController({
+    sendMsg,
+    isSidebarOpen: () => sidebarUiController?.isOpen() === true,
+    showError: (message) => showToast(message, 'error'),
+  });
+
   feedActionsController.attachFeedSyncListeners();
+  registerPlanRuntimeController({
+    getPlan: () => currentPlan,
+    refreshPlan: () => refreshCurrentPlan(true),
+    setPlan: (plan) => {
+      currentPlan = plan;
+    },
+    renderSidebar: renderSidebarContent,
+    activateProFeatures: async () => {
+      const [feedsResult, syncResult] = await Promise.allSettled([
+        loadFeeds(),
+        sendMsg({ type: 'PROFILE_VIEWERS_SYNC_API_NOW', resetProfileViewers: true }),
+      ]);
+
+      if (feedsResult.status === 'rejected') {
+        console.warn('[plan] Failed to reload sidebar data after Pro activation', feedsResult.reason);
+      }
+      if (syncResult.status === 'rejected' || syncResult.value?.success !== true) {
+        console.warn(
+          '[plan] Failed to start the Pro Profile Visitors collection',
+          syncResult.status === 'rejected' ? syncResult.reason : syncResult.value?.error
+        );
+      }
+
+      renderSidebarContent();
+    },
+    deactivateProFeatures: async () => {
+      try {
+        await loadFeeds();
+      } catch (error) {
+        console.warn('[plan] Failed to reload sidebar data after Pro expiration', error);
+      }
+      renderSidebarContent();
+    },
+  });
   sidebarUiController.start();
+  billingNoticeController.start();
   shareNotificationController.start();
 }

@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   appendWakeEvent: vi.fn(),
+  claimGuestBillingSubscription: vi.fn(),
   clearStoredFeedsAuthTokens: vi.fn(),
   ensureAuthenticatedUserProfile: vi.fn(),
   formatUserInfo: vi.fn(),
@@ -24,7 +25,7 @@ vi.mock('shared/firestore-service', () => ({
 }));
 vi.mock('shared/feature-flags', () => ({ DASHBOARD_ANALYTICS_SYNC_ENABLED: false }));
 vi.mock('shared/user-profile-preferences', () => ({
-  DEFAULT_USER_PROFILE_PREFERENCES: { displayName: '', avatarDataUrl: '' },
+  DEFAULT_USER_PROFILE_PREFERENCES: { displayName: '', avatarDataUrl: '', billingCurrency: 'EUR' },
 }));
 vi.mock('../../../../services/auth', () => ({ signInWithGoogleTokens: mocks.signInWithGoogleTokens }));
 vi.mock('../../profile-analytics/profile-analytics-sync-coordinator', () => ({
@@ -38,6 +39,9 @@ vi.mock('../../profile-viewers/profile-viewers-coordinator-storage', () => ({
 }));
 vi.mock('../../profile-viewers/profile-viewers-status-sync', () => ({
   queueProfileViewersStatusSync: mocks.queueProfileViewersStatusSync,
+}));
+vi.mock('../../billing/public', () => ({
+  claimGuestBillingSubscription: mocks.claimGuestBillingSubscription,
 }));
 vi.mock('../services/authenticated-user', () => ({
   clearStoredFeedsAuthTokens: mocks.clearStoredFeedsAuthTokens,
@@ -75,11 +79,12 @@ describe('authenticated feeds session', () => {
     mocks.ensureAuthenticatedUserProfile.mockResolvedValue(undefined);
     mocks.clearStoredFeedsAuthTokens.mockResolvedValue(undefined);
     mocks.getStoredUserProfilePreferences.mockResolvedValue(null);
-    mocks.getUserProfilePreferences.mockResolvedValue({ displayName: '', avatarDataUrl: '' });
+    mocks.getUserProfilePreferences.mockResolvedValue({ displayName: '', avatarDataUrl: '', billingCurrency: 'EUR' });
     mocks.persistUserProfilePreferencesToStorage.mockResolvedValue(undefined);
     mocks.formatUserInfo.mockReturnValue({ isAuthenticated: true, userId: user.uid });
     mocks.storageSet.mockResolvedValue(undefined);
     mocks.appendWakeEvent.mockResolvedValue(undefined);
+    mocks.claimGuestBillingSubscription.mockResolvedValue({ claimedCount: 0, verificationRequired: false });
     mocks.queueProfileViewersFirstSurfaceSync.mockResolvedValue(undefined);
     mocks.queueProfileViewersStatusSync.mockResolvedValue(undefined);
   });
@@ -97,6 +102,7 @@ describe('authenticated feeds session', () => {
     expect(mocks.signInWithEmailPassword).toHaveBeenCalledWith('user@example.com', ' password with spaces ');
     expect(mocks.clearStoredFeedsAuthTokens).toHaveBeenCalledOnce();
     expect(mocks.ensureAuthenticatedUserProfile).toHaveBeenCalledWith(user);
+    expect(mocks.claimGuestBillingSubscription).toHaveBeenCalledOnce();
     expect(mocks.storageSet).toHaveBeenCalledWith({
       feedsUserInfo: { isAuthenticated: true, userId: 'user-1' },
     });

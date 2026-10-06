@@ -12,8 +12,10 @@ import { queueDashboardAnalyticsWhenEnabled } from './dashboard-analytics-runtim
 import { reinjectLinkedInContentRuntimeIntoOpenTabs } from './reinject-linkedin-content-runtime';
 import { registerFeedSharesRuntime, registerShareNotificationRuntime } from '../features/feed-sharing/public';
 import { registerFeedMembersRuntime } from '../features/feeds/public';
+import { registerPlanSubscriptionRuntime } from '../features/billing/public';
 
 export function startBackgroundRuntime(): void {
+  registerPlanSubscriptionRuntime();
   void appendProfileViewersWakeEvent({
     event: 'worker_loaded',
     trigger: 'service_worker',

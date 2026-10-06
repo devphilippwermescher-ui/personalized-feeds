@@ -165,7 +165,7 @@ export function renderSidebarHeader(params: {
                 <path d="M4 21a8 8 0 0 1 16 0"></path>
               </svg>
             </span>
-            <span>Profile</span>
+            <span>Profile &amp; billing</span>
           </button>
           <button class="lfa-account-menu-link lfa-account-menu-link--plan" id="lfa-manage-plan-btn" type="button">
             <span class="lfa-account-menu-link-icon lfa-account-menu-link-icon--plan">

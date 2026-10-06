@@ -59,6 +59,7 @@ export async function checkAuth(
       photoURL: (resp.photoURL as string) || '',
       authDisplayName: (resp.authDisplayName as string) || '',
       authPhotoURL: (resp.authPhotoURL as string) || '',
+      billingCurrency: resp.billingCurrency === 'USD' ? 'USD' : 'EUR',
     });
   } else {
     deps.setCurrentUser(null);

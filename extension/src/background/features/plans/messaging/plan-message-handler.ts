@@ -11,7 +11,7 @@ export function registerPlanMessageHandler(): void {
     getAuthenticatedFeedsUser()
       .then(async (user) => {
         if (!user) {
-          sendResponse(getFeedsAuthErrorResponse({ plan: null, entitlements: null }));
+          sendResponse(getFeedsAuthErrorResponse({ plan: null, entitlements: null, subscription: null }));
           return;
         }
 
@@ -20,6 +20,7 @@ export function registerPlanMessageHandler(): void {
           success: true,
           plan: snapshot.plan,
           entitlements: snapshot.entitlements,
+          subscription: snapshot.subscription,
         });
       })
       .catch((error) => {
@@ -27,6 +28,7 @@ export function registerPlanMessageHandler(): void {
           success: false,
           plan: null,
           entitlements: null,
+          subscription: null,
           error: error instanceof Error ? error.message : String(error),
         });
       });

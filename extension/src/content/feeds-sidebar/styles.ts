@@ -6,6 +6,12 @@ import { MODALS_CSS } from './styles/modals';
 import { EDITORSEARCH_CSS } from './styles/editor-search';
 import { BILLING_NOTICE_CSS } from './styles/billing-notice';
 
-export const FEEDS_SIDEBAR_CSS = [SHELL_CSS, CONTENT_CSS, FEEDS_CSS, MEMBERS_CSS, MODALS_CSS, EDITORSEARCH_CSS].join(
-  ''
-);
+export const FEEDS_SIDEBAR_CSS = [
+  SHELL_CSS,
+  CONTENT_CSS,
+  FEEDS_CSS,
+  MEMBERS_CSS,
+  MODALS_CSS,
+  EDITORSEARCH_CSS,
+  BILLING_NOTICE_CSS,
+].join('');

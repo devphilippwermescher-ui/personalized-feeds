@@ -198,8 +198,24 @@ export function openPlanModal(options: { plan: AppPlan; context: PlanModalContex
     if (!cta || cta.disabled) return;
 
     if (options.plan === 'free') {
-      openPricingPage();
-      if (note) note.textContent = 'Pricing opened in a new tab.';
+      const originalLabel = cta.textContent || '';
+      cta.disabled = true;
+      cta.textContent = 'Opening pricing…';
+      void openPricingPage()
+        .then(() => {
+          if (overlay.isConnected && note) note.textContent = 'Pricing opened in a new tab.';
+        })
+        .catch((error) => {
+          if (overlay.isConnected && note) {
+            note.textContent = error instanceof Error ? error.message : 'Unable to open pricing right now.';
+          }
+        })
+        .finally(() => {
+          if (overlay.isConnected) {
+            cta.disabled = false;
+            cta.textContent = originalLabel;
+          }
+        });
       return;
     }
 

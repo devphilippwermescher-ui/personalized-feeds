@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   claimPendingSubscriptions,
   createSubscriptionFirestoreUpdate,
+  reconcileUserSubscriptionEntitlement,
   saveSubscription,
 } from '../firestore-subscription-repository.js';
 import { hashBillingEmail } from '../email-identity.js';
@@ -146,6 +147,17 @@ describe('subscription Firestore updates', () => {
     expect(result).toBe('updated');
     expect(documents.get(`users/${uid}/billingSubscriptions/subscription-a`)).toMatchObject({ status: 'expired' });
     expect(documents.get(`users/${uid}/billingSubscriptions/subscription-b`)).toMatchObject({ status: 'active' });
+    expect(documents.get(`users/${uid}/billing/subscription`)).toMatchObject({
+      subscriptionId: 'subscription-b',
+      status: 'active',
+    });
+
+    documents.set(`users/${uid}/billing/subscription`, createSubscription({
+      subscriptionId: 'subscription-a',
+      status: 'expired',
+      providerUpdatedAt: 300,
+    }));
+    await expect(reconcileUserSubscriptionEntitlement({ db, userId: uid })).resolves.toBe('subscription-b');
     expect(documents.get(`users/${uid}/billing/subscription`)).toMatchObject({
       subscriptionId: 'subscription-b',
       status: 'active',

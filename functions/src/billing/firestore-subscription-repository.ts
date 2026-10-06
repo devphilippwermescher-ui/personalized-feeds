@@ -204,6 +204,44 @@ export async function saveSubscription(params: {
   });
 }
 
+export async function reconcileUserSubscriptionEntitlement(params: {
+  db: Firestore;
+  userId: string;
+}): Promise<string | null> {
+  assertValidUserId(params.userId);
+  const aggregateRef = params.db.doc(`users/${params.userId}/billing/subscription`);
+  const userSubscriptionsRef = params.db.collection(`users/${params.userId}/${USER_SUBSCRIPTIONS_COLLECTION}`);
+
+  return params.db.runTransaction(async (transaction) => {
+    const [aggregateSnapshot, subscriptionsSnapshot] = await Promise.all([
+      transaction.get(aggregateRef),
+      transaction.get(userSubscriptionsRef),
+    ]);
+    const subscriptionsById = new Map<string, SubscriptionWriteModel>();
+    subscriptionsSnapshot.docs.forEach((snapshot) => {
+      const subscription = snapshot.data();
+      if (isSubscriptionWriteModel(subscription)) {
+        subscriptionsById.set(subscription.subscriptionId, subscription);
+      }
+    });
+
+    const legacyAggregate = aggregateSnapshot.data();
+    if (isSubscriptionWriteModel(legacyAggregate) && !subscriptionsById.has(legacyAggregate.subscriptionId)) {
+      subscriptionsById.set(legacyAggregate.subscriptionId, legacyAggregate);
+      transaction.set(
+        userSubscriptionsRef.doc(legacyAggregate.subscriptionId),
+        createSubscriptionFirestoreUpdate(legacyAggregate),
+        { merge: true }
+      );
+    }
+
+    const selectedSubscription = selectEntitlementSubscription([...subscriptionsById.values()], Date.now());
+    if (!selectedSubscription) return null;
+    transaction.set(aggregateRef, createSubscriptionFirestoreUpdate(selectedSubscription), { merge: true });
+    return selectedSubscription.subscriptionId;
+  });
+}
+
 export async function claimPendingSubscriptions(params: {
   db: Firestore;
   userId: string;
