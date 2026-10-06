@@ -46,7 +46,7 @@ export default function Sidebar({ user, onLogout }: SidebarProps) {
       label: 'Settings',
       items: [
         { to: '/settings/profile', label: 'Manage account', icon: HiOutlineCog6Tooth },
-        { to: '/subscription', label: 'Subscription', icon: HiOutlineCreditCard },
+        { to: '/subscription', label: 'Pro — In development', icon: HiOutlineCreditCard },
         { to: '/settings/api-extension', label: 'API & Extension', icon: HiOutlineKey },
       ],
     },

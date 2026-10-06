@@ -17,6 +17,7 @@ import {
   DeleteFeedModal,
   EditFeedModal,
   ShareFeedModal,
+  ShareLinkSignInModal,
   ShareNotificationModal,
   SharingLimitModal,
   SharedFeedFollowedModal,
@@ -444,42 +445,24 @@ export function showShareNotificationModal(notification: ShareNotification, deps
           throw new Error((response?.error as string) || 'Failed to dismiss notification');
         }
       },
-      onAccept: async () => {
-        const response = await deps.sendMsg({
-          type: 'FEEDS_ACCEPT_SHARE_NOTIFICATION',
-          notificationId: notification.id,
-        });
-        if (!response?.success) {
-          return {
-            success: false,
-            error: (response?.error as string) || 'This feed cannot be accepted yet',
-            sharingLimit: response?.sharingLimit as SharingLimitDetails | undefined,
-          };
-        }
-        return { success: true };
-      },
-      onAccepted: () => {
-        closeFeedActionModal(deps);
-        void deps
-          .loadFeeds()
-          .then(() => {
-            deps.renderSidebarContent();
-            deps.showToast(`“${notification.feedName}” is now in Shared feeds`, 'success');
-          })
-          .catch(() => {
-            deps.showToast('Feed accepted. Refresh to see it in Shared feeds.', 'success');
-          });
-      },
       onViewSharedFeeds: () => {
         closeFeedActionModal(deps);
         deps.selectFeedTab('shared');
         deps.openSidebar();
       },
-      onSharingLimit: (details: SharingLimitDetails) => showSharingLimitModal(details, 'notification', deps),
       onUpgrade: () => {
         closeFeedActionModal(deps);
         deps.showPlanModal('sharing');
       },
+    }),
+    deps
+  );
+}
+
+export function showShareLinkSignInModal(deps: FeedActionDeps): void {
+  openFeedActionModal(
+    createElement(ShareLinkSignInModal, {
+      onClose: () => closeFeedActionModal(deps),
     }),
     deps
   );

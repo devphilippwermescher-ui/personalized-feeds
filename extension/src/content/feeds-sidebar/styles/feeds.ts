@@ -434,6 +434,9 @@ export const FEEDS_CSS = `.lfa-feed-list {
   .lfa-feed-expanded--collapsing {
     pointer-events: none;
   }
+  .lfa-feed-expanded--stable {
+    animation: none;
+  }
   .lfa-feed-expanded-header {
     display: flex;
     justify-content: flex-end;

@@ -16,16 +16,23 @@ function getRequiredInput(form: HTMLFormElement, name: string): HTMLInputElement
 function bindPasswordVisibilityToggles(container: HTMLElement): void {
   container.querySelectorAll<HTMLButtonElement>('[data-password-toggle]').forEach((button) => {
     button.addEventListener('click', () => {
-      const targetId = button.dataset.passwordToggle;
-      if (!targetId) return;
-      const input = container.querySelector<HTMLInputElement>(`#${targetId}`);
-      if (!input) return;
+      const targetIds = button.dataset.passwordToggle?.split(/\s+/).filter(Boolean) || [];
+      const inputs = targetIds
+        .map((targetId) => container.querySelector<HTMLInputElement>(`#${targetId}`))
+        .filter((input): input is HTMLInputElement => Boolean(input));
+      if (inputs.length === 0) return;
 
-      const isVisible = input.type === 'text';
-      input.type = isVisible ? 'password' : 'text';
-      const label = `${isVisible ? 'Show' : 'Hide'} ${targetId.includes('confirm') ? 'confirm password' : 'password'}`;
+      const nextVisible = inputs.some((input) => input.type === 'password');
+      inputs.forEach((input) => {
+        input.type = nextVisible ? 'text' : 'password';
+      });
+      const label = `${nextVisible ? 'Hide' : 'Show'} ${inputs.length > 1 ? 'passwords' : 'password'}`;
       button.setAttribute('aria-label', label);
       button.title = label;
+      const hiddenIcon = button.querySelector<SVGElement>('[data-password-icon="hidden"]');
+      const visibleIcon = button.querySelector<SVGElement>('[data-password-icon="visible"]');
+      hiddenIcon?.classList.toggle('lfa-auth-password-icon--inactive', nextVisible);
+      visibleIcon?.classList.toggle('lfa-auth-password-icon--inactive', !nextVisible);
     });
   });
 }

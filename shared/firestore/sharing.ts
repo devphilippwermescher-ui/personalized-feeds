@@ -51,6 +51,12 @@ async function ensureUserExists(userId: string): Promise<UserProfile> {
   return user;
 }
 
+function getProfileDisplayName(profile: UserProfile, fallback = 'Feed owner'): string {
+  const displayName = typeof profile.displayName === 'string' ? profile.displayName.trim() : '';
+  const email = typeof profile.email === 'string' ? profile.email.trim() : '';
+  return displayName || email || fallback;
+}
+
 async function upsertFollowedFeed(userId: string, ownerId: string, feedId: string, role: FeedShareRole): Promise<void> {
   const followedId = `${ownerId}_${feedId}`;
   const now = Date.now();
@@ -298,7 +304,7 @@ export async function followFeedByShareToken(userId: string, token: string): Pro
   return {
     ...feed,
     role,
-    ownerDisplayName: ownerProfile.displayName,
+    ownerDisplayName: getProfileDisplayName(ownerProfile),
     ownerEmail: ownerProfile.email,
     ownerPhotoURL: ownerProfile.photoURL,
     followedAt: now,
@@ -350,7 +356,7 @@ export async function getFollowedFeeds(userId: string): Promise<SharedFeedSummar
           ...feed,
           role: activeRole,
           previousRole: activeRole !== followed.role ? followed.role : undefined,
-          ownerDisplayName: ownerProfile.displayName,
+          ownerDisplayName: getProfileDisplayName(ownerProfile),
           ownerEmail: ownerProfile.email,
           ownerPhotoURL: ownerProfile.photoURL,
           followedAt: followed.followedAt,

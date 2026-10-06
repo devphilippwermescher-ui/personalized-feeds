@@ -59,7 +59,6 @@ export async function checkAuth(
       photoURL: (resp.photoURL as string) || '',
       authDisplayName: (resp.authDisplayName as string) || '',
       authPhotoURL: (resp.authPhotoURL as string) || '',
-      billingCurrency: resp.billingCurrency === 'USD' ? 'USD' : 'EUR',
     });
   } else {
     deps.setCurrentUser(null);
@@ -193,12 +192,17 @@ export function handleEmailSignUp(
 }
 
 export async function handleSignOut(
-  deps: Pick<SidebarSessionDeps, 'sendMsg' | 'setCurrentUser' | 'setFeeds' | 'setIsPremium' | 'renderSidebarContent'>
+  deps: Pick<
+    SidebarSessionDeps,
+    'sendMsg' | 'setCurrentUser' | 'setFeeds' | 'setIsPremium' | 'setAuthErrorMessage' | 'renderSidebarContent'
+  >
 ): Promise<void> {
+  deps.setAuthErrorMessage('');
   await deps.sendMsg({ type: 'FEEDS_SIGN_OUT' });
   deps.setCurrentUser(null);
   deps.setIsPremium(false);
   deps.setFeeds([]);
+  deps.setAuthErrorMessage('');
   deps.renderSidebarContent();
 }
 

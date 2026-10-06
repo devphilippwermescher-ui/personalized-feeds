@@ -54,7 +54,7 @@ export function getSharingLimitCopy(details: SharingLimitDetails, source: Sharin
       }
     : {
         title: 'You reached your shared-feed limit',
-        body: `Free lets you receive up to 3 shared feeds. Unfollow one feed or upgrade to accept a feed from ${name}.`,
+      body: `Free lets you receive up to 3 shared feeds. Unfollow one feed or upgrade to accept a feed from ${name}.`,
       };
 }
 

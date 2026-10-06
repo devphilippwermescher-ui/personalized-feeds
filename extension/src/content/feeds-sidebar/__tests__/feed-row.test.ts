@@ -52,6 +52,18 @@ describe('renderFeedRow', () => {
     expect(html).not.toContain('lfa-feed-info');
   });
 
+  it('does not replay the entrance animation when an already expanded feed re-renders', () => {
+    const html = renderFeedRow({
+      feed: makeFeed({ name: 'Work' }),
+      expanded: true,
+      animateExpandedContent: false,
+      previewHtml: '',
+      expandedContentHtml: '<div>Members</div>',
+    });
+
+    expect(html).toContain('lfa-feed-expanded lfa-feed-expanded--stable');
+  });
+
   it('keeps the drag grip and draggable row for a shared feed', () => {
     const html = renderFeedRow({
       feed: makeFeed({ name: 'Shared Work', isShared: true, ownerDisplayName: 'Owner' }),

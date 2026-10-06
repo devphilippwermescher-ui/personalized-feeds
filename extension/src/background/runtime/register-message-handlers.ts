@@ -3,11 +3,10 @@ import { registerDashboardAnalyticsMessageHandler } from '../features/dashboard-
 import { registerExternalMessageHandlers } from '../features/dashboard-bridge/messaging/message-handler';
 import { registerFeedSharingMessageHandler } from '../features/feed-sharing/messaging/message-handler';
 import { registerFeedsMessageHandler } from '../features/feeds/messaging/message-handler';
-import { registerBillingMessageHandler } from '../features/billing/public';
 import { registerMessagingProfilePickerRelay } from '../features/messaging-buttons/messaging/message-handler';
 import { registerProfileViewersMessageHandler } from '../features/profile-viewers/profile-viewers-message-handler';
 import { registerLinkedInRelationshipStatusMessageHandler } from '../features/relationship-status/messaging/message-handler';
-import { registerPlanMessageHandler } from '../features/billing/messaging/plan-message-handler';
+import { registerPlanMessageHandler } from '../features/plans/public';
 import { registerProfileAnalyticsMessageHandler } from '../features/profile-analytics/profile-analytics-message-handler';
 import { registerProfileAnalyticsPassiveCapture } from '../features/profile-analytics/profile-analytics-passive-capture';
 
@@ -22,6 +21,5 @@ export function registerBackgroundMessageHandlers(): void {
   registerProfileAnalyticsPassiveCapture();
   registerFeedsMessageHandler();
   registerFeedSharingMessageHandler();
-  registerBillingMessageHandler();
   registerMessagingProfilePickerRelay();
 }

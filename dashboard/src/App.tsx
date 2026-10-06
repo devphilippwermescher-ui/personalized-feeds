@@ -79,7 +79,7 @@ function EnabledDashboardApp() {
             <Route path="/analytics/comments" element={<BlankDashboardPage title="Comment Analytics" />} />
             <Route path="/settings/profile" element={<BlankDashboardPage title="Manage account" />} />
             <Route path="/settings/api-extension" element={<BlankDashboardPage title="API & Extension" />} />
-            <Route path="/subscription" element={<BlankDashboardPage title="Subscription" />} />
+            <Route path="/subscription" element={<BlankDashboardPage title="Pro plan — In development" />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </main>

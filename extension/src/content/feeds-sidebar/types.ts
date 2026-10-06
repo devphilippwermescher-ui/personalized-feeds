@@ -1,5 +1,4 @@
 import type { ProfileViewersCollectionProgress } from '../../shared/profile-viewers-progress';
-import type { BillingCurrency } from 'shared/types';
 
 export type SidebarAuthMode = 'sign-in' | 'sign-up';
 
@@ -21,7 +20,6 @@ export interface UserInfo {
   photoURL: string;
   authDisplayName?: string;
   authPhotoURL?: string;
-  billingCurrency?: BillingCurrency;
 }
 
 export interface FeedInfo {

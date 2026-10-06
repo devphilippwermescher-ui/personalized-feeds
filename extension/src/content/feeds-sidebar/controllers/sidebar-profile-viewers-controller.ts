@@ -88,7 +88,7 @@ export function createSidebarProfileViewersController(deps: SidebarProfileViewer
     deps.renderSidebarContent();
   };
 
-  registerProfileViewersRuntimeController({
+  const runtimeController = registerProfileViewersRuntimeController({
     setCollectionProgress: (progress) => {
       collectionProgress = progress;
       deps.setFeeds(
@@ -105,6 +105,7 @@ export function createSidebarProfileViewersController(deps: SidebarProfileViewer
 
   return {
     reset: () => {
+      runtimeController.clearCollectionProgressLease();
       members = [];
       privateCount = undefined;
       collectionProgress = undefined;

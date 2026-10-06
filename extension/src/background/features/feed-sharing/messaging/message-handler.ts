@@ -9,8 +9,12 @@ import {
 } from 'shared/firestore-service';
 import { getAuthenticatedFeedsUser } from '../../auth/services/authenticated-user';
 import { getFeedsAuthErrorResponse, normalizeFeedsError } from '../../feeds/errors/feeds-error';
-import { getPlanLimitErrorResponse, PlanLimitError } from '../../billing/errors/plan-limit-error';
-import { duplicateSharedFeedForPlan } from '../../billing/services/plan-enforcement-service';
+import {
+  duplicateSharedFeedForPlan,
+  getPlanLimitErrorResponse,
+  PlanLimitError,
+  projectFeedForOwnerPolicy,
+} from '../../plans/public';
 import {
   acceptSharedFeedNotification,
   followSharedFeedLink,
@@ -19,7 +23,6 @@ import {
   shareFeedWithEmail,
   unfollowSharedFeed,
 } from '../services/sharing-functions-client';
-import { projectFeedForOwnerPolicy } from '../../billing/utils/plan-projections';
 import { startShareNotificationRuntime } from '../services/share-notification-runtime';
 import { startFeedSharesRuntime, stopFeedSharesRuntime } from '../services/feed-shares-runtime';
 

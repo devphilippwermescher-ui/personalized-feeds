@@ -26,11 +26,9 @@ import {
   restoreSidebarDomSnapshot,
 } from './sidebar-render';
 import { ensureInit, toggleSidebar } from './sidebar-session';
-import { getSharefeedTokenFromLocation } from './sharefeed-location';
 import { onFeatureSettingsChange } from '../../feature-settings';
 import type { FeedActionDeps } from './feed-actions';
 import type { MemberActionDeps } from './member-actions';
-import { openPricingPage } from '../../subscription/services/pricing-page';
 import { openPlanModal } from '../../shared/plan-modal';
 import { openProfilePreferencesModal, PROFILE_PREFERENCES_UPDATED_EVENT } from '../../profile-preferences/public';
 
@@ -138,6 +136,7 @@ export function createSidebarUiController(deps: SidebarUiControllerDeps): {
       sidebarSearchQuery,
       activeFeedTab: deps.getActiveFeedTab(),
       expandedFeedId: deps.getExpandedFeedId(),
+      animateExpandedFeed: shouldCenterFeed,
       activeMemberEditor: deps.getActiveMemberEditor(),
       renderSidebarHeader,
       renderSidebarBody,
@@ -209,14 +208,7 @@ export function createSidebarUiController(deps: SidebarUiControllerDeps): {
             );
           });
         },
-        openSubscription: () => window.open(`${deps.dashboardUrl}/subscription`, '_blank'),
-        openManagePlan: () => {
-          if (deps.getIsPremium()) {
-            openPlanModal({ plan: 'pro', context: 'feeds' });
-            return;
-          }
-          openPricingPage();
-        },
+        openManagePlan: () => openPlanModal({ plan: 'free', context: 'feeds' }),
         updateFeatureSetting: async (key, value) => {
           const response = await deps.sendMsg({
             type: 'SETTINGS_UPDATE',
@@ -383,10 +375,6 @@ export function createSidebarUiController(deps: SidebarUiControllerDeps): {
         init,
       });
       deps.schedulePendingShareRetries();
-
-      if (getSharefeedTokenFromLocation()) {
-        void deps.checkAuth();
-      }
     },
   };
 }

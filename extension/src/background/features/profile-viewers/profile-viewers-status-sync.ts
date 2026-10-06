@@ -4,7 +4,7 @@ import { normalizeLinkedInUsername } from 'shared/linkedin-identity';
 import type { ProfileViewer } from 'shared/types';
 import type { RelationshipResolution } from '../../../content/linkedin-relationship-status/types';
 import { getAuthenticatedFeedsUser } from '../auth/services/authenticated-user';
-import { getUserPlanSnapshot } from '../billing/services/plan-service';
+import { getUserPlanSnapshot } from '../plans/public';
 import { markTrackedConnectionAccepted } from '../connection-invites/services/lifecycle';
 import { resolveLinkedInRelationshipStatusInBackground } from '../relationship-status/services/resolver';
 import {

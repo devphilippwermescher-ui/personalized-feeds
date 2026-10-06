@@ -165,7 +165,7 @@ export function renderSidebarHeader(params: {
                 <path d="M4 21a8 8 0 0 1 16 0"></path>
               </svg>
             </span>
-            <span>Profile &amp; billing</span>
+            <span>Profile</span>
           </button>
           <button class="lfa-account-menu-link lfa-account-menu-link--plan" id="lfa-manage-plan-btn" type="button">
             <span class="lfa-account-menu-link-icon lfa-account-menu-link-icon--plan">
@@ -173,21 +173,6 @@ export function renderSidebarHeader(params: {
             </span>
             <span>Manage plan</span>
           </button>
-          ${
-            DASHBOARD_ENABLED
-              ? `
-          <button class="lfa-account-menu-link" id="lfa-subscription-btn" type="button">
-            <span class="lfa-account-menu-link-icon">
-              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
-                <rect x="2" y="5" width="20" height="14" rx="2"></rect>
-                <path d="M2 10h20"></path>
-              </svg>
-            </span>
-            <span>${CONTENT_COPY.common.subscription}</span>
-          </button>
-          `
-              : ''
-          }
           <button class="lfa-account-menu-link lfa-account-menu-link--danger" id="lfa-account-signout-btn" type="button">
             <span class="lfa-account-menu-link-icon">
               <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
@@ -265,9 +250,8 @@ export function renderSidebarBody(params: SidebarBodyParams): string {
         </div>
         <h2 class="lfa-unauth-title">${authTitle}</h2>
         <p class="lfa-unauth-desc">${CONTENT_COPY.sidebar.signInDescription}</p>
-        ${renderSidebarAuthForm(authMode)}
+        ${renderSidebarAuthForm(authMode, authErrorMessage)}
         ${DASHBOARD_ENABLED ? `<a class="lfa-open-dashboard-link" id="lfa-open-dashboard-btn">${CONTENT_COPY.common.openDashboard}</a>` : ''}
-        ${authErrorMessage ? `<p class="lfa-auth-error">${escapeHtml(authErrorMessage)}</p>` : ''}
       </div>
     `;
   }

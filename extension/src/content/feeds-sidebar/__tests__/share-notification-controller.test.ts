@@ -41,6 +41,7 @@ describe('share notification controller', () => {
     const showNotification = vi.fn();
     const controller = createShareNotificationController({
       sendMsg: vi.fn(async () => ({ success: true, notifications: [] })),
+      isAuthenticated: () => true,
       hasOpenModal: () => false,
       showNotification,
     });
@@ -58,6 +59,7 @@ describe('share notification controller', () => {
     });
     const controller = createShareNotificationController({
       sendMsg: vi.fn(async () => ({ success: true, notifications: [] })),
+      isAuthenticated: () => true,
       hasOpenModal: () => modalOpen,
       showNotification,
     });
@@ -85,6 +87,7 @@ describe('share notification controller', () => {
     const showNotification = vi.fn();
     const controller = createShareNotificationController({
       sendMsg,
+      isAuthenticated: () => true,
       hasOpenModal: () => false,
       showNotification,
     });
@@ -113,6 +116,7 @@ describe('share notification controller', () => {
     const showNotification = vi.fn();
     const controller = createShareNotificationController({
       sendMsg,
+      isAuthenticated: () => true,
       hasOpenModal: () => false,
       showNotification,
     });
@@ -121,6 +125,45 @@ describe('share notification controller', () => {
     await vi.advanceTimersByTimeAsync(1_000);
 
     expect(showNotification).toHaveBeenCalledWith(notification('delayed-notification'));
+    vi.useRealTimers();
+  });
+
+  it('does not make authenticated notification requests while signed out or while Google auth returns focus', async () => {
+    vi.useFakeTimers();
+    const sendMsg = vi.fn(async () => ({ success: false, error: 'Session expired, please sign in again.' }));
+    const controller = createShareNotificationController({
+      sendMsg,
+      isAuthenticated: () => false,
+      hasOpenModal: () => false,
+      showNotification: vi.fn(),
+    });
+
+    controller.start();
+    window.dispatchEvent(new Event('focus'));
+    document.dispatchEvent(new Event('visibilitychange'));
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    expect(sendMsg).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  it('cancels scheduled notification retries when the user signs out', async () => {
+    vi.useFakeTimers();
+    const sendMsg = vi.fn(async () => ({ success: true, notifications: [] }));
+    const controller = createShareNotificationController({
+      sendMsg,
+      isAuthenticated: () => true,
+      hasOpenModal: () => false,
+      showNotification: vi.fn(),
+    });
+
+    controller.start();
+    await Promise.resolve();
+    sendMsg.mockClear();
+    controller.reset();
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    expect(sendMsg).not.toHaveBeenCalled();
     vi.useRealTimers();
   });
 });

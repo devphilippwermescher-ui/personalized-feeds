@@ -8,7 +8,7 @@ const fallbackMetadata = {
     production: {
       label: 'v0.1.5',
       downloadUrl:
-        'https://github.com/devphilippwermescher-ui/personalized-feeds/releases/download/v0.1.5/personalized-feeds-v0.1.5.zip',
+        'https://github.com/devphilippwermescher-ui/personalized-feeds/releases/download/v0.1.5/myfeedpilot-v0.1.5.zip',
     },
   },
 };

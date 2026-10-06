@@ -1,4 +1,5 @@
 import type { AppPlan } from 'shared/plans';
+import { PROFILE_VIEWERS_COLLECTION_PROGRESS_LEASE_MS } from '../../../shared/profile-viewers-progress';
 
 export const PROFILE_VIEWERS_SYNC_INTERVAL_MS = 30 * 60 * 1000;
 export const PROFILE_VIEWERS_MIN_SYNC_INTERVAL_MS = 25 * 60 * 1000;
@@ -7,7 +8,7 @@ export const PROFILE_VIEWERS_RETRY_DELAY_MS = 15 * 60 * 1000;
 export const PROFILE_VIEWERS_RESTRICTED_BACKOFF_MS = 12 * 60 * 60 * 1000;
 export const PROFILE_VIEWERS_FIRST_FAILURE_BACKOFF_MS = 60 * 60 * 1000;
 export const PROFILE_VIEWERS_REPEATED_FAILURE_BACKOFF_MS = 2 * 60 * 60 * 1000;
-export const PROFILE_VIEWERS_ATTEMPT_LEASE_MS = 5 * 60 * 1000;
+export const PROFILE_VIEWERS_ATTEMPT_LEASE_MS = PROFILE_VIEWERS_COLLECTION_PROGRESS_LEASE_MS;
 export const PROFILE_VIEWERS_BUDGET_CAPACITY = 72;
 export const PROFILE_VIEWERS_BUDGET_REFILL_MS = 20 * 60 * 1000;
 export const PROFILE_VIEWERS_BACKGROUND_RESERVE = 8;
@@ -142,4 +143,3 @@ export interface ProfileViewersSyncState {
   logs: ProfileViewersSyncLog[];
   updatedAt: number;
 }
-

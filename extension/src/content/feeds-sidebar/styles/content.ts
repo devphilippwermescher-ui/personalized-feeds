@@ -123,6 +123,9 @@ export const CONTENT_CSS = `.lfa-sidebar-content {
     color: #615dec;
     outline: none;
   }
+  .lfa-auth-password-icon--inactive {
+    display: none;
+  }
   .lfa-email-auth-submit {
     appearance: none;
     -webkit-appearance: none;
@@ -251,11 +254,12 @@ export const CONTENT_CSS = `.lfa-sidebar-content {
     line-height: 1.4;
   }
   .lfa-auth-error {
-    margin-top: 14px;
+    margin: 0;
     color: #dc2626;
     font-size: 12px;
     line-height: 1.5;
-    max-width: 320px;
+    max-width: none;
+    text-align: left;
   }
   .lfa-help-link {
     margin-top: 16px;
@@ -316,6 +320,7 @@ export const CONTENT_CSS = `.lfa-sidebar-content {
   .lfa-pro-footer-btn {
     appearance: none;
     -webkit-appearance: none;
+    box-sizing: border-box;
     width: 100%;
     height: 42px;
     margin: 0;

@@ -22,7 +22,6 @@ interface SidebarDomBindingsDeps {
   showCreateFeedForm: () => void;
   selectFeedTab: (tab: 'owned' | 'shared') => void;
   openProfileSettings: () => void;
-  openSubscription: () => void;
   openManagePlan: () => void;
   updateFeatureSetting: (key: keyof UserFeatureSettings, value: boolean) => Promise<void>;
   renderSidebarContent: () => void;
@@ -57,8 +56,6 @@ export function bindSidebarDom(container: HTMLElement, deps: SidebarDomBindingsD
   container.querySelector('#lfa-open-dashboard-btn')?.addEventListener('click', deps.openDashboard);
   container.querySelector('#lfa-header-dashboard-btn')?.addEventListener('click', deps.openDashboard);
   container.querySelector('#lfa-toolbar-dashboard-btn')?.addEventListener('click', deps.openDashboard);
-  container.querySelector('#lfa-open-subscription-btn')?.addEventListener('click', deps.openSubscription);
-  container.querySelector('#lfa-open-subscription-activate')?.addEventListener('click', deps.openSubscription);
   bindSidebarAuthForm(container, {
     handleGoogleSignIn: deps.handleSignIn,
     handleEmailSignIn: deps.handleEmailSignIn,
@@ -84,7 +81,6 @@ export function bindSidebarDom(container: HTMLElement, deps: SidebarDomBindingsD
     deps.setSettingsMenuOpen(false);
     deps.openProfileSettings();
   });
-  container.querySelector('#lfa-subscription-btn')?.addEventListener('click', deps.openSubscription);
   container.querySelector('#lfa-tab-owned')?.addEventListener('click', () => deps.selectFeedTab('owned'));
   container.querySelector('#lfa-tab-shared')?.addEventListener('click', () => deps.selectFeedTab('shared'));
   container.querySelector('#lfa-member-editor-back')?.addEventListener('click', () => {

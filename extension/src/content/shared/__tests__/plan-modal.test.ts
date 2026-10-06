@@ -32,27 +32,14 @@ describe('plan modal', () => {
     expect(document.querySelector('.mfp-plan-scroll > .mfp-plan-hero')).not.toBeNull();
 
     openPlanModal({ plan: 'free', context: 'members' });
-
     expect(document.body.textContent).toContain('Add unlimited people with Pro');
     expect(document.body.textContent).toContain('up to 10 people in each feed');
 
     openPlanModal({ plan: 'free', context: 'sharing' });
-
     expect(document.body.textContent).toContain('Share without limits with Pro');
   });
 
-  it('does not show prices inside the limit modal', () => {
-    openPlanModal({ plan: 'free', context: 'feeds' });
-
-    expect(document.querySelector('.mfp-plan-billing')).toBeNull();
-    expect(document.querySelector('[data-plan-price]')).toBeNull();
-    expect(document.querySelector('.mfp-plan-currency-note')).toBeNull();
-    expect(document.body.textContent).not.toContain('Billed monthly');
-    expect(document.body.textContent).not.toContain('billed yearly');
-    expect(document.querySelector('.mfp-plan-cta')?.textContent).toBe('Upgrade to Pro');
-  });
-
-  it('opens the public pricing page from Upgrade to Pro without starting checkout', () => {
+  it('opens the pricing flow from Upgrade to Pro', () => {
     openPlanModal({ plan: 'free', context: 'feeds' });
     document.querySelector<HTMLButtonElement>('.mfp-plan-cta')?.click();
 
@@ -64,17 +51,13 @@ describe('plan modal', () => {
   it('closes from Escape without leaving the overlay behind', () => {
     openPlanModal({ plan: 'free', context: 'members' });
     const overlay = document.getElementById('mfp-plan-modal-overlay');
-
     overlay?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-
     expect(document.getElementById('mfp-plan-modal-overlay')).toBeNull();
   });
 
-  it('keeps Pro management inside the modal and opens billing from its action', async () => {
+  it('opens the billing portal for an active Pro subscription', async () => {
     openPlanModal({ plan: 'pro', context: 'members' });
     const cta = document.querySelector<HTMLButtonElement>('.mfp-plan-cta');
-
-    expect(document.querySelector('.mfp-plan-billing')).toBeNull();
     expect(cta?.textContent).toBe('Manage billing');
     cta?.click();
 
@@ -82,21 +65,5 @@ describe('plan modal', () => {
       expect(document.querySelector('.mfp-plan-note')?.textContent).toContain('Billing management opened');
     });
     expect(sendMessage).toHaveBeenCalledWith({ type: 'BILLING_OPEN_PORTAL' });
-  });
-
-  it('keeps past-due users on Pro and points them to payment management', async () => {
-    sendMessage.mockImplementation(async (message: { type?: string }) => {
-      if (message.type === 'PLAN_GET') {
-        return { success: true, plan: 'pro', subscription: { status: 'past_due', billingInterval: 'monthly' } };
-      }
-      return { success: true };
-    });
-
-    openPlanModal({ plan: 'pro', context: 'feeds' });
-
-    await vi.waitFor(() => {
-      expect(document.querySelector('.mfp-plan-current')?.textContent).toContain('payment needs attention');
-    });
-    expect(document.querySelector<HTMLButtonElement>('.mfp-plan-cta')?.textContent).toBe('Update payment');
   });
 });

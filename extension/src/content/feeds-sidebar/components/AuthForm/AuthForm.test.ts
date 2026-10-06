@@ -2,8 +2,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { bindSidebarAuthForm } from '../../logic/auth-form-bindings';
 import { renderSidebarAuthForm } from './AuthForm';
 
-function renderAndBind(mode: 'sign-in' | 'sign-up') {
-  document.body.innerHTML = renderSidebarAuthForm(mode);
+function renderAndBind(mode: 'sign-in' | 'sign-up', authErrorMessage = '') {
+  document.body.innerHTML = renderSidebarAuthForm(mode, authErrorMessage);
   const handlers = {
     handleGoogleSignIn: vi.fn(),
     handleEmailSignIn: vi.fn(),
@@ -79,13 +79,46 @@ describe('sidebar authentication form', () => {
     const password = document.querySelector<HTMLInputElement>('#lfa-signin-password');
     const toggle = document.querySelector<HTMLButtonElement>('[data-password-toggle="lfa-signin-password"]');
 
+    expect(
+      toggle?.querySelector('[data-password-icon="hidden"]')?.classList.contains('lfa-auth-password-icon--inactive')
+    ).toBe(false);
+    expect(
+      toggle?.querySelector('[data-password-icon="visible"]')?.classList.contains('lfa-auth-password-icon--inactive')
+    ).toBe(true);
+
     toggle!.click();
     expect(password?.type).toBe('text');
     expect(toggle?.getAttribute('aria-label')).toBe('Hide password');
+    expect(
+      toggle?.querySelector('[data-password-icon="hidden"]')?.classList.contains('lfa-auth-password-icon--inactive')
+    ).toBe(true);
+    expect(
+      toggle?.querySelector('[data-password-icon="visible"]')?.classList.contains('lfa-auth-password-icon--inactive')
+    ).toBe(false);
 
     toggle!.click();
     expect(password?.type).toBe('password');
     expect(toggle?.getAttribute('aria-label')).toBe('Show password');
+  });
+
+  it('uses one visibility control for both registration password fields', () => {
+    renderAndBind('sign-up');
+    const password = document.querySelector<HTMLInputElement>('#lfa-signup-password');
+    const confirmation = document.querySelector<HTMLInputElement>('#lfa-signup-confirm-password');
+    const toggles = document.querySelectorAll<HTMLButtonElement>('[data-password-toggle]');
+
+    expect(toggles).toHaveLength(1);
+    expect(confirmation?.parentElement?.querySelector('[data-password-toggle]')).toBeNull();
+
+    toggles[0].click();
+    expect(password?.type).toBe('text');
+    expect(confirmation?.type).toBe('text');
+    expect(toggles[0].getAttribute('aria-label')).toBe('Hide passwords');
+
+    toggles[0].click();
+    expect(password?.type).toBe('password');
+    expect(confirmation?.type).toBe('password');
+    expect(toggles[0].getAttribute('aria-label')).toBe('Show passwords');
   });
 
   it('blocks registration when password confirmation does not match', () => {
@@ -104,5 +137,24 @@ describe('sidebar authentication form', () => {
     expect(document.querySelector<HTMLInputElement>('#lfa-signup-confirm-password')?.validationMessage).toBe(
       'Passwords do not match.'
     );
+  });
+
+  it('shows a registration error immediately before the personal-data consent', () => {
+    renderAndBind('sign-up', 'An account with this email already exists.');
+
+    const formChildren = [...document.querySelectorAll('#lfa-email-signup-form > *')];
+    const errorIndex = formChildren.findIndex((element) => element.classList.contains('lfa-auth-error'));
+    const consentIndex = formChildren.findIndex((element) => element.classList.contains('lfa-auth-consent'));
+
+    expect(errorIndex).toBeGreaterThan(-1);
+    expect(consentIndex).toBe(errorIndex + 1);
+    expect(document.querySelector('.lfa-auth-error')?.textContent).toBe('An account with this email already exists.');
+  });
+
+  it('escapes authentication errors rendered inside the form', () => {
+    renderAndBind('sign-in', '<img src=x onerror=alert(1)>');
+
+    expect(document.querySelector('.lfa-auth-error')?.textContent).toBe('<img src=x onerror=alert(1)>');
+    expect(document.querySelector('.lfa-auth-error img')).toBeNull();
   });
 });

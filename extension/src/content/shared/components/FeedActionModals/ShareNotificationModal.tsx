@@ -1,15 +1,12 @@
 import { useState } from 'react';
-import type { ShareNotification, SharingLimitDetails } from 'shared/types';
+import type { ShareNotification } from 'shared/types';
 import { LfsButton, LfsModal } from '../../../../shared/ui';
 
 interface ShareNotificationModalProps {
   notification: ShareNotification;
   onClose: () => void;
   onDismiss: () => Promise<void>;
-  onAccept: () => Promise<{ success: boolean; error?: string; sharingLimit?: SharingLimitDetails }>;
-  onAccepted: () => void;
   onViewSharedFeeds: () => void;
-  onSharingLimit: (details: SharingLimitDetails) => void;
   onUpgrade: () => void;
 }
 
@@ -17,10 +14,7 @@ export function ShareNotificationModal({
   notification,
   onClose,
   onDismiss,
-  onAccept,
-  onAccepted,
   onViewSharedFeeds,
-  onSharingLimit,
   onUpgrade,
 }: ShareNotificationModalProps) {
   const [submitting, setSubmitting] = useState(false);
@@ -54,30 +48,6 @@ export function ShareNotificationModal({
     }
   };
 
-  const accept = async () => {
-    if (submitting) return;
-    setSubmitting(true);
-    setError('');
-    let result: Awaited<ReturnType<typeof onAccept>>;
-    try {
-      result = await onAccept();
-    } catch (acceptError) {
-      setError(acceptError instanceof Error ? acceptError.message : 'This feed cannot be accepted yet');
-      setSubmitting(false);
-      return;
-    }
-    setSubmitting(false);
-    if (result.success) {
-      onAccepted();
-      return;
-    }
-    if (!result.success && result.sharingLimit) {
-      await dismiss(() => onSharingLimit(result.sharingLimit as SharingLimitDetails));
-      return;
-    }
-    setError(result.error || 'This feed cannot be accepted yet');
-  };
-
   return (
     <LfsModal
       title={title}
@@ -94,21 +64,9 @@ export function ShareNotificationModal({
               onClick={() => void dismiss(onViewSharedFeeds)}
             />
           ) : isPendingInvitation ? (
-            <>
-              <LfsButton
-                label="View Pro"
-                variant="secondary"
-                disabled={submitting}
-                onClick={() => void dismiss(onUpgrade)}
-              />
-              <LfsButton
-                label={submitting ? 'Checking…' : 'Try to accept'}
-                disabled={submitting}
-                onClick={() => void accept()}
-              />
-            </>
+            <LfsButton label="Get Pro" disabled={submitting} onClick={() => void dismiss(onUpgrade)} />
           ) : currentUserCanUpgrade ? (
-            <LfsButton label="View Pro" disabled={submitting} onClick={() => void dismiss(onUpgrade)} />
+            <LfsButton label="Get Pro" disabled={submitting} onClick={() => void dismiss(onUpgrade)} />
           ) : null}
         </>
       }

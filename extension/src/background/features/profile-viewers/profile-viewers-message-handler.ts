@@ -17,8 +17,11 @@ import { getAuthenticatedFeedsUser } from '../auth/services/authenticated-user';
 import { getFeedsAuthErrorResponse, normalizeFeedsError } from '../feeds/errors/feeds-error';
 import { findProfileViewerUpdateTargets } from './profile-viewers-update-targets';
 import { queueProfileAnalyticsForLinkedInActivity } from '../profile-analytics/profile-analytics-sync-coordinator';
-import { getUserPlanSnapshot } from '../billing/services/plan-service';
-import type { ProfileViewersCollectionProgress } from '../../../shared/profile-viewers-progress';
+import { getUserPlanSnapshot } from '../plans/public';
+import {
+  PROFILE_VIEWERS_COLLECTION_PROGRESS_LEASE_MS,
+  type ProfileViewersCollectionProgress,
+} from '../../../shared/profile-viewers-progress';
 
 function getProfileViewersCollectionProgress(
   syncState: Awaited<ReturnType<typeof getProfileViewersSyncState>>,
@@ -28,7 +31,9 @@ function getProfileViewersCollectionProgress(
     return null;
   }
 
-  if (syncState.attemptExpiresAt && syncState.attemptExpiresAt <= now) {
+  const startedAt = syncState.attemptStartedAt as number;
+  const expiresAt = syncState.attemptExpiresAt || startedAt + PROFILE_VIEWERS_COLLECTION_PROGRESS_LEASE_MS;
+  if (expiresAt <= now) {
     return null;
   }
 
@@ -37,7 +42,8 @@ function getProfileViewersCollectionProgress(
       syncState.backfillStatus === 'complete' && syncState.nextCollectionTask === 'private_summary'
         ? 'private_summary'
         : 'visible',
-    startedAt: syncState.attemptStartedAt as number,
+    startedAt,
+    expiresAt,
   };
 }
 

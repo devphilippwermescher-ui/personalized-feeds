@@ -1,6 +1,5 @@
 import type { Firestore } from 'firebase-admin/firestore';
 import { HttpsError } from 'firebase-functions/v2/https';
-import { hasCurrentProAccess } from '../billing/access-policy.js';
 
 const FREE_FEED_LIMIT = 3;
 const FREE_MEMBER_LIMIT = 10;
@@ -51,15 +50,11 @@ export async function getAuthorizedFeedPlanPolicies(
   }
 
   const ownerIds = [...new Set(uniqueRequests.map((request) => request.ownerId))];
-  const ownerState = new Map<string, { plan: 'free' | 'pro'; orderedFeedIds: string[] }>();
+  const ownerState = new Map<string, { plan: 'free'; orderedFeedIds: string[] }>();
 
   await Promise.all(
     ownerIds.map(async (ownerId) => {
-      const [subscriptionSnapshot, feedsSnapshot] = await Promise.all([
-        db.doc(`users/${ownerId}/billing/subscription`).get(),
-        db.collection(`users/${ownerId}/feeds`).get(),
-      ]);
-      const plan = hasCurrentProAccess(subscriptionSnapshot.data()) ? 'pro' : 'free';
+      const feedsSnapshot = await db.collection(`users/${ownerId}/feeds`).get();
       const orderedFeedIds = feedsSnapshot.docs
         .map((document) => ({
           id: document.id,
@@ -68,7 +63,7 @@ export async function getAuthorizedFeedPlanPolicies(
         }))
         .sort((left, right) => left.sortOrder - right.sortOrder || right.createdAt - left.createdAt)
         .map((feed) => feed.id);
-      ownerState.set(ownerId, { plan, orderedFeedIds });
+      ownerState.set(ownerId, { plan: 'free', orderedFeedIds });
     })
   );
 

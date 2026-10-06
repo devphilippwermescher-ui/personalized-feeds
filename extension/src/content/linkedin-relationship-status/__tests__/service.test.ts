@@ -52,10 +52,7 @@ describe('fetchLinkedInRelationshipStatus', () => {
 
     const result = await fetchLinkedInRelationshipStatus(member);
 
-    expect(resolveCanonicalLinkedInIdentity).toHaveBeenCalledWith(
-      tokenUrl,
-      'acoaad-k8p8bvbqtjpze3mdxlgvqcqsiruk7mqs'
-    );
+    expect(resolveCanonicalLinkedInIdentity).toHaveBeenCalledWith(tokenUrl, 'acoaad-k8p8bvbqtjpze3mdxlgvqcqsiruk7mqs');
     expect(fetchWithGraphQL).toHaveBeenCalledWith('alina-oharova-a7b718259', expect.any(String));
     expect(member.linkedinUsername).toBe('alina-oharova-a7b718259');
     expect(member.linkedinUrl).toBe('https://www.linkedin.com/in/alina-oharova-a7b718259/');
@@ -117,9 +114,7 @@ describe('fetchLinkedInRelationshipStatus', () => {
   });
 
   it('falls back to background status resolution when content GraphQL is blocked', async () => {
-    fetchWithGraphQL.mockRejectedValue(
-      new LinkedInStatusFetchError('blocked', 'auth_blocked', 403)
-    );
+    fetchWithGraphQL.mockRejectedValue(new LinkedInStatusFetchError('blocked', 'auth_blocked', 403));
     fetchProfileImageFromProfilePage.mockResolvedValue('');
 
     const sendMessage = vi.fn((_message, callback) => {
@@ -166,9 +161,7 @@ describe('fetchLinkedInRelationshipStatus', () => {
   });
 
   it('throttles emergency background fallback requests for large blocked batches', async () => {
-    fetchWithGraphQL.mockRejectedValue(
-      new LinkedInStatusFetchError('blocked', 'auth_blocked', 403)
-    );
+    fetchWithGraphQL.mockRejectedValue(new LinkedInStatusFetchError('blocked', 'auth_blocked', 403));
     fetchProfileImageFromProfilePage.mockResolvedValue('');
 
     const sendMessage = vi.fn((message, callback) => {
@@ -234,6 +227,36 @@ describe('fetchLinkedInRelationshipStatus', () => {
     expect(member.canFollow).toBe(true);
     expect(member.isFollowing).toBe(true);
     expect(member.profileUrn).toBe('urn:li:fsd_profile:withdrawn-member');
+  });
+
+  it('preserves a known relationship state when a background refresh fails', async () => {
+    fetchWithGraphQL.mockResolvedValue(null);
+    fetchStatusFromProfilePage.mockResolvedValue(null);
+
+    const { fetchStatusesProgressively } = await import('../service');
+    const member: FeedMemberInfo = {
+      id: 'known-connected-member',
+      linkedinUrl: 'https://www.linkedin.com/in/known-connected-member/',
+      linkedinUsername: 'known-connected-member',
+      displayName: 'Known Connected Member',
+      status: 'connected',
+      connectionDegree: '1st',
+      canMessage: true,
+      canConnect: false,
+      profileUrn: 'urn:li:fsd_profile:known-connected-member',
+      profileImageUrl: 'https://media.licdn.com/profile.jpg',
+      addedAt: Date.now(),
+    };
+
+    await fetchStatusesProgressively([member], () => undefined);
+
+    expect(member).toMatchObject({
+      status: 'connected',
+      canMessage: true,
+      canConnect: false,
+      profileUrn: 'urn:li:fsd_profile:known-connected-member',
+      profileImageUrl: 'https://media.licdn.com/profile.jpg',
+    });
   });
 
   it('bypasses cached status when follow actions require missing LinkedIn identifiers', async () => {

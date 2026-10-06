@@ -37,10 +37,12 @@ describe('shared feed link limits', () => {
       sendMsg: vi.fn(async () => ({ success: false, error: 'Sharing limit reached', sharingLimit })),
       getSharedFeeds: () => [],
       setSharedFeeds: vi.fn(),
+      openSidebar: vi.fn(),
       selectSharedTab: vi.fn(),
       renderSidebarContent: vi.fn(),
       showToast,
       showFollowedModal: vi.fn(),
+      showSignInRequired: vi.fn(),
       showSharingLimit,
     });
     controllerStops.push(controller.stop);
@@ -71,10 +73,12 @@ describe('shared feed link limits', () => {
       sendMsg: vi.fn(async () => ({ success: false, error: 'Sharing limit reached', sharingLimit })),
       getSharedFeeds: () => [],
       setSharedFeeds: vi.fn(),
+      openSidebar: vi.fn(),
       selectSharedTab: vi.fn(),
       renderSidebarContent: vi.fn(),
       showToast: vi.fn(),
       showFollowedModal: vi.fn(),
+      showSignInRequired: vi.fn(),
       showSharingLimit,
     });
     controllerStops.push(controller.stop);
@@ -108,10 +112,12 @@ describe('shared feed link limits', () => {
       sendMsg,
       getSharedFeeds: () => [],
       setSharedFeeds: vi.fn(),
+      openSidebar: vi.fn(),
       selectSharedTab: vi.fn(),
       renderSidebarContent: vi.fn(),
       showToast: vi.fn(),
       showFollowedModal: vi.fn(),
+      showSignInRequired: vi.fn(),
       showSharingLimit,
     });
     controllerStops.push(controller.stop);
@@ -131,6 +137,78 @@ describe('shared feed link limits', () => {
 
     expect(sendMsg).toHaveBeenCalledTimes(1);
     expect(showSharingLimit).toHaveBeenCalledTimes(1);
+    expect(window.location.hash).toBe('');
+  });
+
+  it('opens the sidebar and explains that sign-in is required without consuming the link', async () => {
+    const openSidebar = vi.fn();
+    const showSignInRequired = vi.fn();
+    const sendMsg = vi.fn();
+    const controller = createSharedFeedLinkController({
+      getCurrentUser: () => null,
+      checkAuth: vi.fn(async () => undefined),
+      sendMsg,
+      getSharedFeeds: () => [],
+      setSharedFeeds: vi.fn(),
+      openSidebar,
+      selectSharedTab: vi.fn(),
+      renderSidebarContent: vi.fn(),
+      showToast: vi.fn(),
+      showFollowedModal: vi.fn(),
+      showSignInRequired,
+      showSharingLimit: vi.fn(),
+    });
+    controllerStops.push(controller.stop);
+
+    await controller.handlePendingSharedFeedLink();
+    await controller.handlePendingSharedFeedLink();
+
+    expect(openSidebar).toHaveBeenCalledTimes(1);
+    expect(showSignInRequired).toHaveBeenCalledTimes(1);
+    expect(sendMsg).not.toHaveBeenCalled();
+    expect(window.location.hash).toBe('#sharefeed=second-recipient-token');
+    expect(sessionStorage.getItem('lfa_pending_sharefeed')).toBe('second-recipient-token');
+  });
+
+  it('follows the preserved share link after the user signs in', async () => {
+    let currentUser: UserInfo | null = null;
+    const showSignInRequired = vi.fn();
+    const sharedFeed = {
+      id: 'shared-feed',
+      ownerId: 'owner',
+      name: 'Engineering',
+      color: '#615DEC',
+      memberCount: 2,
+      role: 'reader' as const,
+    };
+    const sendMsg = vi.fn(async () => ({ success: true, sharedFeed }));
+    const showFollowedModal = vi.fn();
+    const controller = createSharedFeedLinkController({
+      getCurrentUser: () => currentUser,
+      checkAuth: vi.fn(async () => undefined),
+      sendMsg,
+      getSharedFeeds: () => [],
+      setSharedFeeds: vi.fn(),
+      openSidebar: vi.fn(),
+      selectSharedTab: vi.fn(),
+      renderSidebarContent: vi.fn(),
+      showToast: vi.fn(),
+      showFollowedModal,
+      showSignInRequired,
+      showSharingLimit: vi.fn(),
+    });
+    controllerStops.push(controller.stop);
+
+    await controller.handlePendingSharedFeedLink();
+    currentUser = { userId: 'recipient-user' } as UserInfo;
+    await controller.handlePendingSharedFeedLink();
+
+    expect(showSignInRequired).toHaveBeenCalledTimes(1);
+    expect(sendMsg).toHaveBeenCalledWith({
+      type: 'FEEDS_FOLLOW_SHARE_LINK',
+      token: 'second-recipient-token',
+    });
+    expect(showFollowedModal).toHaveBeenCalledWith(expect.objectContaining({ id: 'shared-feed' }));
     expect(window.location.hash).toBe('');
   });
 });

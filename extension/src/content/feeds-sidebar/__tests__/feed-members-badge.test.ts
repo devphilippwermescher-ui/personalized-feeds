@@ -34,11 +34,13 @@ function makeFeed(id: string, overrides: Partial<FeedInfo> = {}): FeedInfo {
 
 type FeedMembersDeps = Parameters<typeof toggleFeedExpansion>[1];
 
-function makeDeps(overrides: Partial<FeedMembersDeps> & {
-  feedMembersById?: Record<string, FeedMemberInfo[]>;
-  feeds?: FeedInfo[];
-  expandedFeedId?: string | null;
-}): FeedMembersDeps {
+function makeDeps(
+  overrides: Partial<FeedMembersDeps> & {
+    feedMembersById?: Record<string, FeedMemberInfo[]>;
+    feeds?: FeedInfo[];
+    expandedFeedId?: string | null;
+  }
+): FeedMembersDeps {
   let feedMembersById: Record<string, FeedMemberInfo[]> = overrides.feedMembersById ?? {};
   let expandedFeedId: string | null = overrides.expandedFeedId ?? null;
   const feeds: FeedInfo[] = overrides.feeds ?? [];
@@ -101,7 +103,7 @@ describe('renderMembersList expanded header', () => {
 });
 
 describe('toggleFeedExpansion status mutation wiring', () => {
-  it('passes the freshly-created loading objects to fetchStatusesProgressively, not the old ones', async () => {
+  it('keeps cached status objects stable while refreshing them in the background', async () => {
     const feedId = 'feed-1';
     const resolvedMember1 = makeMember('m1', 'connected');
     const resolvedMember2 = makeMember('m2', 'following');
@@ -120,11 +122,37 @@ describe('toggleFeedExpansion status mutation wiring', () => {
     await toggleFeedExpansion(feedId, deps);
 
     expect(capturedRefreshMembers).toHaveLength(2);
-    expect(capturedRefreshMembers[0]).not.toBe(resolvedMember1);
-    expect(capturedRefreshMembers[1]).not.toBe(resolvedMember2);
+    expect(capturedRefreshMembers[0]).toBe(resolvedMember1);
+    expect(capturedRefreshMembers[1]).toBe(resolvedMember2);
+    expect(capturedRefreshMembers[0].status).toBe('connected');
+    expect(capturedRefreshMembers[1].status).toBe('following');
+  });
 
-    expect(capturedRefreshMembers[0].status).toBe('loading');
-    expect(capturedRefreshMembers[1].status).toBe('loading');
+  it('does not re-render or persist when a background refresh returns the same relationship state', async () => {
+    const feedId = 'feed-1';
+    const resolvedMember = makeMember('m1', 'connected');
+    const persistResolvedMemberState = vi.fn().mockResolvedValue(undefined);
+    const updateRenderedMemberState = vi.fn().mockReturnValue(true);
+    const renderSidebarContent = vi.fn();
+    const deps = makeDeps({
+      feedMembersById: { [feedId]: [resolvedMember] },
+      feeds: [makeFeed(feedId)],
+      expandedFeedId: null,
+      renderSidebarContent,
+      persistResolvedMemberState,
+      updateRenderedMemberState,
+      fetchStatusesProgressively: vi.fn((members: FeedMemberInfo[], onUpdate: (member: FeedMemberInfo) => void) => {
+        onUpdate(members[0]);
+        return Promise.resolve();
+      }),
+    });
+
+    await toggleFeedExpansion(feedId, deps);
+    await Promise.resolve();
+
+    expect(renderSidebarContent).toHaveBeenCalledOnce();
+    expect(persistResolvedMemberState).not.toHaveBeenCalled();
+    expect(updateRenderedMemberState).not.toHaveBeenCalled();
   });
 
   it('mutations by fetchStatusesProgressively are visible in feedMembersById', async () => {
@@ -305,7 +333,6 @@ describe('toggleFeedExpansion status mutation wiring', () => {
 
     expect(fetchProgressivelySpy).not.toHaveBeenCalled();
   });
-
 });
 
 describe('loadFeedMembers status mutation wiring', () => {
@@ -327,7 +354,14 @@ describe('loadFeedMembers status mutation wiring', () => {
       setFeedMembersById,
       sendMsg: vi.fn().mockResolvedValue({
         members: [
-          { id: 'm1', linkedinUsername: 'm1', linkedinUrl: '/in/m1', displayName: 'M1', status: 'connected', addedAt: 0 },
+          {
+            id: 'm1',
+            linkedinUsername: 'm1',
+            linkedinUrl: '/in/m1',
+            displayName: 'M1',
+            status: 'connected',
+            addedAt: 0,
+          },
         ],
       }),
       fetchStatusesProgressively: vi.fn((members: FeedMemberInfo[]) => {
@@ -392,9 +426,11 @@ describe('loadFeedMembers status mutation wiring', () => {
     await loadFeedMembers(feedId, deps);
 
     expect(sendMsg).toHaveBeenCalledWith({ type: 'PROFILE_VIEWERS_GET' });
-    expect(sendMsg).not.toHaveBeenCalledWith(expect.objectContaining({
-      type: 'PROFILE_VIEWERS_STATUS_SYNC_QUEUE',
-    }));
+    expect(sendMsg).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'PROFILE_VIEWERS_STATUS_SYNC_QUEUE',
+      })
+    );
     expect(fetchStatusesProgressively).toHaveBeenCalledTimes(1);
     const fetchStatusCalls = fetchStatusesProgressively.mock.calls as unknown as Array<
       [FeedMemberInfo[], (member: FeedMemberInfo) => void, AbortSignal, { preserveExistingPremium?: boolean }]
@@ -454,18 +490,22 @@ describe('getStaleFeedMemberCacheIds', () => {
     const feed = makeFeed('feed-1', { memberCount: 4 });
     const cachedMembers = [makeMember('m1'), makeMember('m2'), makeMember('m3')];
 
-    expect(getStaleFeedMemberCacheIds([feed], {
-      [feed.id]: cachedMembers,
-    })).toEqual([feed.id]);
+    expect(
+      getStaleFeedMemberCacheIds([feed], {
+        [feed.id]: cachedMembers,
+      })
+    ).toEqual([feed.id]);
   });
 
   it('keeps a complete cache and ignores caches that have not been loaded', () => {
     const completeFeed = makeFeed('feed-1', { memberCount: 3 });
     const unloadedFeed = makeFeed('feed-2', { memberCount: 4 });
 
-    expect(getStaleFeedMemberCacheIds([completeFeed, unloadedFeed], {
-      [completeFeed.id]: [makeMember('m1'), makeMember('m2'), makeMember('m3')],
-    })).toEqual([]);
+    expect(
+      getStaleFeedMemberCacheIds([completeFeed, unloadedFeed], {
+        [completeFeed.id]: [makeMember('m1'), makeMember('m2'), makeMember('m3')],
+      })
+    ).toEqual([]);
   });
 
   it('does not treat the profile viewers system feed as a regular member cache', () => {
@@ -475,8 +515,10 @@ describe('getStaleFeedMemberCacheIds', () => {
       systemType: 'profileViewers',
     });
 
-    expect(getStaleFeedMemberCacheIds([feed], {
-      [feed.id]: [makeMember('m1')],
-    })).toEqual([]);
+    expect(
+      getStaleFeedMemberCacheIds([feed], {
+        [feed.id]: [makeMember('m1')],
+      })
+    ).toEqual([]);
   });
 });

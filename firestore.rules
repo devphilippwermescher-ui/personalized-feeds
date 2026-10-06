@@ -32,7 +32,13 @@ service cloud.firestore {
 
       match /feeds/{feedId} {
         allow read: if hasFeedReadAccess(userId, feedId);
-        allow write: if isOwner(userId);
+        allow create, delete: if isOwner(userId);
+        allow update: if isOwner(userId) || (
+          hasFeedWriteAccess(userId, feedId) &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['memberCount', 'updatedAt']) &&
+          request.resource.data.memberCount is int &&
+          request.resource.data.memberCount >= 0
+        );
 
         match /members/{memberId} {
           allow read: if hasFeedReadAccess(userId, feedId);
@@ -126,19 +132,6 @@ service cloud.firestore {
         allow read, write: if isOwner(userId);
       }
 
-      // Billing state is written only by trusted backend/webhook code. The
-      // extension may read its own subscription but can never promote itself.
-      match /billing/{billingId} {
-        allow read: if isOwner(userId);
-        allow write: if false;
-      }
-
-      // Each provider subscription is stored separately so an old expired
-      // subscription cannot overwrite a newer active entitlement.
-      match /billingSubscriptions/{subscriptionId} {
-        allow read: if isOwner(userId);
-        allow write: if false;
-      }
     }
 
     match /emailIndex/{email} {

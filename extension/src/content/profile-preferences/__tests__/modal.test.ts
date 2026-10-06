@@ -24,11 +24,7 @@ describe('Profile & billing modal', () => {
         billingCurrency: 'EUR',
       },
     }));
-    vi.stubGlobal('chrome', {
-      runtime: {
-        sendMessage,
-      },
-    });
+    vi.stubGlobal('chrome', { runtime: { sendMessage } });
   });
 
   afterEach(() => {
@@ -36,29 +32,23 @@ describe('Profile & billing modal', () => {
     vi.unstubAllGlobals();
   });
 
-  it('shows profile controls and selects EUR for a new user', async () => {
+  it('shows profile controls with the default billing currency', async () => {
     await openProfilePreferencesModal();
 
-    await vi.waitFor(() => {
-      expect(document.body.textContent).toContain('Profile & billing');
-    });
+    await vi.waitFor(() => expect(document.body.textContent).toContain('Profile & billing'));
     expect(document.querySelector<HTMLInputElement>('.lfs-input')?.value).toBe('Google Name');
     expect(document.body.textContent).toContain('user@example.com');
-    expect(
-      document.querySelector<HTMLButtonElement>('.mfp-profile-preferences-currency-option.is-selected')?.textContent
-    ).toContain('EUR');
+    expect(document.body.textContent).toContain('Billing currency');
+    expect(document.querySelector<HTMLButtonElement>('.mfp-profile-preferences-currency-option.is-selected')?.textContent).toContain(
+      'EUR'
+    );
     expect(document.body.textContent).toContain('Reset to Google profile');
   });
 
-  it('saves a manually selected USD preference', async () => {
+  it('saves profile and billing preferences', async () => {
     await openProfilePreferencesModal();
     await vi.waitFor(() => expect(document.body.textContent).toContain('Profile & billing'));
 
-    const usd = Array.from(
-      document.querySelectorAll<HTMLButtonElement>('.mfp-profile-preferences-currency-option')
-    ).find((button) => button.textContent?.includes('USD'));
-    usd?.click();
-    await vi.waitFor(() => expect(usd?.classList.contains('is-selected')).toBe(true));
     Array.from(document.querySelectorAll<HTMLButtonElement>('button'))
       .find((button) => button.textContent?.includes('Save changes'))
       ?.click();
@@ -69,7 +59,52 @@ describe('Profile & billing modal', () => {
         preferences: {
           displayName: '',
           avatarDataUrl: '',
-          billingCurrency: 'USD',
+          billingCurrency: 'EUR',
+        },
+      });
+    });
+  });
+
+  it('removes an uploaded avatar from the photo control and saves the Google fallback', async () => {
+    sendMessage.mockImplementation(async (message: { type?: string; preferences?: unknown }) => ({
+      success: true,
+      preferences:
+        message.type === 'PROFILE_PREFERENCES_UPDATE'
+          ? message.preferences
+          : { displayName: '', avatarDataUrl: 'data:image/webp;base64,custom-avatar', billingCurrency: 'EUR' },
+      user: {
+        userId: 'user-1',
+        displayName: 'Google Name',
+        authDisplayName: 'Google Name',
+        email: 'user@example.com',
+        photoURL: 'data:image/webp;base64,custom-avatar',
+        authPhotoURL: 'https://example.com/google-avatar.jpg',
+        billingCurrency: 'EUR',
+      },
+    }));
+
+    await openProfilePreferencesModal();
+    await vi.waitFor(() => expect(document.body.textContent).toContain('Profile & billing'));
+
+    document.querySelector<HTMLButtonElement>('[aria-label="Remove uploaded profile photo"]')?.click();
+
+    await vi.waitFor(() => {
+      expect(document.querySelector<HTMLImageElement>('.mfp-profile-preferences-avatar')?.src).toBe(
+        'https://example.com/google-avatar.jpg'
+      );
+    });
+
+    Array.from(document.querySelectorAll<HTMLButtonElement>('button'))
+      .find((button) => button.textContent?.includes('Save changes'))
+      ?.click();
+
+    await vi.waitFor(() => {
+      expect(sendMessage).toHaveBeenCalledWith({
+        type: 'PROFILE_PREFERENCES_UPDATE',
+        preferences: {
+          displayName: '',
+          avatarDataUrl: '',
+          billingCurrency: 'EUR',
         },
       });
     });

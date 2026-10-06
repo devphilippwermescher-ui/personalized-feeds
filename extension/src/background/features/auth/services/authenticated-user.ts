@@ -114,7 +114,6 @@ export function formatUserInfo(
     photoURL: normalized.avatarDataUrl || user.photoURL || '',
     authDisplayName: user.displayName || '',
     authPhotoURL: user.photoURL || '',
-    billingCurrency: normalized.billingCurrency,
   };
 }
 

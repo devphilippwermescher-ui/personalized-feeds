@@ -48,11 +48,7 @@ export function closePlanModal(): void {
 
 function formatBillingDate(value?: number): string | null {
   if (typeof value !== 'number' || !Number.isFinite(value)) return null;
-  return new Intl.DateTimeFormat('en', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  }).format(new Date(value));
+  return new Intl.DateTimeFormat('en', { year: 'numeric', month: 'short', day: 'numeric' }).format(new Date(value));
 }
 
 function renderSubscriptionSummary(subscription: BillingSubscription | null | undefined): string {
@@ -64,6 +60,7 @@ function renderSubscriptionSummary(subscription: BillingSubscription | null | un
   if (subscription.status === 'past_due') {
     return `<strong>${interval} Pro plan — payment needs attention</strong><span>Your Pro access remains active while Lemon Squeezy retries the payment. Update your payment method to avoid interruption.</span>`;
   }
+
   const isEnding = subscription.status === 'cancelled';
   const date = formatBillingDate(isEnding ? subscription.endsAt : subscription.renewsAt);
   const timing = isEnding
@@ -212,10 +209,7 @@ export function openPlanModal(options: { plan: AppPlan; context: PlanModalContex
 
     void openCustomerPortal()
       .then(() => {
-        if (!overlay.isConnected) return;
-        if (note) {
-          note.textContent = 'Billing management opened in a new tab.';
-        }
+        if (overlay.isConnected && note) note.textContent = 'Billing management opened in a new tab.';
       })
       .catch((error) => {
         if (overlay.isConnected && note) {

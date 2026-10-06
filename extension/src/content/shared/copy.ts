@@ -6,7 +6,6 @@ export const CONTENT_COPY = {
     openDashboard: 'Open Dashboard',
     manageAccount: 'Manage account',
     profileSettings: 'Profile settings',
-    subscription: 'Subscription',
     signOut: 'Sign Out',
     features: 'Features',
     signingIn: 'Signing in...',
@@ -33,6 +32,7 @@ export const CONTENT_COPY = {
     premiumTitle: 'Personalized Feeds',
     premiumDescription: 'Unlock custom feeds with a paid subscription.',
     premiumHint: 'View subscription plans',
+    freeFeedLockedHint: 'Free includes up to 3 custom feeds. Upgrade to Pro to unlock this feed.',
   },
   profile: {
     addToFeedTitle: 'Add to Feed',

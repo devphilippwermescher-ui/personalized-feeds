@@ -26,6 +26,8 @@ interface SidebarFeedActionsControllerDeps {
   setFeedMembersById: (membersById: Record<string, FeedMemberInfo[]>) => void;
   getCurrentPlan: () => AppPlan;
   updateRenderedMemberState: (feedId: string, member: FeedMemberInfo) => boolean;
+  getActiveMemberEditor: () => { feedId: string; member: FeedMemberInfo } | null;
+  setActiveMemberEditor: (value: null) => void;
   onModalClosed: () => void;
 }
 
@@ -45,7 +47,7 @@ export function createSidebarFeedActionsController(deps: SidebarFeedActionsContr
     renderSidebarContent: deps.renderSidebarContent,
     openSidebar: deps.openSidebar,
     loadFeeds: deps.loadFeeds,
-    getFeeds: () => [...deps.getFeeds(), ...deps.getSharedFeeds()],
+    getFeeds: deps.getFeeds,
     setFeeds: deps.setFeeds,
     getSharedFeeds: deps.getSharedFeeds,
     setSharedFeeds: deps.setSharedFeeds,
@@ -99,6 +101,8 @@ export function createSidebarFeedActionsController(deps: SidebarFeedActionsContr
         renderSidebarContent: deps.renderSidebarContent,
         fetchLinkedInRelationshipStatus,
         updateRenderedMemberState: deps.updateRenderedMemberState,
+        getActiveMemberEditor: deps.getActiveMemberEditor,
+        setActiveMemberEditor: deps.setActiveMemberEditor,
       });
     },
   };

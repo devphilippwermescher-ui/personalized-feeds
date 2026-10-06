@@ -3,6 +3,7 @@ export {
   fetchLinkedInRelationshipStatus,
   fetchStatusesProgressively,
   invalidateCacheForUser,
+  rememberLinkedInRelationshipStatus,
   resolveProfileUrn,
   sendLinkedInConnectRequest,
   sendLinkedInFollowState,

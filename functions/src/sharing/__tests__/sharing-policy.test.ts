@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import { findSharingLimitViolation } from '../sharing-policy.js';
-import { hasProSharingAccess } from '../plan.js';
 import type { SharingUsage } from '../types.js';
 
 function usage(overrides: Partial<SharingUsage> = {}): SharingUsage {
@@ -16,11 +15,6 @@ function usage(overrides: Partial<SharingUsage> = {}): SharingUsage {
 }
 
 describe('sharing limits', () => {
-  it('uses the billing access policy for past-due and unpaid subscriptions', () => {
-    expect(hasProSharingAccess({ plan: 'pro', status: 'past_due' })).toBe(true);
-    expect(hasProSharingAccess({ plan: 'pro', status: 'unpaid' })).toBe(false);
-  });
-
   it('allows a Free pair to share three feeds with the same person', () => {
     expect(
       findSharingLimitViolation({

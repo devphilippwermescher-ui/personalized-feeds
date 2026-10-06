@@ -1,6 +1,5 @@
 import type { Firestore } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
-import { hasProSharingAccess } from './plan.js';
 import type { ShareMutationResult, ShareRole, ShareSource, SharingLimitResult } from './types.js';
 import { countActiveFeedRecipients, countActivePairFeeds, ensureSharingUsage, readUsage } from './usage-repository.js';
 import { findSharingLimitViolation } from './sharing-policy.js';
@@ -50,8 +49,6 @@ async function createRelationship(db: Firestore, input: CreateRelationshipInput)
     const feedRef = db.doc(`users/${input.ownerId}/feeds/${input.feedId}`);
     const ownerRef = db.doc(`users/${input.ownerId}`);
     const recipientRef = db.doc(`users/${input.recipientId}`);
-    const ownerPlanRef = db.doc(`users/${input.ownerId}/billing/subscription`);
-    const recipientPlanRef = db.doc(`users/${input.recipientId}/billing/subscription`);
     const shareRef = db.doc(`users/${input.ownerId}/feeds/${input.feedId}/shares/${input.recipientId}`);
     const followedRef = db.doc(`users/${input.recipientId}/followedFeeds/${input.ownerId}_${input.feedId}`);
 
@@ -63,8 +60,6 @@ async function createRelationship(db: Firestore, input: CreateRelationshipInput)
       feedSnap,
       ownerSnap,
       recipientSnap,
-      ownerPlanSnap,
-      recipientPlanSnap,
       shareSnap,
       followedSnap,
     ] = await transaction.getAll(
@@ -75,8 +70,6 @@ async function createRelationship(db: Firestore, input: CreateRelationshipInput)
       feedRef,
       ownerRef,
       recipientRef,
-      ownerPlanRef,
-      recipientPlanRef,
       shareRef,
       followedRef
     );
@@ -122,8 +115,8 @@ async function createRelationship(db: Firestore, input: CreateRelationshipInput)
       : legacyFeedRecipientCount;
     const actorIsOwner = input.actorId === input.ownerId;
     const violation = findSharingLimitViolation({
-      ownerIsPro: hasProSharingAccess(ownerPlanSnap.data()),
-      recipientIsPro: hasProSharingAccess(recipientPlanSnap.data()),
+      ownerIsPro: false,
+      recipientIsPro: false,
       pairFeedCount,
       feedRecipientCount,
       ownerUsage,

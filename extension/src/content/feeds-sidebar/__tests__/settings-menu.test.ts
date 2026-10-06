@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { renderSidebarBody, renderSidebarHeader } from '../template';
+import { CONTENT_CSS } from '../styles/content';
 
 describe('settings menu', () => {
   const featureSettings = {
@@ -73,13 +74,13 @@ describe('settings menu', () => {
     expect(headerHtml).not.toContain('id="lfa-header-dashboard-btn"');
     expect(headerHtml).not.toContain('id="lfa-manage-account-btn"');
     expect(headerHtml).toContain('id="lfa-profile-settings-btn"');
-    expect(headerHtml).toContain('Profile &amp; billing');
+    expect(headerHtml).toContain('<span>Profile</span>');
     expect(headerHtml).not.toContain('id="lfa-subscription-btn"');
     expect(signedOutBodyHtml).not.toContain('id="lfa-open-dashboard-btn"');
     expect(freeUserBodyHtml).not.toContain('id="lfa-open-subscription-btn"');
     expect(freeUserBodyHtml).not.toContain('id="lfa-open-subscription-activate"');
     expect(freeUserBodyHtml).toContain('id="lfa-footer-get-pro-btn"');
-    expect(freeUserBodyHtml).toContain('Get Pro');
+    expect(freeUserBodyHtml).toContain('<span>Get Pro</span>');
   });
 
   it('hides plan state before authentication and renders a read-only Free badge after sign-in', () => {
@@ -106,6 +107,7 @@ describe('settings menu', () => {
     expect(signedInHeader).toContain('Current plan: Free');
     expect(signedInHeader).not.toContain('lfa-plan-toggle-btn');
     expect(signedInHeader).toContain('id="lfa-manage-plan-btn"');
+    expect(signedInHeader).toContain('<span>Manage plan</span>');
     expect(signedInHeader.indexOf('id="lfa-profile-settings-btn"')).toBeLessThan(
       signedInHeader.indexOf('id="lfa-manage-plan-btn"')
     );
@@ -159,6 +161,11 @@ describe('settings menu', () => {
     expect(html).not.toContain('Unlock custom feeds with a paid subscription');
     expect(html).toContain('Pro removes limits across Profile Visitors, feeds &amp; more');
     expect(html).toContain('id="lfa-footer-get-pro-btn"');
+    expect(html).toContain('<span>Get Pro</span>');
+  });
+
+  it('keeps the Get Pro button inside the footer width', () => {
+    expect(CONTENT_CSS).toMatch(/\.lfa-pro-footer-btn\s*\{[^}]*box-sizing:\s*border-box;/s);
   });
 
   it('does not show the footer upsell to authenticated Pro users', () => {

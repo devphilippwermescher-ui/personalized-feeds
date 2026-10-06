@@ -363,7 +363,8 @@ export const MODALS_CSS = `.lfa-share-modal {
   }
 
   .lfa-sharing-limit-modal,
-  .lfa-share-notification-modal {
+  .lfa-share-notification-modal,
+  .lfa-share-sign-in-modal {
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -375,7 +376,8 @@ export const MODALS_CSS = `.lfa-share-modal {
   }
 
   .lfa-sharing-limit-modal p,
-  .lfa-share-notification-modal p {
+  .lfa-share-notification-modal p,
+  .lfa-share-sign-in-modal p {
     margin: 0;
   }
 
@@ -389,6 +391,21 @@ export const MODALS_CSS = `.lfa-share-modal {
     background: #fff2cc;
     font-size: 27px;
     font-weight: 800;
+  }
+
+  .lfa-share-sign-in-modal-icon {
+    display: grid;
+    width: 56px;
+    height: 56px;
+    place-items: center;
+    border-radius: 50%;
+    color: #514dcf;
+    background: #efebff;
+  }
+
+  .lfa-share-sign-in-modal-hint {
+    color: #8a94a3;
+    font-size: 13px;
   }
 
   .lfa-share-notification-feed {

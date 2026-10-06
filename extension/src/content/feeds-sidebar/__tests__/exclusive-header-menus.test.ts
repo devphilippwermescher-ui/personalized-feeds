@@ -37,7 +37,7 @@ describe('sidebar header menus', () => {
     expect(container.querySelector('#lfa-settings-menu')?.classList.contains('lfa-settings-menu--open')).toBe(true);
   });
 
-  it('uses the same pricing action for Manage plan and Get Pro', () => {
+  it('opens the same development modal from both Pro entry points', () => {
     document.body.innerHTML = `
       <div id="sidebar-test-root">
         <div id="lfa-account-menu" class="lfa-account-menu--open"></div>

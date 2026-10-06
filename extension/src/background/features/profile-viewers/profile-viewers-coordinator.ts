@@ -3,7 +3,7 @@ import {
   getActiveLinkedInHeavySyncLock,
   releaseConnectionHistorySyncLock,
 } from '../../platform/linkedin/heavy-sync-lock';
-import { getUserPlanSnapshot } from '../billing/services/plan-service';
+import { getUserPlanSnapshot } from '../plans/public';
 import {
   appendProfileViewersWakeEvent,
   clearProfileViewersAlarm,
@@ -190,7 +190,7 @@ async function runProfileViewersSyncCoordinator(
   });
   await notifyLinkedInTabsAboutProfileViewersSync({
     type: 'PROFILE_VIEWERS_SYNC_STARTED',
-    syncProgress: { phase: collectionTask, startedAt },
+    syncProgress: { phase: collectionTask, startedAt, expiresAt: state.attemptExpiresAt },
   }).catch((error) => {
     console.warn('[profile-viewers-sync] Failed to notify LinkedIn tabs about collection start:', error);
   });

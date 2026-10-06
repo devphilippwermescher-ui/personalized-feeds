@@ -2,22 +2,21 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_USER_PROFILE_PREFERENCES, normalizeUserProfilePreferences } from 'shared/user-profile-preferences';
 
 describe('profile preferences', () => {
-  it('defaults new users to EUR', () => {
+  it('provides empty profile defaults for new users', () => {
     expect(normalizeUserProfilePreferences(null)).toEqual(DEFAULT_USER_PROFILE_PREFERENCES);
-    expect(normalizeUserProfilePreferences(null).billingCurrency).toBe('EUR');
+    expect(normalizeUserProfilePreferences(null)).toEqual({ displayName: '', avatarDataUrl: '', billingCurrency: 'EUR' });
   });
 
-  it('preserves a supported saved currency and normalizes the display name', () => {
+  it('normalizes the display name while preserving the avatar', () => {
     expect(
       normalizeUserProfilePreferences({
         displayName: '  Custom Name  ',
         avatarDataUrl: 'data:image/webp;base64,abc',
-        billingCurrency: 'USD',
       })
     ).toEqual({
       displayName: 'Custom Name',
       avatarDataUrl: 'data:image/webp;base64,abc',
-      billingCurrency: 'USD',
+      billingCurrency: 'EUR',
     });
   });
 });

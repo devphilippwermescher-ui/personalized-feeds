@@ -17,17 +17,21 @@ export async function createUserProfile(profile: UserProfile): Promise<void> {
   const userRef = doc(getFirebaseDb(), 'users', profile.uid);
   const existing = await getDoc(userRef);
   const createdAt = existing.exists()
-    ? ((existing.data() as UserProfile).createdAt || profile.createdAt)
+    ? (existing.data() as UserProfile).createdAt || profile.createdAt
     : profile.createdAt;
   const normalizedProfile: UserProfile = {
     ...profile,
     photoURL: profile.photoURL || '',
   };
 
-  await setDoc(userRef, {
-    ...normalizedProfile,
-    createdAt,
-  });
+  await setDoc(
+    userRef,
+    {
+      ...normalizedProfile,
+      createdAt,
+    },
+    { merge: true }
+  );
 
   if (normalizedProfile.email.trim()) {
     await setDoc(doc(emailIndexCollection(), normalizeEmail(normalizedProfile.email)), {
@@ -76,9 +80,7 @@ export async function updateUserFeatureSettings(
 
 export async function getUserProfilePreferences(userId: string): Promise<UserProfilePreferences> {
   const snap = await getDoc(profilePreferencesDoc(userId));
-  return normalizeUserProfilePreferences(
-    snap.exists() ? (snap.data() as Partial<UserProfilePreferences>) : null
-  );
+  return normalizeUserProfilePreferences(snap.exists() ? (snap.data() as Partial<UserProfilePreferences>) : null);
 }
 
 export async function updateUserProfilePreferences(

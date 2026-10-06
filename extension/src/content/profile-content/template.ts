@@ -7,15 +7,18 @@ import type { ProfileData } from './types';
 
 const feedCardRoots = new WeakMap<HTMLElement, Root>();
 
-export function createFeedCard(profile: ProfileData): HTMLDivElement {
+export function createFeedCard(profile: ProfileData, includeAuthPrompt = true): HTMLDivElement {
   const card = document.createElement('div');
-  card.id = 'pf-feed-card';
+  card.className = 'pf-feed-card';
+  card.dataset.pfFeedCard = 'true';
   const root = createRoot(card);
   flushSync(() => {
     root.render(
-      createElement(Fragment, null,
+      createElement(
+        Fragment,
+        null,
         createElement(FeedCard, { profile }),
-        createElement(AuthPrompt)
+        includeAuthPrompt ? createElement(AuthPrompt) : null
       )
     );
   });

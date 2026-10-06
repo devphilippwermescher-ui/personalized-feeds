@@ -5,7 +5,7 @@ import {
   updateUserProfilePreferences,
 } from 'shared/firestore-service';
 import type { UserFeatureSettings, UserProfilePreferences } from 'shared/types';
-import { isBillingCurrency, normalizeUserProfilePreferences } from 'shared/user-profile-preferences';
+import { normalizeUserProfilePreferences } from 'shared/user-profile-preferences';
 import {
   clearStoredFeedsAuthTokens,
   closeOffscreenDocument,
@@ -25,7 +25,6 @@ import {
 import { resetAuthenticatedUserProfileReadiness } from '../services/user-profile-readiness';
 import { clearProfileViewersAlarm } from '../../profile-viewers/profile-viewers-coordinator-storage';
 import { normalizeFeedsError } from '../../feeds/errors/feeds-error';
-import { claimGuestBillingSubscription } from '../../billing/public';
 import {
   authenticateFeedsWithEmail,
   authenticateFeedsWithGoogle,
@@ -44,9 +43,6 @@ function validateProfilePreferences(value: unknown): UserProfilePreferences {
   const candidate = value as Partial<UserProfilePreferences>;
   if (typeof candidate.displayName !== 'string' || candidate.displayName.trim().length > 60) {
     throw new Error('Display name must be 60 characters or fewer.');
-  }
-  if (!isBillingCurrency(candidate.billingCurrency)) {
-    throw new Error('Choose EUR or USD.');
   }
   if (typeof candidate.avatarDataUrl !== 'string') {
     throw new Error('Avatar is invalid.');
@@ -76,9 +72,6 @@ export function registerAuthSettingsMessageHandler(): void {
       void (async () => {
         const user = await getAuthenticatedFeedsUser();
         if (user) {
-          await claimGuestBillingSubscription().catch((error) => {
-            console.warn('[billing] Guest subscription claim check failed:', error);
-          });
           const preferences = await resolveUserProfilePreferences(user.uid);
           const info = formatUserInfo(
             {

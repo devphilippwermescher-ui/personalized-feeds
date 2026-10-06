@@ -1,5 +1,5 @@
 import type { FeedInfo, FeedMemberInfo } from '../types';
-import { canMemberReceiveMessage, getMemberStatus } from '../utils';
+import { canMemberReceiveMessage, getMemberInitials, getMemberStatus } from '../utils';
 import {
   profileMovedToFeedMessage,
   profileRemovedFromFeedMessage,
@@ -29,6 +29,40 @@ function replaceFeedMembers(
 
 function isProfileViewersFeed(feed?: FeedInfo): boolean {
   return feed?.systemType === 'profileViewers';
+}
+
+function removeRuntimeBindingMarkers(root: Element): void {
+  [root, ...Array.from(root.querySelectorAll('*'))].forEach((element) => {
+    Array.from(element.attributes).forEach((attribute) => {
+      if (attribute.name.startsWith('data-lfa-bound-')) {
+        element.removeAttribute(attribute.name);
+      }
+    });
+  });
+}
+
+function hasEquivalentMarkup(current: Element, next: Element): boolean {
+  const currentClone = current.cloneNode(true) as Element;
+  const nextClone = next.cloneNode(true) as Element;
+  removeRuntimeBindingMarkers(currentClone);
+  removeRuntimeBindingMarkers(nextClone);
+  return currentClone.isEqualNode(nextClone);
+}
+
+function hasCurrentAvatar(memberMain: HTMLElement, member: FeedMemberInfo): boolean {
+  const avatarElements = Array.from(memberMain.children).filter(
+    (child): child is HTMLElement => child instanceof HTMLElement && child.classList.contains('lfa-member-avatar')
+  );
+  const currentImage = avatarElements.find(
+    (element): element is HTMLImageElement => element instanceof HTMLImageElement
+  );
+  const currentFallback = avatarElements.find((element) => element.classList.contains('lfa-member-avatar--fallback'));
+
+  if (member.profileImageUrl) {
+    return currentImage?.getAttribute('src') === member.profileImageUrl && Boolean(currentFallback);
+  }
+
+  return !currentImage && currentFallback?.textContent?.trim() === getMemberInitials(member.displayName);
 }
 
 export function updateRenderedMemberState(
@@ -72,7 +106,7 @@ export function updateRenderedMemberState(
     const wrapper = document.createElement('div');
     wrapper.innerHTML = renderMessageButton(feedId, member, canMessage).trim();
     const nextButton = wrapper.firstElementChild as HTMLElement | null;
-    if (nextButton) {
+    if (nextButton && !hasEquivalentMarkup(currentMessageButton, nextButton)) {
       currentMessageButton.replaceWith(nextButton);
       bindMemberActionButtons(actions || row, deps as MemberActionDeps);
     }
@@ -84,7 +118,7 @@ export function updateRenderedMemberState(
     const wrapper = document.createElement('div');
     wrapper.innerHTML = renderMemberStatusAction(feedId, member, status).trim();
     const nextStatusNode = wrapper.firstElementChild as HTMLElement | null;
-    if (nextStatusNode) {
+    if (nextStatusNode && !hasEquivalentMarkup(currentStatusNode, nextStatusNode)) {
       currentStatusNode.replaceWith(nextStatusNode);
       bindMemberActionButtons(actions || row, deps as MemberActionDeps);
     }
@@ -92,17 +126,22 @@ export function updateRenderedMemberState(
 
   const nameButton = row.querySelector<HTMLElement>('.lfa-member-name');
   if (nameButton) {
+    const hasExpectedName = nameButton.querySelector('.lfa-member-name-text')?.textContent === member.displayName;
+    const hasPremiumIcon = Boolean(nameButton.querySelector('.lfa-member-premium-icon'));
+    const shouldShowPremiumIcon = SHOW_LINKEDIN_PREMIUM_ICONS && Boolean(member.isPremium);
     const escapedName = escapeHtml(member.displayName);
     const premiumIconHtml =
       SHOW_LINKEDIN_PREMIUM_ICONS && member.isPremium
         ? ' <span class="lfa-member-premium-icon" title="LinkedIn Premium" aria-label="LinkedIn Premium">✦</span>'
         : '';
-    nameButton.innerHTML = `<span class="lfa-member-name-text">${escapedName}</span>${premiumIconHtml}`;
+    if (!hasExpectedName || hasPremiumIcon !== shouldShowPremiumIcon) {
+      nameButton.innerHTML = `<span class="lfa-member-name-text">${escapedName}</span>${premiumIconHtml}`;
+    }
   }
 
   const memberMain = row.querySelector<HTMLElement>('.lfa-member-main');
   const memberInfo = memberMain?.querySelector<HTMLElement>('.lfa-member-info');
-  if (memberMain && memberInfo) {
+  if (memberMain && memberInfo && !hasCurrentAvatar(memberMain, member)) {
     Array.from(memberMain.children).forEach((child) => {
       if (child instanceof HTMLElement && child.classList.contains('lfa-member-avatar')) {
         child.remove();

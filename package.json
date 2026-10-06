@@ -1,15 +1,12 @@
 {
   "name": "personalized-feeds",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "private": true,
   "description": "Personalized Feeds - Chrome extension + Dashboard",
   "scripts": {
     "dev:extension": "cd extension && npm run dev",
     "dev:billing-local": "cd extension && npm run dev:billing-local",
     "dev:dashboard": "cd dashboard && npm run dev",
-    "build:billing-local": "cd extension && npm run build:billing-local",
-    "emulators:billing": "node scripts/run-billing-emulators.mjs",
-    "simulate:billing-webhook": "npm --prefix functions run simulate:webhook --",
     "build:functions": "cd functions && npm run build",
     "build:extension": "cd extension && npm run build",
     "build:dashboard": "cd dashboard && npm run build",

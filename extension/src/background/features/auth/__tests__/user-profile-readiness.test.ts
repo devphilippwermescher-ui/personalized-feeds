@@ -62,13 +62,41 @@ describe('authenticated user profile readiness', () => {
   });
 
   it('does not rewrite an existing user document or recheck it in the same worker session', async () => {
-    mocks.getUserProfile.mockResolvedValue({ uid: 'user-1' });
+    mocks.getUserProfile.mockResolvedValue({
+      uid: 'user-1',
+      email: 'user@example.com',
+      displayName: 'Example User',
+      photoURL: 'https://example.com/avatar.png',
+      createdAt: 1,
+    });
 
     await ensureAuthenticatedUserProfile(authUser);
     await ensureAuthenticatedUserProfile(authUser);
 
     expect(mocks.getUserProfile).toHaveBeenCalledOnce();
     expect(mocks.createUserProfile).not.toHaveBeenCalled();
+  });
+
+  it('repairs a profile created before email registration has finished setting the display name', async () => {
+    const provisionalUser = { ...authUser, displayName: null, photoURL: null } as User;
+    mocks.getUserProfile.mockResolvedValueOnce(null).mockResolvedValueOnce({
+      uid: 'user-1',
+      email: 'user@example.com',
+      displayName: '',
+      photoURL: '',
+      createdAt: 1,
+    });
+
+    await ensureAuthenticatedUserProfile(provisionalUser);
+    await ensureAuthenticatedUserProfile(authUser);
+
+    expect(mocks.createUserProfile).toHaveBeenNthCalledWith(2, {
+      uid: 'user-1',
+      email: 'user@example.com',
+      displayName: 'Example User',
+      photoURL: 'https://example.com/avatar.png',
+      createdAt: 1,
+    });
   });
 
   it('shares one repair between concurrent auth requests', async () => {
@@ -92,9 +120,7 @@ describe('authenticated user profile readiness', () => {
 
   it('retries after a failed repair instead of caching a broken profile state', async () => {
     mocks.getUserProfile.mockResolvedValue(null);
-    mocks.createUserProfile
-      .mockRejectedValueOnce(new Error('temporary failure'))
-      .mockResolvedValueOnce(undefined);
+    mocks.createUserProfile.mockRejectedValueOnce(new Error('temporary failure')).mockResolvedValueOnce(undefined);
 
     await expect(ensureAuthenticatedUserProfile(authUser)).rejects.toThrow('temporary failure');
     await expect(ensureAuthenticatedUserProfile(authUser)).resolves.toBeUndefined();

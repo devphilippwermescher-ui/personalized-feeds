@@ -2,15 +2,17 @@ import { deleteFeed, getProfileFeedMemberships, reorderFeeds, updateFeed } from 
 import type { LinkedInProfileData } from 'shared/types';
 import { getAuthenticatedFeedsUser } from '../../auth/services/authenticated-user';
 import { getFeedsAuthErrorResponse, normalizeFeedsError } from '../errors/feeds-error';
-import { getPlanLimitErrorResponse, PlanLimitError } from '../../billing/errors/plan-limit-error';
 import {
   addFeedMemberForPlan,
   createOwnedFeedForPlan,
   getFeedMembersForPlan,
   getOwnedFeedsForPlan,
+  getPlanLimitErrorResponse,
+  PlanLimitError,
   removeFeedMemberForPlan,
   updateFeedMemberForPlan,
-} from '../../billing/services/plan-enforcement-service';
+} from '../../plans/public';
+import { startFeedMembersRuntime, stopFeedMembersRuntime } from '../services/feed-members-runtime';
 
 function sendFeedsError(
   sendResponse: (response?: unknown) => void,
@@ -31,6 +33,29 @@ function sendFeedsError(
 }
 export function registerFeedsMessageHandler(): void {
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.type === 'FEEDS_WATCH_MEMBERS' || message.type === 'FEEDS_UNWATCH_MEMBERS') {
+      const ownerId = typeof message.ownerId === 'string' ? message.ownerId : '';
+      const feedId = typeof message.feedId === 'string' ? message.feedId : '';
+      const tabId = sender.tab?.id;
+      if (!ownerId || ownerId.includes('/') || !feedId || feedId.includes('/') || typeof tabId !== 'number') {
+        sendResponse({ success: false, error: 'Unable to watch feed members' });
+        return false;
+      }
+
+      if (message.type === 'FEEDS_UNWATCH_MEMBERS') {
+        stopFeedMembersRuntime(ownerId, feedId, tabId);
+        sendResponse({ success: true });
+        return false;
+      }
+
+      startFeedMembersRuntime(ownerId, feedId, tabId)
+        .then(() => sendResponse({ success: true }))
+        .catch((error) => {
+          sendResponse({ success: false, error: normalizeFeedsError(error, 'Unable to watch feed members') });
+        });
+      return true;
+    }
+
     if (message.type === 'FEEDS_GET_ALL') {
       getAuthenticatedFeedsUser()
         .then((user) => {
