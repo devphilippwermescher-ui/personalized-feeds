@@ -19,7 +19,7 @@
 - підтверджена checkout-активація оновлює відкритий sidebar і запускає Pro Profile Visitors collection без reload;
 - customer portal відкривається через свіжий signed URL;
 - USD/EUR та Monthly/Annual підтримуються як окремі конфігурації;
-- unit-тести billing-модулів проходять: 31 Functions tests; повний Extension suite — 664 tests.
+- автоматизовані suites проходять: 78 Functions tests, 756 Extension tests і 59 Dashboard tests.
 
 Три попередні архітектурні блокери вже закрито в коді:
 
@@ -208,14 +208,14 @@ API key не можна зберігати в GitHub або client-side code; Le
 
 ### Ще потрібно
 
-- [x] API checkout має 30-хвилинний `expires_at`, а server-owned session — додаткові 5 хвилин лише для доставки webhook.^12
-- [ ] Заборонити новий checkout не тільки для `active` і cancelled grace, а також для `past_due`; замість нього відкрити update-payment/customer portal.
+- [x] API checkout має 5-хвилинний `expires_at`, короткий 10-секундний lock захищає створення від подвійного запиту, а server-owned session зберігається ще 5 хвилин лише для доставки webhook.^12
+- [x] Заборонити новий checkout для `active`, `past_due` і cancelled grace; чинний користувач керує оплатою через customer portal.
 - [ ] Вирішити поведінку для `unpaid`: update payment/resubscribe, не створюючи дві паралельні підписки без закриття старої.
-- [ ] Додати per-UID rate limit/cooldown та abuse monitoring.
+- [x] Додати per-UID rate limit/cooldown; abuse monitoring залишається окремою operational задачею.
 - [ ] Оцінити Firebase App Check для callable Functions. Enforcement відхиляє неатестовані виклики; replay protection доцільний для низькочастотних критичних операцій, але спочатку треба перевірити сумісний provider для Chrome extension.^13
-- [ ] Перевіряти hostname URL, який повертає backend: дозволити тільки очікувані Lemon Squeezy/custom store domains, а не будь-який `https:`.
-- [ ] Додати timeout до всіх Lemon Squeezy GET/POST, а не лише до POST `/checkouts`.
-- [ ] Обробляти `429` з bounded retry/backoff або контрольованою помилкою. API limit — 300 requests/minute.^14
+- [x] Перевіряти hostname і path URL, який повертає backend: зараз дозволені лише HTTPS `*.lemonsqueezy.com` checkout/portal URLs; custom domain потребуватиме явного allowlist.
+- [x] Додати timeout до всіх Lemon Squeezy GET/POST.
+- [x] Обробляти `429` контрольованою transient-помилкою без автоматичного повтору non-idempotent checkout POST. API limit — 300 requests/minute.^14
 - [ ] Додати `redirect_url`/confirmation copy для UX, але не активувати Pro через redirect. Джерело істини — webhook.
 
 Custom data офіційно призначена для зв’язування checkout із локальним користувачем і повертається у `meta.custom_data` order/subscription/license webhooks.^12 Для безпечної системи custom value має бути opaque server-owned session, а не client-editable authority.
@@ -268,6 +268,10 @@ billingCheckoutSessions/{sessionId}
   userId, storeId, variantId, interval, currency,
   checkoutExpiresAt, expiresAt, deleteAt
 
+billingUserCheckoutLocks/{uid}
+  sessionId, storeId, variantId, interval, currency,
+  status, checkoutUrl, expiresAt, deleteAt
+
 billingSubscriptions/{subscriptionId}
   userId, updatedAt
 
@@ -313,11 +317,11 @@ Firebase рекомендує автоматично тестувати Rules ч
 #### Configuration
 
 - [x] USD required, EUR optional only as complete triplet.
-- [ ] `LEMON_SQUEEZY_TEST_MODE` приймає тільки точні `true` або `false`; typo зараз мовчки стає `false`.
-- [ ] Staging startup/deploy fail, якщо `TEST_MODE !== true`.
-- [ ] Production startup/deploy fail, якщо `TEST_MODE !== false`.
-- [ ] Усі Store/Variant IDs numeric/non-empty/unique.
-- [ ] Monthly і annual IDs не однакові.
+- [x] `LEMON_SQUEEZY_TEST_MODE` приймає тільки точні `true` або `false`.
+- [x] Staging runtime fail-fast, якщо `TEST_MODE !== true`.
+- [x] Production runtime fail-fast, якщо `TEST_MODE !== false`.
+- [x] Усі Store/Variant IDs numeric/non-empty; Store IDs та Variant IDs перевіряються на унікальність у своїх групах.
+- [x] Monthly і annual IDs не однакові.
 - [ ] USD і EUR stores не переплутані.
 
 #### Checkout API
@@ -327,12 +331,12 @@ Firebase рекомендує автоматично тестувати Rules ч
 - [x] 500/429 не відкриває unsafe fallback.
 - [x] Standard fallback більше не приймає raw UID, бо його видалено.
 - [x] Checkout session створюється, перевіряється та одноразово видаляється після binding.
-- [ ] API timeout, invalid JSON, missing URL, unsafe hostname.
-- [ ] 401/403/404/422/429/5xx мають правильну user-facing категорію.
+- [x] API timeout, invalid JSON, missing URL, unsafe hostname.
+- [x] 401/403/404/422/429/5xx класифікуються без повернення provider response body клієнту або в error message.
 - [ ] Email відсутній/неверифікований.
-- [ ] Existing `active`, `past_due`, cancelled grace блокують duplicate checkout.
+- [x] Existing `active`, `past_due`, cancelled grace блокують duplicate checkout.
 - [ ] Existing `expired` дозволяє новий checkout.
-- [ ] Два concurrent clicks створюють одну pending session/checkout.
+- [x] Два concurrent clicks створюють одну pending session/checkout; ready URL повторно використовується лише для тієї ж billing selection.
 
 #### Webhook signature та schema
 
@@ -513,7 +517,7 @@ Firebase рекомендує автоматично тестувати Rules ч
 - [ ] Concurrent cancel/resume/update → final state відповідає provider API.
 - [ ] Firestore temporarily unavailable → event retained/retried.
 - [ ] Function timeout/500 → Lemon retry спрацьовує.
-- [ ] Lemon API 429/500 → controlled checkout error/retry, без unsafe fallback.
+- [x] Lemon API 429/500 → controlled checkout error без unsafe fallback та без ризикового автоматичного POST retry.
 - [ ] Offline extension → зрозумілий стан і recovery.
 - [ ] User signs out during checkout, потім входить тим самим UID → Pro.
 - [ ] User входить іншим Firebase UID з тим самим email → Pro не переноситься мовчки; є support recovery flow.

@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { isAllowedWebsiteOrigin, parseWebsiteCheckoutRequest, WebsiteCheckoutError } from '../website-checkout.js';
+import {
+  getWebsiteCheckoutErrorBody,
+  isAllowedWebsiteOrigin,
+  parseWebsiteCheckoutRequest,
+  WebsiteCheckoutError,
+} from '../website-checkout.js';
 
 describe('website checkout request validation', () => {
   it.each([
@@ -30,5 +35,33 @@ describe('website checkout request validation', () => {
     expect(isAllowedWebsiteOrigin('http://localhost:5173')).toBe(true);
     expect(isAllowedWebsiteOrigin('https://myfeedpilot.com.attacker.example')).toBe(false);
     expect(isAllowedWebsiteOrigin('https://lovable.app.attacker.example')).toBe(false);
+  });
+
+  it('preserves safe checkout conflict details without exposing a checkout URL', () => {
+    const error = new WebsiteCheckoutError(
+      409,
+      'CHECKOUT_IN_PROGRESS',
+      'A USD checkout is already open. To switch, try again in 5 min.',
+      {
+        state: 'ready',
+        currency: 'USD',
+        interval: 'monthly',
+        retryAfterSeconds: 299,
+      }
+    );
+
+    expect(getWebsiteCheckoutErrorBody(error)).toEqual({
+      error: {
+        code: 'CHECKOUT_IN_PROGRESS',
+        message: 'A USD checkout is already open. To switch, try again in 5 min.',
+        details: {
+          state: 'ready',
+          currency: 'USD',
+          interval: 'monthly',
+          retryAfterSeconds: 299,
+        },
+      },
+    });
+    expect(error.details).not.toHaveProperty('checkoutUrl');
   });
 });

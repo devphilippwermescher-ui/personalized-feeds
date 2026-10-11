@@ -110,6 +110,8 @@ module.exports = (_environment, argv) => {
             },
           },
           { from: 'src/icons', to: 'icons', noErrorOnMissing: true },
+          { from: 'src/pricing-loading/index.html', to: 'pricing-loading.html' },
+          { from: 'src/pricing-loading/styles.css', to: 'pricing-loading.css' },
         ],
       }),
     ],

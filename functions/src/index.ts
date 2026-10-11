@@ -4,9 +4,9 @@ import { logger } from 'firebase-functions';
 import { defineSecret } from 'firebase-functions/params';
 import { HttpsError, onCall, onRequest } from 'firebase-functions/v2/https';
 import { setGlobalOptions } from 'firebase-functions/v2/options';
-import { hasCurrentProAccess } from './billing/access-policy.js';
-import { createCheckoutSession, deleteCheckoutSession } from './billing/checkout-session-repository.js';
-import { getBillingConfiguration, isBillingCurrency, isBillingInterval } from './billing/config.js';
+import { handleCreateBillingCheckout } from './billing/create-checkout-handler.js';
+import { handleGetBillingPortal } from './billing/customer-portal-handler.js';
+import { getBillingConfiguration } from './billing/config.js';
 import { normalizeBillingEmail } from './billing/email-identity.js';
 import {
   claimPendingSubscriptions,
@@ -14,7 +14,6 @@ import {
   saveSubscription,
 } from './billing/firestore-subscription-repository.js';
 import { createBillingHandoff as createBillingHandoffRecord } from './billing/handoff-repository.js';
-import { createCheckout, getCustomerPortalUrl } from './billing/lemon-squeezy-api.js';
 import { isSubscriptionPaymentEvent, parseSubscriptionPaymentWebhook } from './billing/payment-event-state.js';
 import { savePaymentStatus } from './billing/payment-status-repository.js';
 import { isSubscriptionEvent, parseSubscriptionWebhook } from './billing/subscription-state.js';
@@ -46,77 +45,13 @@ const lemonSqueezyWebhookSecret = defineSecret('LEMON_SQUEEZY_WEBHOOK_SECRET');
 
 export const createBillingCheckout = onCall(
   { secrets: [lemonSqueezyApiKey] },
-  async (request): Promise<{ url: string }> => {
-    if (!request.auth) {
-      throw new HttpsError('unauthenticated', 'Sign in to upgrade your plan.');
-    }
-    const interval = request.data?.interval;
-    if (!isBillingInterval(interval)) {
-      throw new HttpsError('invalid-argument', 'Choose Monthly or Annual billing.');
-    }
-    const currency = request.data?.currency;
-    if (!isBillingCurrency(currency)) {
-      throw new HttpsError('invalid-argument', 'Choose EUR or USD billing.');
-    }
-
-    const billingConfiguration = getBillingConfiguration();
-    const storeConfiguration = billingConfiguration.stores[currency];
-    if (!storeConfiguration) {
-      throw new HttpsError(
-        'failed-precondition',
-        `${currency} checkout is not available yet. Select USD in Profile & billing to continue.`
-      );
-    }
-
-    const db = getFirestore();
-    const existingSubscription = await db.doc(`users/${request.auth.uid}/billing/subscription`).get();
-    if (hasCurrentProAccess(existingSubscription.data())) {
-      throw new HttpsError('already-exists', 'Your Pro subscription is already active.');
-    }
-
-    const startedAt = Date.now();
-    let checkoutSessionId: string | null = null;
-
-    try {
-      const checkoutSession = await createCheckoutSession({
-        db,
-        userId: request.auth.uid,
-        configuration: storeConfiguration,
-        interval,
-        testMode: billingConfiguration.testMode,
-      });
-      checkoutSessionId = checkoutSession.sessionId;
-      const url = await createCheckout({
-        apiKey: lemonSqueezyApiKey.value(),
-        configuration: storeConfiguration,
-        interval,
-        checkoutSessionId,
-        expiresAt: checkoutSession.session.checkoutExpiresAt,
-        email: request.auth.token.email,
-        testMode: billingConfiguration.testMode,
-        redirectUrl: billingConfiguration.checkoutSuccessUrl,
-      });
-      logger.info('Created Lemon Squeezy checkout', {
-        currency,
-        interval,
-        durationMs: Date.now() - startedAt,
-      });
-      return { url };
-    } catch (error) {
-      if (checkoutSessionId) {
-        await deleteCheckoutSession(db, checkoutSessionId).catch((cleanupError) => {
-          logger.warn('Failed to remove an unused billing checkout session', { cleanupError });
-        });
-      }
-      logger.error('Failed to create Lemon Squeezy checkout', {
-        currency,
-        interval,
-        durationMs: Date.now() - startedAt,
-        error,
-      });
-      throw new HttpsError('internal', 'Unable to open checkout right now. Please try again.');
-    }
-  }
+  async (request): Promise<{ url: string }> =>
+    handleCreateBillingCheckout({
+      request,
+      db: getFirestore(),
+      apiKey: lemonSqueezyApiKey.value(),
+      logger,
+    })
 );
 
 export const createBillingHandoff = onCall(async (request): Promise<{ token: string; expiresAt: number }> => {
@@ -177,25 +112,16 @@ export const createWebsiteCheckout = onRequest(
   })
 );
 
-export const getBillingPortal = onCall({ secrets: [lemonSqueezyApiKey] }, async (request): Promise<{ url: string }> => {
-  if (!request.auth) {
-    throw new HttpsError('unauthenticated', 'Sign in to manage your subscription.');
-  }
-
-  const snapshot = await getFirestore().doc(`users/${request.auth.uid}/billing/subscription`).get();
-  const subscriptionId = snapshot.get('subscriptionId');
-  if (!snapshot.exists || typeof subscriptionId !== 'string' || !subscriptionId) {
-    throw new HttpsError('failed-precondition', 'No Lemon Squeezy subscription was found.');
-  }
-
-  try {
-    const url = await getCustomerPortalUrl(lemonSqueezyApiKey.value(), subscriptionId);
-    return { url };
-  } catch (error) {
-    logger.error('Failed to retrieve Lemon Squeezy customer portal', error);
-    throw new HttpsError('internal', 'Unable to open billing management right now.');
-  }
-});
+export const getBillingPortal = onCall(
+  { secrets: [lemonSqueezyApiKey] },
+  async (request): Promise<{ url: string }> =>
+    handleGetBillingPortal({
+      request,
+      db: getFirestore(),
+      apiKey: lemonSqueezyApiKey.value(),
+      logError: (message, error) => logger.error(message, error),
+    })
+);
 
 export const lemonSqueezyWebhook = onRequest({ secrets: [lemonSqueezyWebhookSecret] }, async (request, response) => {
   if (request.method !== 'POST') {

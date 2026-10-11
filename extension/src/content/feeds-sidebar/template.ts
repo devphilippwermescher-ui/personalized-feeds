@@ -167,7 +167,12 @@ export function renderSidebarHeader(params: {
             </span>
             <span>Profile &amp; billing</span>
           </button>
-          <button class="lfa-account-menu-link lfa-account-menu-link--plan" id="lfa-manage-plan-btn" type="button">
+          <button
+            class="lfa-account-menu-link lfa-account-menu-link--plan"
+            id="lfa-manage-plan-btn"
+            type="button"
+            data-plan-action="${isPremium ? 'portal' : 'pricing'}"
+          >
             <span class="lfa-account-menu-link-icon lfa-account-menu-link-icon--plan">
               ${renderPlanOutlineStarIcon({ className: 'lfa-plan-star-glyph' })}
             </span>

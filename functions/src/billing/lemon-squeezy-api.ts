@@ -1,6 +1,7 @@
 import type { BillingInterval, BillingStoreConfiguration } from './types.js';
 
 const LEMON_SQUEEZY_API_ORIGIN = 'https://api.lemonsqueezy.com/v1';
+const LEMON_SQUEEZY_REQUEST_TIMEOUT_MS = 4_000;
 
 interface LemonSqueezyResource<TAttributes> {
   data: {
@@ -18,32 +19,97 @@ interface SubscriptionAttributes {
   };
 }
 
-class LemonSqueezyRequestError extends Error {
+export type LemonSqueezyRequestErrorKind =
+  | 'authentication'
+  | 'not_found'
+  | 'rate_limited'
+  | 'rejected'
+  | 'server'
+  | 'timeout'
+  | 'network'
+  | 'invalid_response';
+
+export class LemonSqueezyRequestError extends Error {
   constructor(
-    readonly status: number,
-    details: string
+    readonly kind: LemonSqueezyRequestErrorKind,
+    readonly status?: number
   ) {
-    super(`Lemon Squeezy request failed (${status}): ${details.slice(0, 500)}`);
+    super(`Lemon Squeezy request failed (${status ?? kind})`);
+    this.name = 'LemonSqueezyRequestError';
   }
 }
 
-async function requestLemonSqueezy<T>(apiKey: string, path: string, init: RequestInit = {}): Promise<T> {
-  const response = await fetch(`${LEMON_SQUEEZY_API_ORIGIN}${path}`, {
-    ...init,
-    headers: {
-      Accept: 'application/vnd.api+json',
-      'Content-Type': 'application/vnd.api+json',
-      Authorization: `Bearer ${apiKey}`,
-      ...init.headers,
-    },
-  });
+export function isTransientLemonSqueezyError(error: unknown): boolean {
+  return (
+    error instanceof LemonSqueezyRequestError &&
+    (error.kind === 'rate_limited' || error.kind === 'server' || error.kind === 'timeout' || error.kind === 'network')
+  );
+}
 
-  if (!response.ok) {
-    const details = await response.text();
-    throw new LemonSqueezyRequestError(response.status, details);
+function getRequestErrorKind(status: number): LemonSqueezyRequestErrorKind {
+  if (status === 401 || status === 403) return 'authentication';
+  if (status === 404) return 'not_found';
+  if (status === 429) return 'rate_limited';
+  if (status >= 500) return 'server';
+  return 'rejected';
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && (error.name === 'AbortError' || error.name === 'TimeoutError');
+}
+
+function validateCustomerUrl(value: unknown, pathPrefix: '/checkout/' | '/billing'): string {
+  if (typeof value !== 'string' || !value.trim()) {
+    throw new LemonSqueezyRequestError('invalid_response');
   }
 
-  return (await response.json()) as T;
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new LemonSqueezyRequestError('invalid_response');
+  }
+  const hostname = url.hostname.toLowerCase();
+  const isLemonSqueezyHost = hostname === 'lemonsqueezy.com' || hostname.endsWith('.lemonsqueezy.com');
+  if (
+    url.protocol !== 'https:' ||
+    !isLemonSqueezyHost ||
+    url.username ||
+    url.password ||
+    url.port ||
+    !url.pathname.startsWith(pathPrefix)
+  ) {
+    throw new LemonSqueezyRequestError('invalid_response');
+  }
+  return url.toString();
+}
+
+async function requestLemonSqueezy<T>(apiKey: string, path: string, init: RequestInit = {}): Promise<T> {
+  let response: Response;
+  try {
+    response = await fetch(`${LEMON_SQUEEZY_API_ORIGIN}${path}`, {
+      ...init,
+      signal: init.signal ?? AbortSignal.timeout(LEMON_SQUEEZY_REQUEST_TIMEOUT_MS),
+      headers: {
+        Accept: 'application/vnd.api+json',
+        'Content-Type': 'application/vnd.api+json',
+        Authorization: `Bearer ${apiKey}`,
+        ...init.headers,
+      },
+    });
+  } catch (error) {
+    throw new LemonSqueezyRequestError(isAbortError(error) ? 'timeout' : 'network');
+  }
+
+  if (!response.ok) {
+    throw new LemonSqueezyRequestError(getRequestErrorKind(response.status), response.status);
+  }
+
+  try {
+    return (await response.json()) as T;
+  } catch {
+    throw new LemonSqueezyRequestError('invalid_response', response.status);
+  }
 }
 
 export async function createCheckout(params: {
@@ -63,7 +129,6 @@ export async function createCheckout(params: {
   }
   const response = await requestLemonSqueezy<LemonSqueezyResource<CheckoutAttributes>>(params.apiKey, '/checkouts', {
     method: 'POST',
-    signal: AbortSignal.timeout(4_000),
     body: JSON.stringify({
       data: {
         type: 'checkouts',
@@ -93,11 +158,7 @@ export async function createCheckout(params: {
     }),
   });
 
-  const url = response.data.attributes.url?.trim();
-  if (!url) {
-    throw new Error('Lemon Squeezy did not return a checkout URL');
-  }
-  return url;
+  return validateCustomerUrl(response.data?.attributes?.url, '/checkout/');
 }
 
 export async function getCustomerPortalUrl(apiKey: string, subscriptionId: string): Promise<string> {
@@ -105,9 +166,5 @@ export async function getCustomerPortalUrl(apiKey: string, subscriptionId: strin
     apiKey,
     `/subscriptions/${encodeURIComponent(subscriptionId)}`
   );
-  const url = response.data.attributes.urls?.customer_portal?.trim();
-  if (!url) {
-    throw new Error('Lemon Squeezy did not return a customer portal URL');
-  }
-  return url;
+  return validateCustomerUrl(response.data?.attributes?.urls?.customer_portal, '/billing');
 }

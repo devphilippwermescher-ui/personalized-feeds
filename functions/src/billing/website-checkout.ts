@@ -1,19 +1,21 @@
 import type { Firestore } from 'firebase-admin/firestore';
 import { hasCurrentProAccess } from './access-policy.js';
 import {
+  BillingCheckoutInProgressError,
+  completeCheckoutSession,
   createCheckoutSession,
   createGuestCheckoutSession,
   deleteCheckoutSession,
 } from './checkout-session-repository.js';
 import { getBillingConfiguration, isBillingCurrency, isBillingInterval } from './config.js';
-import { BillingRateLimitError, enforceWebsiteCheckoutRateLimit } from './checkout-rate-limit.js';
+import { BillingRateLimitError, enforceCheckoutRateLimit } from './checkout-rate-limit.js';
 import {
   BillingHandoffError,
   completeBillingHandoff,
   releaseBillingHandoff,
   reserveBillingHandoff,
 } from './handoff-repository.js';
-import { createCheckout } from './lemon-squeezy-api.js';
+import { createCheckout, isTransientLemonSqueezyError } from './lemon-squeezy-api.js';
 
 const HANDOFF_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 const WEBSITE_ORIGIN_PATTERNS = [
@@ -42,15 +44,39 @@ interface HttpResponseLike {
   send(value?: unknown): void;
 }
 
+interface WebsiteCheckoutErrorDetails {
+  state: 'creating' | 'ready';
+  currency: 'EUR' | 'USD';
+  interval: 'monthly' | 'annual';
+  retryAfterSeconds: number;
+}
+
 export class WebsiteCheckoutError extends Error {
   constructor(
     readonly status: number,
     readonly code: string,
-    readonly publicMessage: string
+    readonly publicMessage: string,
+    readonly details?: WebsiteCheckoutErrorDetails
   ) {
     super(code);
     this.name = 'WebsiteCheckoutError';
   }
+}
+
+export function getWebsiteCheckoutErrorBody(error: WebsiteCheckoutError): {
+  error: {
+    code: string;
+    message: string;
+    details?: WebsiteCheckoutErrorDetails;
+  };
+} {
+  return {
+    error: {
+      code: error.code,
+      message: error.publicMessage,
+      ...(error.details ? { details: error.details } : {}),
+    },
+  };
 }
 
 export function parseWebsiteCheckoutRequest(value: unknown): WebsiteCheckoutRequest {
@@ -101,6 +127,8 @@ export async function createWebsiteCheckout(params: {
 
   let reservation: { reservationId: string; userId: string; email?: string } | null = null;
   let checkoutSessionId: string | null = null;
+  let createdCheckoutSession = false;
+  let providerCheckoutCreated = false;
   try {
     if (params.request.handoffToken) {
       try {
@@ -119,6 +147,11 @@ export async function createWebsiteCheckout(params: {
       if (hasCurrentProAccess(existingSubscription.data())) {
         throw new WebsiteCheckoutError(409, 'ALREADY_PRO', 'Your Pro subscription is already active.');
       }
+      await enforceCheckoutRateLimit({
+        db: params.db,
+        scope: 'firebase-user',
+        fingerprint: reservation.userId,
+      });
       const checkoutSession = await createCheckoutSession({
         db: params.db,
         userId: reservation.userId,
@@ -127,6 +160,16 @@ export async function createWebsiteCheckout(params: {
         testMode: configuration.testMode,
       });
       checkoutSessionId = checkoutSession.sessionId;
+      if (checkoutSession.state === 'ready') {
+        await completeBillingHandoff({
+          db: params.db,
+          token: params.request.handoffToken,
+          reservationId: reservation.reservationId,
+          checkoutSessionId,
+        });
+        return { url: checkoutSession.checkoutUrl };
+      }
+      createdCheckoutSession = true;
       const url = await createCheckout({
         apiKey: params.apiKey,
         configuration: storeConfiguration,
@@ -136,6 +179,13 @@ export async function createWebsiteCheckout(params: {
         email: reservation.email,
         testMode: configuration.testMode,
         redirectUrl: configuration.checkoutSuccessUrl,
+      });
+      providerCheckoutCreated = true;
+      await completeCheckoutSession({
+        db: params.db,
+        userId: reservation.userId,
+        sessionId: checkoutSessionId,
+        checkoutUrl: url,
       });
       await completeBillingHandoff({
         db: params.db,
@@ -164,8 +214,8 @@ export async function createWebsiteCheckout(params: {
     });
     return { url };
   } catch (error) {
-    if (checkoutSessionId) {
-      await deleteCheckoutSession(params.db, checkoutSessionId).catch(() => undefined);
+    if (checkoutSessionId && createdCheckoutSession && !providerCheckoutCreated) {
+      await deleteCheckoutSession(params.db, checkoutSessionId, reservation?.userId).catch(() => undefined);
     }
     if (reservation && params.request.handoffToken) {
       await releaseBillingHandoff({
@@ -173,6 +223,26 @@ export async function createWebsiteCheckout(params: {
         token: params.request.handoffToken,
         reservationId: reservation.reservationId,
       }).catch(() => undefined);
+    }
+    if (error instanceof BillingCheckoutInProgressError) {
+      const minutes = Math.max(1, Math.ceil(error.retryAfterSeconds / 60));
+      const message =
+        error.state === 'ready'
+          ? `A ${error.currency} checkout is already open. To switch, try again in ${minutes} min.`
+          : `A ${error.currency} checkout is opening. Please wait a moment.`;
+      throw new WebsiteCheckoutError(409, 'CHECKOUT_IN_PROGRESS', message, {
+        state: error.state,
+        currency: error.currency,
+        interval: error.interval,
+        retryAfterSeconds: error.retryAfterSeconds,
+      });
+    }
+    if (isTransientLemonSqueezyError(error)) {
+      throw new WebsiteCheckoutError(
+        503,
+        'PROVIDER_UNAVAILABLE',
+        'Checkout is temporarily unavailable. Please try again.'
+      );
     }
     throw error;
   }
@@ -203,8 +273,9 @@ export function createWebsiteCheckoutHttpHandler(params: {
     }
 
     try {
-      await enforceWebsiteCheckoutRateLimit({
+      await enforceCheckoutRateLimit({
         db: params.db,
+        scope: 'website-ip',
         fingerprint: request.ip || 'unknown',
       });
       const input = parseWebsiteCheckoutRequest(request.body);
@@ -216,7 +287,7 @@ export function createWebsiteCheckoutHttpHandler(params: {
         return;
       }
       if (error instanceof WebsiteCheckoutError) {
-        response.status(error.status).json({ error: { code: error.code, message: error.publicMessage } });
+        response.status(error.status).json(getWebsiteCheckoutErrorBody(error));
         return;
       }
       params.logError('Website checkout failed', { error });

@@ -1,6 +1,7 @@
 import type { BillingSubscription } from 'shared/plans';
 import type { ProBillingInterval } from 'shared/subscription-config';
 import type { BillingCurrency } from 'shared/types';
+import { sendBillingMessage } from './billing-message-client';
 
 interface BillingActionResponse {
   success?: boolean;
@@ -15,7 +16,7 @@ export interface PlanSnapshotResponse {
 }
 
 async function sendMessage<T>(message: Record<string, unknown>): Promise<T> {
-  return chrome.runtime.sendMessage(message) as Promise<T>;
+  return sendBillingMessage<T>(message);
 }
 
 function assertBillingAction(response: BillingActionResponse): void {

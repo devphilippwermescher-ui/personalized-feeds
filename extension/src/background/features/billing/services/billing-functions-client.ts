@@ -1,13 +1,14 @@
 import { httpsCallable } from 'firebase/functions';
+import { getAppEnvironment } from 'shared/app-environment';
 import {
   BILLING_FUNCTION_NAMES,
   BILLING_FUNCTION_REGION,
-  PRICING_PAGE_URL,
   type ProBillingInterval,
 } from 'shared/subscription-config';
 import type { BillingCurrency } from 'shared/types';
 import { waitForAuthReady } from '../../../../services/auth';
 import { getCallableFunctions } from '../../../platform/firebase/callable-functions';
+import { buildAuthenticatedPricingUrl } from '../utils/pricing-page-url';
 
 interface BillingUrlResponse {
   url: string;
@@ -74,7 +75,7 @@ export async function createBillingPricingUrl(): Promise<string> {
   if (!HANDOFF_TOKEN_PATTERN.test(result.data.token) || !Number.isFinite(result.data.expiresAt)) {
     throw new Error('Billing service did not return a valid pricing handoff.');
   }
-  return `${PRICING_PAGE_URL}#handoff=${result.data.token}`;
+  return buildAuthenticatedPricingUrl(result.data.token, getAppEnvironment());
 }
 
 export async function claimGuestBillingSubscription(): Promise<BillingClaimResponse> {

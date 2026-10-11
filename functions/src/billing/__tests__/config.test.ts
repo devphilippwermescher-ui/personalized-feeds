@@ -12,6 +12,9 @@ const BILLING_ENVIRONMENT_NAMES = [
   'LEMON_SQUEEZY_EUR_MONTHLY_VARIANT_ID',
   'LEMON_SQUEEZY_EUR_ANNUAL_VARIANT_ID',
   'LEMON_SQUEEZY_TEST_MODE',
+  'GCLOUD_PROJECT',
+  'GOOGLE_CLOUD_PROJECT',
+  'FIREBASE_CONFIG',
 ] as const;
 
 function clearBillingEnvironment(): void {
@@ -77,5 +80,54 @@ describe('Lemon Squeezy billing configuration', () => {
     vi.stubEnv('LEMON_SQUEEZY_TEST_MODE', 'true');
 
     expect(getBillingConfiguration().stores.USD.storeId).toBe('42');
+  });
+
+  it('rejects invalid boolean and non-numeric identifiers', () => {
+    clearBillingEnvironment();
+    configureUsd();
+    vi.stubEnv('LEMON_SQUEEZY_TEST_MODE', 'yes');
+    expect(() => getBillingConfiguration()).toThrow('LEMON_SQUEEZY_TEST_MODE must be exactly true or false');
+
+    vi.stubEnv('LEMON_SQUEEZY_TEST_MODE', 'TRUE');
+    expect(() => getBillingConfiguration()).toThrow('LEMON_SQUEEZY_TEST_MODE must be exactly true or false');
+
+    vi.stubEnv('LEMON_SQUEEZY_TEST_MODE', 'true');
+    vi.stubEnv('LEMON_SQUEEZY_USD_MONTHLY_VARIANT_ID', 'monthly');
+    expect(() => getBillingConfiguration()).toThrow('LEMON_SQUEEZY_USD_MONTHLY_VARIANT_ID must be a positive integer');
+  });
+
+  it('rejects duplicated stores and variants', () => {
+    clearBillingEnvironment();
+    configureUsd();
+    vi.stubEnv('LEMON_SQUEEZY_EUR_STORE_ID', '42');
+    vi.stubEnv('LEMON_SQUEEZY_EUR_MONTHLY_VARIANT_ID', '200');
+    vi.stubEnv('LEMON_SQUEEZY_EUR_ANNUAL_VARIANT_ID', '201');
+    expect(() => getBillingConfiguration()).toThrow('Lemon Squeezy Store IDs must be unique');
+
+    vi.stubEnv('LEMON_SQUEEZY_EUR_STORE_ID', '84');
+    vi.stubEnv('LEMON_SQUEEZY_EUR_MONTHLY_VARIANT_ID', '100');
+    expect(() => getBillingConfiguration()).toThrow('Lemon Squeezy Variant IDs must be unique');
+  });
+
+  it('requires Test mode in staging and Live mode in production', () => {
+    clearBillingEnvironment();
+    configureUsd();
+    vi.stubEnv('GCLOUD_PROJECT', 'myfeedpilot-staging');
+    expect(getBillingConfiguration().testMode).toBe(true);
+
+    vi.stubEnv('GCLOUD_PROJECT', 'myfeedpilot-production');
+    expect(() => getBillingConfiguration()).toThrow('myfeedpilot-production requires LEMON_SQUEEZY_TEST_MODE=false');
+
+    vi.stubEnv('LEMON_SQUEEZY_TEST_MODE', 'false');
+    expect(getBillingConfiguration().testMode).toBe(false);
+  });
+
+  it('reads the Firebase project from FIREBASE_CONFIG when GCLOUD_PROJECT is unavailable', () => {
+    clearBillingEnvironment();
+    configureUsd();
+    vi.stubEnv('LEMON_SQUEEZY_TEST_MODE', 'false');
+    vi.stubEnv('FIREBASE_CONFIG', JSON.stringify({ projectId: 'myfeedpilot-staging' }));
+
+    expect(() => getBillingConfiguration()).toThrow('myfeedpilot-staging requires LEMON_SQUEEZY_TEST_MODE=true');
   });
 });

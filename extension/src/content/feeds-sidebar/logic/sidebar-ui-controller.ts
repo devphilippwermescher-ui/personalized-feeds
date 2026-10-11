@@ -29,7 +29,7 @@ import { ensureInit, toggleSidebar } from './sidebar-session';
 import { onFeatureSettingsChange } from '../../feature-settings';
 import type { FeedActionDeps } from './feed-actions';
 import type { MemberActionDeps } from './member-actions';
-import { openPlanModal } from '../../shared/plan-modal';
+import { openCustomerPortal, openPricingPage } from '../../subscription/public';
 import { openProfilePreferencesModal, PROFILE_PREFERENCES_UPDATED_EVENT } from '../../profile-preferences/public';
 
 interface SidebarUiControllerDeps {
@@ -208,8 +208,16 @@ export function createSidebarUiController(deps: SidebarUiControllerDeps): {
             );
           });
         },
-        openManagePlan: () =>
-          openPlanModal({ plan: deps.getIsPremium() ? 'pro' : 'free', context: 'feeds' }),
+        openCustomerPortal: () => {
+          void openCustomerPortal().catch((error) => {
+            deps.showToast(error instanceof Error ? error.message : 'Unable to open billing right now.', 'error');
+          });
+        },
+        openPricingPage: () => {
+          void openPricingPage().catch((error) => {
+            deps.showToast(error instanceof Error ? error.message : 'Unable to open pricing right now.', 'error');
+          });
+        },
         updateFeatureSetting: async (key, value) => {
           const response = await deps.sendMsg({
             type: 'SETTINGS_UPDATE',

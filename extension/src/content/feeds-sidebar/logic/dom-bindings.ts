@@ -22,7 +22,8 @@ interface SidebarDomBindingsDeps {
   showCreateFeedForm: () => void;
   selectFeedTab: (tab: 'owned' | 'shared') => void;
   openProfileSettings: () => void;
-  openManagePlan: () => void;
+  openCustomerPortal: () => void;
+  openPricingPage: () => void;
   updateFeatureSetting: (key: keyof UserFeatureSettings, value: boolean) => Promise<void>;
   renderSidebarContent: () => void;
   handleMemberSave: () => void;
@@ -64,12 +65,18 @@ export function bindSidebarDom(container: HTMLElement, deps: SidebarDomBindingsD
     showSignUp: deps.showSignUp,
   });
   container.querySelector('#lfa-account-signout-btn')?.addEventListener('click', deps.handleSignOut);
-  container.querySelector('#lfa-manage-plan-btn')?.addEventListener('click', () => {
+  const managePlanButton = container.querySelector<HTMLButtonElement>('#lfa-manage-plan-btn');
+  managePlanButton?.addEventListener('click', () => {
     container.querySelector('#lfa-account-menu')?.classList.remove('lfa-account-menu--open');
     deps.setAccountMenuOpen(false);
-    deps.openManagePlan();
+    const action = managePlanButton.dataset.planAction;
+    if (action === 'portal') {
+      deps.openCustomerPortal();
+      return;
+    }
+    deps.openPricingPage();
   });
-  container.querySelector('#lfa-footer-get-pro-btn')?.addEventListener('click', deps.openManagePlan);
+  container.querySelector('#lfa-footer-get-pro-btn')?.addEventListener('click', deps.openPricingPage);
   container.querySelector('#lfa-add-feed-btn')?.addEventListener('click', deps.showCreateFeedForm);
   container.querySelector('#lfa-profile-settings-btn')?.addEventListener('click', () => {
     container.querySelector('#lfa-account-menu')?.classList.remove('lfa-account-menu--open');

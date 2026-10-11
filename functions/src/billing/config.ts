@@ -1,5 +1,11 @@
 import type { BillingConfiguration, BillingCurrency, BillingInterval, BillingStoreConfiguration } from './types.js';
 
+const FIREBASE_PROJECT_MODE = {
+  'myfeedpilot-dev': true,
+  'myfeedpilot-staging': true,
+  'myfeedpilot-production': false,
+} as const;
+
 function getEnvironmentValue(...names: string[]): string | undefined {
   for (const name of names) {
     const value = process.env[name]?.trim();
@@ -16,14 +22,69 @@ function requireEnvironmentValue(...names: string[]): string {
   return value;
 }
 
+function parsePositiveIntegerId(value: string, name: string): string {
+  if (!/^[1-9]\d*$/.test(value) || !Number.isSafeInteger(Number(value))) {
+    throw new Error(`${name} must be a positive integer`);
+  }
+  return value;
+}
+
+function requirePositiveIntegerId(...names: string[]): string {
+  return parsePositiveIntegerId(requireEnvironmentValue(...names), names[0]);
+}
+
+function parseTestMode(): boolean {
+  const value = requireEnvironmentValue('LEMON_SQUEEZY_TEST_MODE');
+  if (value !== 'true' && value !== 'false') {
+    throw new Error('LEMON_SQUEEZY_TEST_MODE must be exactly true or false');
+  }
+  return value === 'true';
+}
+
+function getFirebaseProjectId(): string | undefined {
+  const explicitProjectId = getEnvironmentValue('GCLOUD_PROJECT', 'GOOGLE_CLOUD_PROJECT');
+  if (explicitProjectId) return explicitProjectId;
+
+  const firebaseConfig = getEnvironmentValue('FIREBASE_CONFIG');
+  if (!firebaseConfig) return undefined;
+  try {
+    const parsed = JSON.parse(firebaseConfig) as { projectId?: unknown };
+    return typeof parsed.projectId === 'string' && parsed.projectId.trim() ? parsed.projectId.trim() : undefined;
+  } catch {
+    throw new Error('FIREBASE_CONFIG must contain valid JSON');
+  }
+}
+
+function assertEnvironmentMode(testMode: boolean): void {
+  const projectId = getFirebaseProjectId();
+  if (!projectId || !(projectId in FIREBASE_PROJECT_MODE)) return;
+
+  const expectedTestMode = FIREBASE_PROJECT_MODE[projectId as keyof typeof FIREBASE_PROJECT_MODE];
+  if (testMode !== expectedTestMode) {
+    throw new Error(`${projectId} requires LEMON_SQUEEZY_TEST_MODE=${expectedTestMode ? 'true' : 'false'}`);
+  }
+}
+
+function assertUniqueStoreConfiguration(stores: BillingStoreConfiguration[]): void {
+  const storeIds = stores.map((store) => store.storeId);
+  if (new Set(storeIds).size !== storeIds.length) {
+    throw new Error('Lemon Squeezy Store IDs must be unique');
+  }
+
+  const variantIds = stores.flatMap((store) => [store.variants.monthly, store.variants.annual]);
+  if (new Set(variantIds).size !== variantIds.length) {
+    throw new Error('Lemon Squeezy Variant IDs must be unique');
+  }
+}
+
 function getUsdStoreConfiguration(): BillingStoreConfiguration {
   return {
     currency: 'USD',
     // Keep the original names as a local-only compatibility fallback.
-    storeId: requireEnvironmentValue('LEMON_SQUEEZY_USD_STORE_ID', 'LEMON_SQUEEZY_STORE_ID'),
+    storeId: requirePositiveIntegerId('LEMON_SQUEEZY_USD_STORE_ID', 'LEMON_SQUEEZY_STORE_ID'),
     variants: {
-      monthly: requireEnvironmentValue('LEMON_SQUEEZY_USD_MONTHLY_VARIANT_ID', 'LEMON_SQUEEZY_MONTHLY_VARIANT_ID'),
-      annual: requireEnvironmentValue('LEMON_SQUEEZY_USD_ANNUAL_VARIANT_ID', 'LEMON_SQUEEZY_ANNUAL_VARIANT_ID'),
+      monthly: requirePositiveIntegerId('LEMON_SQUEEZY_USD_MONTHLY_VARIANT_ID', 'LEMON_SQUEEZY_MONTHLY_VARIANT_ID'),
+      annual: requirePositiveIntegerId('LEMON_SQUEEZY_USD_ANNUAL_VARIANT_ID', 'LEMON_SQUEEZY_ANNUAL_VARIANT_ID'),
     },
   };
 }
@@ -41,16 +102,22 @@ function getOptionalEurStoreConfiguration(): BillingStoreConfiguration | undefin
 
   return {
     currency: 'EUR',
-    storeId: storeId as string,
+    storeId: parsePositiveIntegerId(storeId as string, 'LEMON_SQUEEZY_EUR_STORE_ID'),
     variants: {
-      monthly: monthlyVariantId as string,
-      annual: annualVariantId as string,
+      monthly: parsePositiveIntegerId(monthlyVariantId as string, 'LEMON_SQUEEZY_EUR_MONTHLY_VARIANT_ID'),
+      annual: parsePositiveIntegerId(annualVariantId as string, 'LEMON_SQUEEZY_EUR_ANNUAL_VARIANT_ID'),
     },
   };
 }
 
 export function getBillingConfiguration(): BillingConfiguration {
+  const testMode = parseTestMode();
+  assertEnvironmentMode(testMode);
+
+  const usdStore = getUsdStoreConfiguration();
   const eurStore = getOptionalEurStoreConfiguration();
+  assertUniqueStoreConfiguration([usdStore, ...(eurStore ? [eurStore] : [])]);
+
   const checkoutSuccessUrl =
     getEnvironmentValue('BILLING_CHECKOUT_SUCCESS_URL') ?? 'https://myfeedpilot.com/checkout/success';
   const parsedSuccessUrl = new URL(checkoutSuccessUrl);
@@ -59,10 +126,10 @@ export function getBillingConfiguration(): BillingConfiguration {
   }
   return {
     stores: {
-      USD: getUsdStoreConfiguration(),
+      USD: usdStore,
       ...(eurStore ? { EUR: eurStore } : {}),
     },
-    testMode: requireEnvironmentValue('LEMON_SQUEEZY_TEST_MODE').toLowerCase() === 'true',
+    testMode,
     checkoutSuccessUrl: parsedSuccessUrl.toString(),
   };
 }

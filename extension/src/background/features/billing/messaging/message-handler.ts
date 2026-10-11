@@ -1,10 +1,7 @@
-import { PRICING_PAGE_URL, type ProBillingInterval } from 'shared/subscription-config';
+import { type ProBillingInterval } from 'shared/subscription-config';
 import { isBillingCurrency } from 'shared/user-profile-preferences';
-import {
-  createBillingCheckoutUrl,
-  createBillingPricingUrl,
-  getBillingPortalUrl,
-} from '../services/billing-functions-client';
+import { createBillingCheckoutUrl, getBillingPortalUrl } from '../services/billing-functions-client';
+import { openPricingTabWithHandoff } from '../services/pricing-tab-service';
 import {
   dismissCurrentBillingNotice,
   startPlanSubscriptionRuntime,
@@ -34,16 +31,14 @@ function isBillingMessage(message: unknown): message is BillingMessage {
 }
 
 async function openBillingTab(message: BillingOpenMessage): Promise<BillingActionResponse> {
+  if (message.type === 'BILLING_OPEN_PRICING') {
+    await openPricingTabWithHandoff();
+    return { success: true };
+  }
+
   let url: string;
   if (message.type === 'BILLING_OPEN_CHECKOUT') {
     url = await createBillingCheckoutUrl(message.interval, message.currency);
-  } else if (message.type === 'BILLING_OPEN_PRICING') {
-    try {
-      url = await createBillingPricingUrl();
-    } catch (error) {
-      console.warn('[billing] Authenticated pricing handoff was unavailable; opening guest pricing.', error);
-      url = PRICING_PAGE_URL;
-    }
   } else {
     url = await getBillingPortalUrl();
   }

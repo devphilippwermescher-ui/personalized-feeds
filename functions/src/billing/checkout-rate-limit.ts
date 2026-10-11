@@ -3,23 +3,29 @@ import { Timestamp, type Firestore } from 'firebase-admin/firestore';
 
 const RATE_LIMIT_COLLECTION = 'billingCheckoutRateLimits';
 const RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000;
-const RATE_LIMIT_MAX_REQUESTS = 30;
+const RATE_LIMIT_MAX_REQUESTS = {
+  'firebase-user': 10,
+  'website-ip': 30,
+} as const;
+
+export type BillingRateLimitScope = keyof typeof RATE_LIMIT_MAX_REQUESTS;
 
 export class BillingRateLimitError extends Error {
   constructor() {
-    super('Website checkout rate limit exceeded');
+    super('Billing checkout rate limit exceeded');
     this.name = 'BillingRateLimitError';
   }
 }
 
-export async function enforceWebsiteCheckoutRateLimit(params: {
+export async function enforceCheckoutRateLimit(params: {
   db: Firestore;
+  scope: BillingRateLimitScope;
   fingerprint: string;
   now?: number;
 }): Promise<void> {
   const now = params.now ?? Date.now();
   const documentId = createHash('sha256')
-    .update(params.fingerprint || 'unknown', 'utf8')
+    .update(`${params.scope}:${params.fingerprint || 'unknown'}`, 'utf8')
     .digest('hex');
   const reference = params.db.collection(RATE_LIMIT_COLLECTION).doc(documentId);
 
@@ -32,7 +38,7 @@ export async function enforceWebsiteCheckoutRateLimit(params: {
         ? previousWindowStart
         : now;
     const count = windowStart === previousWindowStart && typeof previousCount === 'number' ? previousCount + 1 : 1;
-    if (count > RATE_LIMIT_MAX_REQUESTS) throw new BillingRateLimitError();
+    if (count > RATE_LIMIT_MAX_REQUESTS[params.scope]) throw new BillingRateLimitError();
     transaction.set(reference, {
       windowStart,
       count,
