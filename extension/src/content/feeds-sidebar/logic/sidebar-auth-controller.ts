@@ -11,6 +11,7 @@ import {
 
 interface SidebarAuthControllerDeps {
   closeModal: () => void;
+  getCurrentUser: () => UserInfo | null;
   setCurrentUser: (user: UserInfo | null) => void;
   setFeeds: (feeds: FeedInfo[]) => void;
   resetSignedOutState: () => void;
@@ -34,16 +35,30 @@ export function createSidebarAuthController(deps: SidebarAuthControllerDeps): {
   handleSignOut: () => Promise<void>;
 } {
   let authSessionRevision = 0;
-  let isSigningOut = false;
+  let authTransition: 'idle' | 'signing-in' | 'signing-out' = 'idle';
+  let pendingAuthentication: Promise<void> | null = null;
 
   const sendMsg = (message: Record<string, unknown>): Promise<Record<string, unknown>> => {
     const requestSessionRevision = authSessionRevision;
-    const startedDuringSignOut = isSigningOut || message.type === 'FEEDS_SIGN_OUT';
+    const startedWithAuthenticatedUser = deps.getCurrentUser() !== null;
+    const startedDuringAuthTransition =
+      authTransition !== 'idle' ||
+      message.type === 'FEEDS_SIGN_IN' ||
+      message.type === 'FEEDS_EMAIL_SIGN_IN' ||
+      message.type === 'FEEDS_EMAIL_SIGN_UP' ||
+      message.type === 'FEEDS_SIGN_OUT';
 
     return new Promise((resolve) => {
       chrome.runtime.sendMessage(message, (response) => {
         const belongsToCurrentSession = requestSessionRevision === authSessionRevision;
-        if (response?.error === SESSION_EXPIRED_MESSAGE && belongsToCurrentSession && !startedDuringSignOut) {
+        if (
+          response?.error === SESSION_EXPIRED_MESSAGE &&
+          belongsToCurrentSession &&
+          startedWithAuthenticatedUser &&
+          !startedDuringAuthTransition &&
+          authTransition === 'idle'
+        ) {
+          authSessionRevision += 1;
           handleExpiredSession({
             closeModal: deps.closeModal,
             setCurrentUser: deps.setCurrentUser,
@@ -68,6 +83,25 @@ export function createSidebarAuthController(deps: SidebarAuthControllerDeps): {
     });
   };
 
+  function runAuthentication(run: () => Promise<void>): Promise<void> {
+    if (pendingAuthentication) {
+      return pendingAuthentication;
+    }
+
+    authSessionRevision += 1;
+    authTransition = 'signing-in';
+
+    const attempt = run().finally(() => {
+      authSessionRevision += 1;
+      authTransition = 'idle';
+      if (pendingAuthentication === attempt) {
+        pendingAuthentication = null;
+      }
+    });
+    pendingAuthentication = attempt;
+    return attempt;
+  }
+
   const authenticationDeps = {
     sendMsg,
     setIsLoading: deps.setIsLoading,
@@ -86,12 +120,12 @@ export function createSidebarAuthController(deps: SidebarAuthControllerDeps): {
         setCurrentUser: deps.setCurrentUser,
         setAuthErrorMessage: deps.setAuthErrorMessage,
       }),
-    handleSignIn: () => handleSignIn(authenticationDeps),
-    handleEmailSignIn: (input) => handleEmailSignIn(input, authenticationDeps),
-    handleEmailSignUp: (input) => handleEmailSignUp(input, authenticationDeps),
+    handleSignIn: () => runAuthentication(() => handleSignIn(authenticationDeps)),
+    handleEmailSignIn: (input) => runAuthentication(() => handleEmailSignIn(input, authenticationDeps)),
+    handleEmailSignUp: (input) => runAuthentication(() => handleEmailSignUp(input, authenticationDeps)),
     handleSignOut: async () => {
       authSessionRevision += 1;
-      isSigningOut = true;
+      authTransition = 'signing-out';
 
       try {
         await handleSignOut({
@@ -106,7 +140,8 @@ export function createSidebarAuthController(deps: SidebarAuthControllerDeps): {
           renderSidebarContent: deps.renderSidebarContent,
         });
       } finally {
-        isSigningOut = false;
+        authSessionRevision += 1;
+        authTransition = 'idle';
       }
     },
   };

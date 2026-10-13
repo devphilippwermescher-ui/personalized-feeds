@@ -18,8 +18,22 @@ interface BillingHandoffWriteModel {
   checkoutSessionId?: string;
 }
 
+export type BillingHandoffReservation =
+  | {
+      state: 'reserved';
+      reservationId: string;
+      userId: string;
+      email?: string;
+    }
+  | {
+      state: 'consumed';
+      userId: string;
+      email?: string;
+      checkoutSessionId: string;
+    };
+
 export class BillingHandoffError extends Error {
-  constructor(readonly code: 'HANDOFF_INVALID' | 'HANDOFF_EXPIRED' | 'HANDOFF_USED') {
+  constructor(readonly code: 'HANDOFF_INVALID' | 'HANDOFF_EXPIRED' | 'HANDOFF_IN_PROGRESS' | 'HANDOFF_USED') {
     super(code);
     this.name = 'BillingHandoffError';
   }
@@ -56,7 +70,7 @@ export async function reserveBillingHandoff(params: {
   db: Firestore;
   token: string;
   now?: number;
-}): Promise<{ reservationId: string; userId: string; email?: string }> {
+}): Promise<BillingHandoffReservation> {
   if (!HANDOFF_TOKEN_PATTERN.test(params.token)) {
     throw new BillingHandoffError('HANDOFF_INVALID');
   }
@@ -71,19 +85,30 @@ export async function reserveBillingHandoff(params: {
     if (typeof data.expiresAt !== 'number' || data.expiresAt <= now) {
       throw new BillingHandoffError('HANDOFF_EXPIRED');
     }
-    if (typeof data.consumedAt === 'number') throw new BillingHandoffError('HANDOFF_USED');
+    if (typeof data.userId !== 'string' || !data.userId || data.userId.includes('/')) {
+      throw new BillingHandoffError('HANDOFF_INVALID');
+    }
+    if (typeof data.consumedAt === 'number') {
+      if (typeof data.checkoutSessionId !== 'string' || !data.checkoutSessionId) {
+        throw new BillingHandoffError('HANDOFF_USED');
+      }
+      return {
+        state: 'consumed',
+        userId: data.userId,
+        ...(typeof data.email === 'string' && data.email ? { email: data.email } : {}),
+        checkoutSessionId: data.checkoutSessionId,
+      };
+    }
     if (
       typeof data.reservationId === 'string' &&
       typeof data.reservedAt === 'number' &&
       data.reservedAt + HANDOFF_RESERVATION_LIFETIME_MS > now
     ) {
-      throw new BillingHandoffError('HANDOFF_USED');
-    }
-    if (typeof data.userId !== 'string' || !data.userId || data.userId.includes('/')) {
-      throw new BillingHandoffError('HANDOFF_INVALID');
+      throw new BillingHandoffError('HANDOFF_IN_PROGRESS');
     }
     transaction.set(reference, { reservationId, reservedAt: now }, { merge: true });
     return {
+      state: 'reserved',
       reservationId,
       userId: data.userId,
       ...(typeof data.email === 'string' && data.email ? { email: data.email } : {}),

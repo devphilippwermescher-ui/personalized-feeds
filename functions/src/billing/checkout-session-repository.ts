@@ -176,6 +176,34 @@ export async function completeCheckoutSession(params: {
   });
 }
 
+export async function getReadyCheckoutSessionUrl(params: {
+  db: Firestore;
+  userId: string;
+  sessionId: string;
+  now?: number;
+}): Promise<string | null> {
+  assertValidUserId(params.userId);
+  if (!params.sessionId) return null;
+
+  const now = params.now ?? Date.now();
+  const lockSnapshot = await params.db.collection(USER_CHECKOUT_LOCK_COLLECTION).doc(params.userId).get();
+  if (!lockSnapshot.exists || lockSnapshot.get('sessionId') !== params.sessionId) return null;
+
+  const lock = lockSnapshot.data() as Partial<UserCheckoutLockWriteModel> | undefined;
+  const effectiveLockExpiresAt = lock ? getEffectiveLockExpiresAt(lock) : null;
+  if (
+    lock?.status !== 'ready' ||
+    typeof lock.checkoutUrl !== 'string' ||
+    !lock.checkoutUrl ||
+    effectiveLockExpiresAt === null ||
+    effectiveLockExpiresAt <= now
+  ) {
+    return null;
+  }
+
+  return lock.checkoutUrl;
+}
+
 export async function createGuestCheckoutSession(params: {
   db: Firestore;
   configuration: BillingStoreConfiguration;

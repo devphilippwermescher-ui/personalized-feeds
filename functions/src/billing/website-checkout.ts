@@ -6,6 +6,7 @@ import {
   createCheckoutSession,
   createGuestCheckoutSession,
   deleteCheckoutSession,
+  getReadyCheckoutSessionUrl,
 } from './checkout-session-repository.js';
 import { getBillingConfiguration, isBillingCurrency, isBillingInterval } from './config.js';
 import { BillingRateLimitError, enforceCheckoutRateLimit } from './checkout-rate-limit.js';
@@ -131,10 +132,18 @@ export async function createWebsiteCheckout(params: {
   let providerCheckoutCreated = false;
   try {
     if (params.request.handoffToken) {
+      let handoff;
       try {
-        reservation = await reserveBillingHandoff({ db: params.db, token: params.request.handoffToken });
+        handoff = await reserveBillingHandoff({ db: params.db, token: params.request.handoffToken });
       } catch (error) {
         if (error instanceof BillingHandoffError) {
+          if (error.code === 'HANDOFF_IN_PROGRESS') {
+            throw new WebsiteCheckoutError(
+              409,
+              error.code,
+              'Checkout is still opening. Please wait a moment.'
+            );
+          }
           throw new WebsiteCheckoutError(
             error.code === 'HANDOFF_EXPIRED' ? 410 : 401,
             error.code,
@@ -143,10 +152,22 @@ export async function createWebsiteCheckout(params: {
         }
         throw error;
       }
-      const existingSubscription = await params.db.doc(`users/${reservation.userId}/billing/subscription`).get();
+      const existingSubscription = await params.db.doc(`users/${handoff.userId}/billing/subscription`).get();
       if (hasCurrentProAccess(existingSubscription.data())) {
         throw new WebsiteCheckoutError(409, 'ALREADY_PRO', 'Your Pro subscription is already active.');
       }
+      if (handoff.state === 'consumed') {
+        const checkoutUrl = await getReadyCheckoutSessionUrl({
+          db: params.db,
+          userId: handoff.userId,
+          sessionId: handoff.checkoutSessionId,
+        });
+        if (!checkoutUrl) {
+          throw new WebsiteCheckoutError(410, 'HANDOFF_EXPIRED', 'This extension checkout link has expired.');
+        }
+        return { url: checkoutUrl };
+      }
+      reservation = handoff;
       await enforceCheckoutRateLimit({
         db: params.db,
         scope: 'firebase-user',

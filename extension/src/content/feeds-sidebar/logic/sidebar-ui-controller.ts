@@ -26,6 +26,12 @@ import {
   restoreSidebarDomSnapshot,
 } from './sidebar-render';
 import { ensureInit, toggleSidebar } from './sidebar-session';
+import {
+  captureAuthFormStates,
+  createEmptyAuthFormStates,
+  restoreAuthFormState,
+} from './auth-form-state';
+import { canReuseAuthSurface, getAuthSurfaceRenderKey } from './auth-surface-render-state';
 import { onFeatureSettingsChange } from '../../feature-settings';
 import type { FeedActionDeps } from './feed-actions';
 import type { MemberActionDeps } from './member-actions';
@@ -104,6 +110,8 @@ export function createSidebarUiController(deps: SidebarUiControllerDeps): {
   let settingsMenuOpen = false;
   let accountMenuOpen = false;
   let authMode: SidebarAuthMode = 'sign-in';
+  let authFormStates = createEmptyAuthFormStates();
+  let lastAuthSurfaceRenderKey: string | null = null;
   let sidebarBindingsFrameId: number | null = null;
 
   const filterFeeds = (query: string): void => {
@@ -116,7 +124,24 @@ export function createSidebarUiController(deps: SidebarUiControllerDeps): {
   };
 
   const renderSidebarInner = (container: HTMLElement): void => {
-    if (deps.getCurrentUser()) authMode = 'sign-in';
+    const currentUser = deps.getCurrentUser();
+    if (currentUser) {
+      authMode = 'sign-in';
+      authFormStates = createEmptyAuthFormStates();
+      lastAuthSurfaceRenderKey = null;
+    } else {
+      const nextAuthSurfaceRenderKey = getAuthSurfaceRenderKey({
+        mode: authMode,
+        errorMessage: deps.getAuthErrorMessage(),
+        isLoading: deps.getIsLoading(),
+        isInitializing: deps.getIsInitializing(),
+      });
+      if (canReuseAuthSurface(container, lastAuthSurfaceRenderKey, nextAuthSurfaceRenderKey)) {
+        return;
+      }
+      authFormStates = captureAuthFormStates(container, authFormStates);
+      lastAuthSurfaceRenderKey = nextAuthSurfaceRenderKey;
+    }
     const previousRenderedExpandedFeedId = lastRenderedExpandedFeedId;
     const nextRenderedExpandedFeedId = deps.getExpandedFeedId();
     const previousExpandedFeedHeight = getExpandedFeedGroupHeight(container, nextRenderedExpandedFeedId);
@@ -129,7 +154,7 @@ export function createSidebarUiController(deps: SidebarUiControllerDeps): {
 
     renderSidebarInnerMarkup({
       container,
-      currentUser: deps.getCurrentUser(),
+      currentUser,
       featureSettings: deps.getFeatureSettings(),
       feedsList: deps.getFeeds(),
       sharedFeedsList: deps.getSharedFeeds(),
@@ -149,6 +174,10 @@ export function createSidebarUiController(deps: SidebarUiControllerDeps): {
       authMode,
       getLogoUrl,
     });
+
+    if (!currentUser) {
+      restoreAuthFormState(container, authMode, authFormStates[authMode]);
+    }
 
     if (settingsMenuOpen) {
       container.querySelector('#lfa-settings-menu')?.classList.add('lfa-settings-menu--open');

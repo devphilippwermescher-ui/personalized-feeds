@@ -10,8 +10,8 @@ import {
   formatUserInfo,
   getAuthenticatedFeedsUser,
   persistFeatureSettingsToStorage,
-  startOffscreenAuth,
 } from '../../auth/services/authenticated-user';
+import { startOffscreenAuth } from '../../auth/services/offscreen-google-auth-service';
 import { resetCurrentUserAnalyticsForDevelopment } from '../../profile-analytics/profile-analytics-dev-reset';
 
 const DASHBOARD_ORIGINS = new Set([

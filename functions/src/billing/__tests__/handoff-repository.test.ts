@@ -51,13 +51,15 @@ describe('billing handoffs', () => {
     expect(JSON.stringify(storedHandoff)).not.toContain(created.token);
 
     const reserved = await reserveBillingHandoff({ db, token: created.token, now: 2_000 });
-    expect(reserved).toMatchObject({ userId: 'firebase-user', email: 'user@example.com' });
+    expect(reserved).toMatchObject({ state: 'reserved', userId: 'firebase-user', email: 'user@example.com' });
+    if (reserved.state !== 'reserved') throw new Error('Expected the handoff to be reserved');
     await expect(reserveBillingHandoff({ db, token: created.token, now: 2_001 })).rejects.toMatchObject({
-      code: 'HANDOFF_USED',
+      code: 'HANDOFF_IN_PROGRESS',
     } satisfies Partial<BillingHandoffError>);
 
     await releaseBillingHandoff({ db, token: created.token, reservationId: reserved.reservationId });
     const reservedAgain = await reserveBillingHandoff({ db, token: created.token, now: 2_002 });
+    if (reservedAgain.state !== 'reserved') throw new Error('Expected the released handoff to be reserved again');
     await completeBillingHandoff({
       db,
       token: created.token,
@@ -65,8 +67,11 @@ describe('billing handoffs', () => {
       checkoutSessionId: 'checkout-session',
       now: 3_000,
     });
-    await expect(reserveBillingHandoff({ db, token: created.token, now: 3_001 })).rejects.toMatchObject({
-      code: 'HANDOFF_USED',
-    } satisfies Partial<BillingHandoffError>);
+    await expect(reserveBillingHandoff({ db, token: created.token, now: 3_001 })).resolves.toEqual({
+      state: 'consumed',
+      userId: 'firebase-user',
+      email: 'user@example.com',
+      checkoutSessionId: 'checkout-session',
+    });
   });
 });

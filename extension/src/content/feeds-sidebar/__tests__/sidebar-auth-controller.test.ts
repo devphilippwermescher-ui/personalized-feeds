@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSidebarAuthController } from '../logic/sidebar-auth-controller';
 import { SESSION_EXPIRED_MESSAGE } from '../logic/sidebar-session';
+import type { UserInfo } from '../types';
 
 type MessageCallback = (response?: Record<string, unknown>) => void;
 
@@ -14,9 +15,18 @@ function createController() {
 
   const setAuthErrorMessage = vi.fn();
   const renderSidebarContent = vi.fn();
+  let currentUser: UserInfo | null = {
+    userId: 'user-1',
+    displayName: 'Example User',
+    email: 'user@example.com',
+    photoURL: '',
+  };
   const controller = createSidebarAuthController({
     closeModal: vi.fn(),
-    setCurrentUser: vi.fn(),
+    getCurrentUser: () => currentUser,
+    setCurrentUser: (user) => {
+      currentUser = user;
+    },
     setFeeds: vi.fn(),
     resetSignedOutState: vi.fn(),
     setExpandedFeedId: vi.fn(),
@@ -39,6 +49,10 @@ function createController() {
     },
     setAuthErrorMessage,
     renderSidebarContent,
+    setCurrentUser: (user: UserInfo | null) => {
+      currentUser = user;
+    },
+    getCurrentUser: () => currentUser,
   };
 }
 
@@ -70,5 +84,35 @@ describe('sidebar auth controller', () => {
     await request;
 
     expect(setAuthErrorMessage).toHaveBeenCalledWith(SESSION_EXPIRED_MESSAGE);
+  });
+
+  it('does not report an expired session for a request started after intentional sign-out', async () => {
+    const { controller, respond, setAuthErrorMessage } = createController();
+    const signOut = controller.handleSignOut();
+
+    respond('FEEDS_SIGN_OUT', { success: true });
+    await signOut;
+
+    const signedOutRequest = controller.sendMsg({ type: 'PLAN_GET' });
+    respond('PLAN_GET', { error: SESSION_EXPIRED_MESSAGE });
+    await signedOutRequest;
+
+    expect(setAuthErrorMessage).not.toHaveBeenCalledWith(SESSION_EXPIRED_MESSAGE);
+  });
+
+  it('ignores a signed-out response that arrives during a new sign-in', async () => {
+    const { controller, respond, setAuthErrorMessage } = createController();
+    const signOut = controller.handleSignOut();
+    respond('FEEDS_SIGN_OUT', { success: true });
+    await signOut;
+
+    const signedOutRequest = controller.sendMsg({ type: 'PLAN_GET' });
+    const signIn = controller.handleSignIn();
+
+    respond('PLAN_GET', { error: SESSION_EXPIRED_MESSAGE });
+    respond('FEEDS_SIGN_IN', { success: false, error: 'Google sign-in was cancelled.' });
+    await Promise.all([signedOutRequest, signIn]);
+
+    expect(setAuthErrorMessage).not.toHaveBeenCalledWith(SESSION_EXPIRED_MESSAGE);
   });
 });

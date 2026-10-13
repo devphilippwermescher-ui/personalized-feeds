@@ -25,7 +25,11 @@ export function normalizeFeedsError(error: unknown, fallback = 'Something went w
     normalized.includes('auth/wrong-password') ||
     normalized.includes('auth/user-not-found')
   ) {
-    return 'Incorrect email or password.';
+    return "Incorrect email or password. Don't have an account? Sign up.";
+  }
+
+  if (normalized.includes('auth/operation-not-allowed')) {
+    return 'Email sign-in is currently unavailable. Please use Google sign-in.';
   }
 
   if (normalized.includes('auth/email-already-in-use')) {

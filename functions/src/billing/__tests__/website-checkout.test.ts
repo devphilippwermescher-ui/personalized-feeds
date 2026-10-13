@@ -64,4 +64,19 @@ describe('website checkout request validation', () => {
     });
     expect(error.details).not.toHaveProperty('checkoutUrl');
   });
+
+  it('represents an in-progress handoff as a retryable conflict', () => {
+    const error = new WebsiteCheckoutError(
+      409,
+      'HANDOFF_IN_PROGRESS',
+      'Checkout is still opening. Please wait a moment.'
+    );
+
+    expect(getWebsiteCheckoutErrorBody(error)).toEqual({
+      error: {
+        code: 'HANDOFF_IN_PROGRESS',
+        message: 'Checkout is still opening. Please wait a moment.',
+      },
+    });
+  });
 });

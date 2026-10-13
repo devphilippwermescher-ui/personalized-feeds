@@ -8,7 +8,6 @@ import type { UserFeatureSettings, UserProfilePreferences } from 'shared/types';
 import { isBillingCurrency, normalizeUserProfilePreferences } from 'shared/user-profile-preferences';
 import {
   clearStoredFeedsAuthTokens,
-  closeOffscreenDocument,
   DEFAULT_FEATURE_SETTINGS,
   FEATURE_SETTINGS_STORAGE_KEY,
   formatUserInfo,
@@ -19,9 +18,8 @@ import {
   persistUserProfilePreferencesToStorage,
   PROFILE_PREFERENCES_STORAGE_KEY,
   removeStorageValue,
-  resolvePendingOffscreenAuth,
-  startOffscreenAuth,
 } from '../services/authenticated-user';
+import { resolvePendingOffscreenAuth, startOffscreenAuth } from '../services/offscreen-google-auth-service';
 import { resetAuthenticatedUserProfileReadiness } from '../services/user-profile-readiness';
 import { clearProfileViewersAlarm } from '../../profile-viewers/profile-viewers-coordinator-storage';
 import { normalizeFeedsError } from '../../feeds/errors/feeds-error';
@@ -66,7 +64,6 @@ export function registerAuthSettingsMessageHandler(): void {
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === 'OFFSCREEN_AUTH_RESULT') {
       resolvePendingOffscreenAuth(message);
-      void closeOffscreenDocument();
 
       sendResponse({ success: true });
       return true;

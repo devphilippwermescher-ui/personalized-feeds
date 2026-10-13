@@ -100,6 +100,7 @@ export function startFeedsSidebar(): void {
   const { sendMsg, checkAuth, handleSignIn, handleEmailSignIn, handleEmailSignUp, handleSignOut } =
     createSidebarAuthController({
       closeModal: () => feedActionsController?.closeModal(),
+      getCurrentUser: () => currentUser,
       setCurrentUser: (user) => {
         currentUser = user;
       },

@@ -5,6 +5,7 @@ import {
   completeCheckoutSession,
   createCheckoutSession,
   createGuestCheckoutSession,
+  getReadyCheckoutSessionUrl,
 } from '../checkout-session-repository.js';
 
 function createTransactionalDb() {
@@ -12,6 +13,7 @@ function createTransactionalDb() {
   let transactionQueue = Promise.resolve();
   const reference = (path: string) => ({
     path,
+    get: vi.fn(async () => snapshot(path)),
     set: vi.fn(async (value: Record<string, unknown>) => documents.set(path, value)),
     delete: vi.fn(async () => documents.delete(path)),
   });
@@ -180,6 +182,70 @@ describe('billing checkout sessions', () => {
       sessionId: first.sessionId,
       checkoutUrl: 'https://store.lemonsqueezy.com/checkout/custom/checkout-id',
     });
+  });
+
+  it('recovers the same ready checkout after a client loses the original response', async () => {
+    const { db } = createTransactionalDb();
+    const created = await createCheckoutSession({
+      db,
+      userId: 'firebase-user',
+      configuration: {
+        currency: 'USD',
+        storeId: '42',
+        variants: { monthly: '100', annual: '101' },
+      },
+      interval: 'monthly',
+      testMode: true,
+      now: 1_000,
+    });
+    if (created.state !== 'created') throw new Error('Expected a newly created checkout session');
+    await completeCheckoutSession({
+      db,
+      userId: 'firebase-user',
+      sessionId: created.sessionId,
+      checkoutUrl: 'https://store.lemonsqueezy.com/checkout/custom/checkout-id',
+    });
+
+    await expect(
+      getReadyCheckoutSessionUrl({
+        db,
+        userId: 'firebase-user',
+        sessionId: created.sessionId,
+        now: 2_000,
+      })
+    ).resolves.toBe('https://store.lemonsqueezy.com/checkout/custom/checkout-id');
+  });
+
+  it('does not recover a checkout after its short-lived ready lock expires', async () => {
+    const { db } = createTransactionalDb();
+    const created = await createCheckoutSession({
+      db,
+      userId: 'firebase-user',
+      configuration: {
+        currency: 'USD',
+        storeId: '42',
+        variants: { monthly: '100', annual: '101' },
+      },
+      interval: 'monthly',
+      testMode: true,
+      now: 1_000,
+    });
+    if (created.state !== 'created') throw new Error('Expected a newly created checkout session');
+    await completeCheckoutSession({
+      db,
+      userId: 'firebase-user',
+      sessionId: created.sessionId,
+      checkoutUrl: 'https://store.lemonsqueezy.com/checkout/custom/checkout-id',
+    });
+
+    await expect(
+      getReadyCheckoutSessionUrl({
+        db,
+        userId: 'firebase-user',
+        sessionId: created.sessionId,
+        now: 301_001,
+      })
+    ).resolves.toBeNull();
   });
 
   it('reports the existing USD checkout when the user switches to EUR', async () => {
