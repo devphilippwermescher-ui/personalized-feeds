@@ -11,8 +11,6 @@ export interface BillingNotice {
   endsAt?: number;
 }
 
-export const BILLING_ENDING_WARNING_MS = 7 * 24 * 60 * 60 * 1_000;
-
 function noticeTimestamp(subscription: BillingSubscription): number {
   return (
     subscription.endsAt ??
@@ -72,7 +70,7 @@ export function resolveBillingNotice(
   }
 
   const willEnd = subscription.status === 'cancelled' || subscription.cancelAtPeriodEnd === true;
-  if (willEnd && paidUntil !== undefined && paidUntil > now && paidUntil - now <= BILLING_ENDING_WARNING_MS) {
+  if (willEnd && paidUntil !== undefined && paidUntil > now) {
     return {
       id: noticeId('ending_soon', subscription, paidUntil),
       kind: 'ending_soon',

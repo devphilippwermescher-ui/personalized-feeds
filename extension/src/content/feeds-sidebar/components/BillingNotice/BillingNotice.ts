@@ -17,8 +17,8 @@ function formatEndDate(timestamp: number): string {
 export function getBillingNoticeContent(notice: BillingNotice): BillingNoticeContent {
   if (notice.kind === 'ending_soon') {
     return {
-      title: 'Your Pro plan ends soon',
-      message: `Your Pro access ends on ${formatEndDate(notice.endsAt!)}. Renew now to keep all feeds and profiles unlocked.`,
+      title: 'Subscription cancelled',
+      message: `Your Pro access stays active until ${formatEndDate(notice.endsAt!)}.`,
       actionLabel: 'Keep Pro',
     };
   }

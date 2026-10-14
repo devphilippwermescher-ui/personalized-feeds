@@ -28,6 +28,12 @@
       "fieldPath": "deleteAt",
       "ttl": true,
       "indexes": []
+    },
+    {
+      "collectionGroup": "billingUserCheckoutLocks",
+      "fieldPath": "deleteAt",
+      "ttl": true,
+      "indexes": []
     }
   ]
 }

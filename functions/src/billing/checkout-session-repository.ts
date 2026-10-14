@@ -4,9 +4,10 @@ import type { BillingInterval, BillingStoreConfiguration } from './types.js';
 
 const CHECKOUT_SESSION_COLLECTION = 'billingCheckoutSessions';
 const USER_CHECKOUT_LOCK_COLLECTION = 'billingUserCheckoutLocks';
-const CHECKOUT_LIFETIME_MS = 5 * 60 * 1000;
 const CHECKOUT_CREATION_LOCK_LIFETIME_MS = 10 * 1000;
-const WEBHOOK_DELIVERY_GRACE_MS = 5 * 60 * 1000;
+const READY_CHECKOUT_LOCK_LIFETIME_MS = 5 * 60 * 1000;
+const PROVIDER_CHECKOUT_LIFETIME_MS = 30 * 60 * 1000;
+const WEBHOOK_DELIVERY_GRACE_MS = 10 * 60 * 1000;
 
 export interface CheckoutSessionWriteModel {
   identityType: 'user' | 'guest';
@@ -63,7 +64,7 @@ function getEffectiveLockExpiresAt(lock: Partial<UserCheckoutLockWriteModel>): n
   if (typeof lock.expiresAt !== 'number') return null;
   if (typeof lock.createdAt !== 'number') return lock.expiresAt;
   const maximumLifetime =
-    lock.status === 'ready' ? CHECKOUT_LIFETIME_MS : CHECKOUT_CREATION_LOCK_LIFETIME_MS;
+    lock.status === 'ready' ? READY_CHECKOUT_LOCK_LIFETIME_MS : CHECKOUT_CREATION_LOCK_LIFETIME_MS;
   return Math.min(lock.expiresAt, lock.createdAt + maximumLifetime);
 }
 
@@ -78,7 +79,7 @@ export async function createCheckoutSession(params: {
   assertValidUserId(params.userId);
   const now = params.now ?? Date.now();
   const sessionId = randomUUID();
-  const checkoutExpiresAt = now + CHECKOUT_LIFETIME_MS;
+  const checkoutExpiresAt = now + PROVIDER_CHECKOUT_LIFETIME_MS;
   const creationLockExpiresAt = now + CHECKOUT_CREATION_LOCK_LIFETIME_MS;
   const sessionExpiresAt = checkoutExpiresAt + WEBHOOK_DELIVERY_GRACE_MS;
   const session: CheckoutSessionWriteModel = {
@@ -160,16 +161,18 @@ export async function completeCheckoutSession(params: {
       throw new Error('Checkout lock no longer matches the created session');
     }
     const checkoutExpiresAt = lockSnapshot.get('checkoutExpiresAt');
-    if (typeof checkoutExpiresAt !== 'number') {
+    const createdAt = lockSnapshot.get('createdAt');
+    if (typeof checkoutExpiresAt !== 'number' || typeof createdAt !== 'number') {
       throw new Error('Checkout lock does not contain a valid expiration time');
     }
+    const readyLockExpiresAt = Math.min(checkoutExpiresAt, createdAt + READY_CHECKOUT_LOCK_LIFETIME_MS);
     transaction.set(
       lockRef,
       {
         status: 'ready',
         checkoutUrl: params.checkoutUrl,
-        expiresAt: checkoutExpiresAt,
-        deleteAt: Timestamp.fromMillis(checkoutExpiresAt),
+        expiresAt: readyLockExpiresAt,
+        deleteAt: Timestamp.fromMillis(readyLockExpiresAt),
       },
       { merge: true }
     );
@@ -213,7 +216,7 @@ export async function createGuestCheckoutSession(params: {
 }): Promise<{ sessionId: string; session: CheckoutSessionWriteModel }> {
   const now = params.now ?? Date.now();
   const sessionId = randomUUID();
-  const checkoutExpiresAt = now + CHECKOUT_LIFETIME_MS;
+  const checkoutExpiresAt = now + PROVIDER_CHECKOUT_LIFETIME_MS;
   const sessionExpiresAt = checkoutExpiresAt + WEBHOOK_DELIVERY_GRACE_MS;
   const session: CheckoutSessionWriteModel = {
     identityType: 'guest',

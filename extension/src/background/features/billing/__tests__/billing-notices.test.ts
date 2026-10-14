@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BILLING_ENDING_WARNING_MS, resolveBillingNotice } from 'shared/billing-notices';
+import { resolveBillingNotice } from 'shared/billing-notices';
 import type { BillingSubscription } from 'shared/plans';
 import type { BillingPaymentStatus } from 'shared/billing-payment-status';
 
@@ -20,25 +20,26 @@ describe('billing notification policy', () => {
     expect(resolveBillingNotice(subscription({ renewsAt: NOW + 24 * 60 * 60 * 1_000 }), NOW)).toBeNull();
   });
 
-  it('shows a cancelled subscription warning only inside the final seven days', () => {
-    const outsideWindow = subscription({
+  it('shows a cancellation notice immediately while Pro access remains active', () => {
+    const endsAt = NOW + 30 * 24 * 60 * 60 * 1_000;
+    const cancelled = subscription({
       status: 'cancelled',
       cancelAtPeriodEnd: true,
-      endsAt: NOW + BILLING_ENDING_WARNING_MS + 1,
+      endsAt,
     });
-    const insideWindow = subscription({
-      status: 'cancelled',
+    const scheduledToCancel = subscription({
       cancelAtPeriodEnd: true,
-      endsAt: NOW + BILLING_ENDING_WARNING_MS,
+      currentPeriodEnd: endsAt,
     });
 
-    expect(resolveBillingNotice(outsideWindow, NOW)).toBeNull();
-    expect(resolveBillingNotice(insideWindow, NOW)).toEqual({
-      id: `ending_soon--subscription-1--${NOW + BILLING_ENDING_WARNING_MS}`,
+    const expectedNotice = {
+      id: `ending_soon--subscription-1--${endsAt}`,
       kind: 'ending_soon',
       action: 'portal',
-      endsAt: NOW + BILLING_ENDING_WARNING_MS,
-    });
+      endsAt,
+    };
+    expect(resolveBillingNotice(cancelled, NOW)).toEqual(expectedNotice);
+    expect(resolveBillingNotice(scheduledToCancel, NOW)).toEqual(expectedNotice);
   });
 
   it('shows a payment warning immediately and keeps its id stable for the same failed renewal', () => {

@@ -208,7 +208,7 @@ API key не можна зберігати в GitHub або client-side code; Le
 
 ### Ще потрібно
 
-- [x] API checkout має 5-хвилинний `expires_at`, короткий 10-секундний lock захищає створення від подвійного запиту, а server-owned session зберігається ще 5 хвилин лише для доставки webhook.^12
+- [x] API checkout має 30-хвилинний `expires_at`, короткий 10-секундний lock захищає створення від подвійного запиту, готовий checkout повторно використовується 5 хвилин, а server-owned session зберігається ще 10 хвилин для доставки webhook.^12
 - [x] Заборонити новий checkout для `active`, `past_due` і cancelled grace; чинний користувач керує оплатою через customer portal.
 - [ ] Вирішити поведінку для `unpaid`: update payment/resubscribe, не створюючи дві паралельні підписки без закриття старої.
 - [x] Додати per-UID rate limit/cooldown; abuse monitoring залишається окремою operational задачею.

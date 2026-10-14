@@ -70,8 +70,8 @@ const renewsAt = new Date(now);
 if (interval === 'annual') renewsAt.setUTCFullYear(renewsAt.getUTCFullYear() + 1);
 else renewsAt.setUTCMonth(renewsAt.getUTCMonth() + 1);
 const checkoutSessionId = randomUUID();
-const checkoutExpiresAt = now.getTime() + 5 * 60 * 1000;
-const checkoutSessionExpiresAt = checkoutExpiresAt + 5 * 60 * 1000;
+const checkoutExpiresAt = now.getTime() + 30 * 60 * 1000;
+const checkoutSessionExpiresAt = checkoutExpiresAt + 10 * 60 * 1000;
 const firestoreHost = process.env.FIRESTORE_EMULATOR_HOST || '127.0.0.1:8080';
 const projectId = getArgument('project', 'myfeedpilot-dev');
 const checkoutSessionUrl =

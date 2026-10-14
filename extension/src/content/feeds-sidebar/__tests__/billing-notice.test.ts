@@ -10,8 +10,8 @@ describe('billing notice card', () => {
       endsAt: Date.parse('2026-09-30T12:00:00.000Z'),
     });
 
-    expect(content.title).toBe('Your Pro plan ends soon');
-    expect(content.message).toContain('September 30, 2026');
+    expect(content.title).toBe('Subscription cancelled');
+    expect(content.message).toBe('Your Pro access stays active until September 30, 2026.');
     expect(content.actionLabel).toBe('Keep Pro');
   });
 

@@ -74,16 +74,16 @@ describe('billing checkout sessions', () => {
         interval: 'annual',
         testMode: true,
         createdAt: 1_000,
-        checkoutExpiresAt: 301_000,
-        expiresAt: 601_000,
+        checkoutExpiresAt: 1_801_000,
+        expiresAt: 2_401_000,
       })
     );
-    expect(result.session.deleteAt.toMillis()).toBe(601_000);
+    expect(result.session.deleteAt.toMillis()).toBe(2_401_000);
     expect(documents.get('billingUserCheckoutLocks/firebase-user')).toEqual(
       expect.objectContaining({
         sessionId: result.sessionId,
         status: 'creating',
-        checkoutExpiresAt: 301_000,
+        checkoutExpiresAt: 1_801_000,
         expiresAt: 11_000,
       })
     );
@@ -112,8 +112,11 @@ describe('billing checkout sessions', () => {
         identityType: 'guest',
         storeId: '42',
         variantId: 'monthly-variant',
+        checkoutExpiresAt: 1_801_000,
+        expiresAt: 2_401_000,
       })
     );
+    expect(set.mock.calls[0]?.[0].deleteAt.toMillis()).toBe(2_401_000);
     expect(set.mock.calls[0]?.[0]).not.toHaveProperty('userId');
   });
 
