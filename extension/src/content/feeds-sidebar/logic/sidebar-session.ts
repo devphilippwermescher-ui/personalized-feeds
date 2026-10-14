@@ -16,6 +16,8 @@ interface SidebarSessionDeps {
   setIsPremium: (value: boolean) => void;
   loadPlan: (force?: boolean) => Promise<void>;
   setAuthErrorMessage: (value: string) => void;
+  setGuestClaimVerificationRequired: (required: boolean) => void;
+  setInitialVerificationEmailDeliveryResult: (sent: boolean | null) => void;
   getSidebarEl: () => HTMLElement | null;
   getTriggerBtn: () => HTMLElement | null;
   closeModal?: () => void;
@@ -47,7 +49,10 @@ async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: s
 }
 
 export async function checkAuth(
-  deps: Pick<SidebarSessionDeps, 'sendMsg' | 'setCurrentUser' | 'setAuthErrorMessage'>
+  deps: Pick<
+    SidebarSessionDeps,
+    'sendMsg' | 'setCurrentUser' | 'setAuthErrorMessage' | 'setGuestClaimVerificationRequired'
+  >
 ): Promise<void> {
   const resp = await deps.sendMsg({ type: 'FEEDS_GET_AUTH_STATE' });
   if (resp?.isAuthenticated) {
@@ -61,8 +66,10 @@ export async function checkAuth(
       authPhotoURL: (resp.authPhotoURL as string) || '',
       billingCurrency: resp.billingCurrency === 'USD' ? 'USD' : 'EUR',
     });
+    deps.setGuestClaimVerificationRequired(resp.guestClaimVerificationRequired === true);
   } else {
     deps.setCurrentUser(null);
+    deps.setGuestClaimVerificationRequired(false);
   }
 }
 
@@ -80,11 +87,13 @@ export function handleExpiredSession(
     | 'setSharedFeeds'
     | 'setActiveMemberEditor'
     | 'setIsPremium'
+    | 'setGuestClaimVerificationRequired'
   >
 ): void {
   deps.closeModal?.();
   deps.setCurrentUser(null);
   deps.setIsPremium(false);
+  deps.setGuestClaimVerificationRequired(false);
   deps.setFeeds([]);
   deps.setSharedFeeds?.([]);
   deps.setExpandedFeedId?.(null);
@@ -106,12 +115,15 @@ async function handleAuthentication(
     | 'loadFeeds'
     | 'loadPlan'
     | 'setCurrentUser'
+    | 'setGuestClaimVerificationRequired'
+    | 'setInitialVerificationEmailDeliveryResult'
   >
 ): Promise<void> {
   const deferredMessage = { ...message, deferPostAuthWork: true };
   let authenticatedSurfaceReady = false;
   deps.setIsLoading(true);
   deps.setAuthErrorMessage('');
+  deps.setInitialVerificationEmailDeliveryResult(null);
   deps.renderSidebarContent();
 
   try {
@@ -119,6 +131,10 @@ async function handleAuthentication(
     if (!resp?.success) {
       deps.setAuthErrorMessage((resp?.error as string) || 'Sign in failed');
       return;
+    }
+
+    if (typeof resp.verificationEmailSent === 'boolean') {
+      deps.setInitialVerificationEmailDeliveryResult(resp.verificationEmailSent);
     }
 
     await withTimeout(
@@ -155,6 +171,8 @@ export function handleSignIn(
     | 'loadFeeds'
     | 'loadPlan'
     | 'setCurrentUser'
+    | 'setGuestClaimVerificationRequired'
+    | 'setInitialVerificationEmailDeliveryResult'
   >
 ): Promise<void> {
   return handleAuthentication({ type: 'FEEDS_SIGN_IN' }, deps);
@@ -171,6 +189,8 @@ export function handleEmailSignIn(
     | 'loadFeeds'
     | 'loadPlan'
     | 'setCurrentUser'
+    | 'setGuestClaimVerificationRequired'
+    | 'setInitialVerificationEmailDeliveryResult'
   >
 ): Promise<void> {
   return handleAuthentication({ type: 'FEEDS_EMAIL_SIGN_IN', ...input }, deps);
@@ -187,6 +207,8 @@ export function handleEmailSignUp(
     | 'loadFeeds'
     | 'loadPlan'
     | 'setCurrentUser'
+    | 'setGuestClaimVerificationRequired'
+    | 'setInitialVerificationEmailDeliveryResult'
   >
 ): Promise<void> {
   return handleAuthentication({ type: 'FEEDS_EMAIL_SIGN_UP', ...input }, deps);
@@ -195,13 +217,22 @@ export function handleEmailSignUp(
 export async function handleSignOut(
   deps: Pick<
     SidebarSessionDeps,
-    'sendMsg' | 'setCurrentUser' | 'setFeeds' | 'setIsPremium' | 'setAuthErrorMessage' | 'renderSidebarContent'
+    | 'sendMsg'
+    | 'setCurrentUser'
+    | 'setFeeds'
+    | 'setIsPremium'
+    | 'setAuthErrorMessage'
+    | 'setGuestClaimVerificationRequired'
+    | 'setInitialVerificationEmailDeliveryResult'
+    | 'renderSidebarContent'
   >
 ): Promise<void> {
   deps.setAuthErrorMessage('');
   await deps.sendMsg({ type: 'FEEDS_SIGN_OUT' });
   deps.setCurrentUser(null);
   deps.setIsPremium(false);
+  deps.setGuestClaimVerificationRequired(false);
+  deps.setInitialVerificationEmailDeliveryResult(null);
   deps.setFeeds([]);
   deps.setAuthErrorMessage('');
   deps.renderSidebarContent();
@@ -222,6 +253,7 @@ export function toggleSidebar(
     | 'sendMsg'
     | 'setCurrentUser'
     | 'setAuthErrorMessage'
+    | 'setGuestClaimVerificationRequired'
   >
 ): void {
   const nextOpen = !deps.getSidebarOpen();

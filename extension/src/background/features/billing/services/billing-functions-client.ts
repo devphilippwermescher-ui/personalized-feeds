@@ -1,10 +1,6 @@
 import { httpsCallable } from 'firebase/functions';
 import { getAppEnvironment } from 'shared/app-environment';
-import {
-  BILLING_FUNCTION_NAMES,
-  BILLING_FUNCTION_REGION,
-  type ProBillingInterval,
-} from 'shared/subscription-config';
+import { BILLING_FUNCTION_NAMES, BILLING_FUNCTION_REGION, type ProBillingInterval } from 'shared/subscription-config';
 import type { BillingCurrency } from 'shared/types';
 import { waitForAuthReady } from '../../../../services/auth';
 import { getCallableFunctions } from '../../../platform/firebase/callable-functions';
@@ -26,8 +22,8 @@ interface BillingClaimResponse {
 
 const HANDOFF_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 
-let pendingGuestClaim: Promise<BillingClaimResponse> | null = null;
-let lastGuestClaim: { result: BillingClaimResponse; checkedAt: number } | null = null;
+let pendingGuestClaim: { userId: string; promise: Promise<BillingClaimResponse> } | null = null;
+let lastGuestClaim: { userId: string; result: BillingClaimResponse; checkedAt: number } | null = null;
 const GUEST_CLAIM_DEDUPE_MS = 5_000;
 
 function assertHttpsUrl(value: unknown): string {
@@ -78,14 +74,18 @@ export async function createBillingPricingUrl(): Promise<string> {
   return buildAuthenticatedPricingUrl(result.data.token, getAppEnvironment());
 }
 
-export async function claimGuestBillingSubscription(): Promise<BillingClaimResponse> {
-  if (pendingGuestClaim) return pendingGuestClaim;
-  if (lastGuestClaim && Date.now() - lastGuestClaim.checkedAt < GUEST_CLAIM_DEDUPE_MS) {
+export async function claimGuestBillingSubscription(options: { force?: boolean } = {}): Promise<BillingClaimResponse> {
+  const user = await waitForAuthReady();
+  if (!user) throw new Error('Sign in to claim your subscription.');
+  if (pendingGuestClaim?.userId === user.uid) return pendingGuestClaim.promise;
+  if (
+    options.force !== true &&
+    lastGuestClaim?.userId === user.uid &&
+    Date.now() - lastGuestClaim.checkedAt < GUEST_CLAIM_DEDUPE_MS
+  ) {
     return lastGuestClaim.result;
   }
-  pendingGuestClaim = (async () => {
-    const user = await waitForAuthReady();
-    if (!user) throw new Error('Sign in to claim your subscription.');
+  const promise = (async () => {
     await user.getIdToken(true);
     const claimSubscription = httpsCallable<Record<string, never>, BillingClaimResponse>(
       getCallableFunctions(BILLING_FUNCTION_REGION),
@@ -96,12 +96,13 @@ export async function claimGuestBillingSubscription(): Promise<BillingClaimRespo
       claimedCount: Number.isSafeInteger(result.data.claimedCount) ? result.data.claimedCount : 0,
       verificationRequired: result.data.verificationRequired === true,
     };
-    lastGuestClaim = { result: normalized, checkedAt: Date.now() };
+    lastGuestClaim = { userId: user.uid, result: normalized, checkedAt: Date.now() };
     return normalized;
   })();
+  pendingGuestClaim = { userId: user.uid, promise };
   try {
-    return await pendingGuestClaim;
+    return await promise;
   } finally {
-    pendingGuestClaim = null;
+    if (pendingGuestClaim?.promise === promise) pendingGuestClaim = null;
   }
 }

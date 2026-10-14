@@ -10,6 +10,7 @@ import { getBillingConfiguration } from './billing/config.js';
 import { normalizeBillingEmail } from './billing/email-identity.js';
 import {
   claimPendingSubscriptions,
+  hasPendingSubscriptions,
   reconcileUserSubscriptionEntitlement,
   saveSubscription,
 } from './billing/firestore-subscription-repository.js';
@@ -79,10 +80,14 @@ export const claimGuestBillingSubscription = onCall(
     if (!normalizedEmail) {
       throw new HttpsError('failed-precondition', 'Your account does not have a valid email address.');
     }
-    if (request.auth.token.email_verified !== true) {
-      return { claimedCount: 0, verificationRequired: true };
-    }
     try {
+      if (request.auth.token.email_verified !== true) {
+        const verificationRequired = await hasPendingSubscriptions({
+          db: getFirestore(),
+          normalizedEmail,
+        });
+        return { claimedCount: 0, verificationRequired };
+      }
       const claimedCount = await claimPendingSubscriptions({
         db: getFirestore(),
         userId: request.auth.uid,

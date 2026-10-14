@@ -242,6 +242,15 @@ export async function reconcileUserSubscriptionEntitlement(params: {
   });
 }
 
+export async function hasPendingSubscriptions(params: { db: Firestore; normalizedEmail: string }): Promise<boolean> {
+  const pendingEmailHash = hashBillingEmail(params.normalizedEmail);
+  const pendingSnapshot = await params.db
+    .collection(`${PENDING_CLAIMS_COLLECTION}/${pendingEmailHash}/${USER_SUBSCRIPTIONS_COLLECTION}`)
+    .limit(1)
+    .get();
+  return !pendingSnapshot.empty;
+}
+
 export async function claimPendingSubscriptions(params: {
   db: Firestore;
   userId: string;

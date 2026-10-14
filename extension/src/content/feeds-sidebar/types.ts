@@ -24,6 +24,14 @@ export interface UserInfo {
   billingCurrency?: BillingCurrency;
 }
 
+export interface GuestClaimVerificationViewState {
+  required: boolean;
+  action: 'idle' | 'sending' | 'checking';
+  feedback: string;
+  feedbackTone: 'neutral' | 'success' | 'error';
+  resendOnCooldown: boolean;
+}
+
 export interface FeedInfo {
   id: string;
   name: string;

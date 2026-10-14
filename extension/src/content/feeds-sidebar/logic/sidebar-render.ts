@@ -1,4 +1,4 @@
-import type { FeedInfo, MemberEditorState, SidebarAuthMode, UserInfo } from '../types';
+import type { FeedInfo, GuestClaimVerificationViewState, MemberEditorState, SidebarAuthMode, UserInfo } from '../types';
 import type { UserFeatureSettings } from 'shared/types';
 import { renderMemberEditorOverlay } from '../components/MemberEditor/MemberEditor';
 import { renderFeedRow } from '../components/FeedRow/FeedRow';
@@ -34,6 +34,7 @@ interface RenderSidebarInnerParams {
     isInitializing: boolean;
     isPremium: boolean;
     currentUser: UserInfo | null;
+    guestClaimVerification?: GuestClaimVerificationViewState;
     authErrorMessage: string;
     authMode?: SidebarAuthMode;
     sidebarSearchQuery: string;
@@ -48,6 +49,7 @@ interface RenderSidebarInnerParams {
   isInitializing: boolean;
   isPremium: boolean;
   authErrorMessage: string;
+  guestClaimVerification?: GuestClaimVerificationViewState;
   authMode?: SidebarAuthMode;
   getLogoUrl: () => string;
 }
@@ -135,6 +137,7 @@ export function renderSidebarInnerMarkup(params: RenderSidebarInnerParams): void
     isInitializing,
     isPremium,
     authErrorMessage,
+    guestClaimVerification,
     authMode,
     getLogoUrl,
   } = params;
@@ -175,6 +178,7 @@ export function renderSidebarInnerMarkup(params: RenderSidebarInnerParams): void
     isInitializing,
     isPremium,
     currentUser,
+    guestClaimVerification,
     authErrorMessage,
     authMode,
     sidebarSearchQuery,

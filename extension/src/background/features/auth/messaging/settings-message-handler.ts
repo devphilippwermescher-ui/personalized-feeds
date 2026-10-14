@@ -31,6 +31,10 @@ import {
   resolveUserProfilePreferences,
   schedulePostSignInWork,
 } from '../services/authenticated-session';
+import {
+  refreshCurrentUserEmailVerification,
+  resendCurrentUserVerificationEmail,
+} from '../services/email-password-auth-service';
 
 const MAX_PROFILE_AVATAR_DATA_URL_LENGTH = 300_000;
 
@@ -73,8 +77,9 @@ export function registerAuthSettingsMessageHandler(): void {
       void (async () => {
         const user = await getAuthenticatedFeedsUser();
         if (user) {
-          await claimGuestBillingSubscription().catch((error) => {
+          const guestClaim = await claimGuestBillingSubscription().catch((error) => {
             console.warn('[billing] Guest subscription claim check failed:', error);
+            return null;
           });
           const preferences = await resolveUserProfilePreferences(user.uid);
           const info = formatUserInfo(
@@ -87,7 +92,10 @@ export function registerAuthSettingsMessageHandler(): void {
             preferences
           );
           chrome.storage.local.set({ feedsUserInfo: info });
-          sendResponse(info);
+          sendResponse({
+            ...info,
+            guestClaimVerificationRequired: guestClaim?.verificationRequired === true,
+          });
         } else {
           // Don't clear feedsUserInfo here — it's needed for session recovery on cold-starts.
           // It's only cleared on explicit sign-out (FEEDS_SIGN_OUT).
@@ -147,15 +155,56 @@ export function registerAuthSettingsMessageHandler(): void {
     if (message.type === 'FEEDS_EMAIL_SIGN_UP') {
       Promise.resolve()
         .then(async () => {
-          const user = await registerFeedsWithEmail(message as Record<string, unknown>);
+          const result = await registerFeedsWithEmail(message as Record<string, unknown>);
           if (message.deferPostAuthWork !== true) {
             schedulePostSignInWork();
           }
-          sendResponse({ success: true, userId: user.uid });
+          sendResponse({
+            success: true,
+            userId: result.user.uid,
+            verificationEmailSent: result.verificationEmailSent,
+          });
         })
         .catch((error) => {
           console.error('[feeds-auth] Email registration error:', error);
           sendResponse({ success: false, error: normalizeFeedsError(error, 'Account creation failed') });
+        });
+      return true;
+    }
+
+    if (message.type === 'FEEDS_RESEND_EMAIL_VERIFICATION') {
+      resendCurrentUserVerificationEmail()
+        .then((result) => {
+          sendResponse({ success: true, alreadyVerified: result.alreadyVerified });
+        })
+        .catch((error) => {
+          console.error('[feeds-auth] Verification email resend failed:', error);
+          sendResponse({
+            success: false,
+            error: normalizeFeedsError(error, 'Verification email could not be sent.'),
+          });
+        });
+      return true;
+    }
+
+    if (message.type === 'FEEDS_CHECK_EMAIL_VERIFICATION') {
+      Promise.resolve()
+        .then(async () => {
+          const verified = await refreshCurrentUserEmailVerification();
+          const guestClaim = await claimGuestBillingSubscription({ force: true });
+          sendResponse({
+            success: true,
+            verified,
+            claimedCount: guestClaim.claimedCount,
+            verificationRequired: guestClaim.verificationRequired,
+          });
+        })
+        .catch((error) => {
+          console.error('[feeds-auth] Email verification check failed:', error);
+          sendResponse({
+            success: false,
+            error: normalizeFeedsError(error, 'Email verification could not be checked.'),
+          });
         });
       return true;
     }

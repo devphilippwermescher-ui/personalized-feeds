@@ -1,8 +1,9 @@
 import { FieldValue, type Firestore } from 'firebase-admin/firestore';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   claimPendingSubscriptions,
   createSubscriptionFirestoreUpdate,
+  hasPendingSubscriptions,
   reconcileUserSubscriptionEntitlement,
   saveSubscription,
 } from '../firestore-subscription-repository.js';
@@ -31,6 +32,26 @@ function createSubscription(overrides: Partial<SubscriptionWriteModel> = {}): Su
 }
 
 describe('subscription Firestore updates', () => {
+  it('requires email verification only when the email has a pending guest subscription', async () => {
+    const get = vi.fn().mockResolvedValueOnce({ empty: false }).mockResolvedValueOnce({ empty: true });
+    const limit = vi.fn(() => ({ get }));
+    const collection = vi.fn(() => ({ limit }));
+    const db = { collection } as unknown as Firestore;
+
+    await expect(hasPendingSubscriptions({ db, normalizedEmail: 'customer@example.com' })).resolves.toBe(true);
+    await expect(hasPendingSubscriptions({ db, normalizedEmail: 'other@example.com' })).resolves.toBe(false);
+
+    expect(collection).toHaveBeenNthCalledWith(
+      1,
+      `billingPendingClaims/${hashBillingEmail('customer@example.com')}/billingSubscriptions`
+    );
+    expect(collection).toHaveBeenNthCalledWith(
+      2,
+      `billingPendingClaims/${hashBillingEmail('other@example.com')}/billingSubscriptions`
+    );
+    expect(limit).toHaveBeenCalledWith(1);
+  });
+
   it('deletes a stale cancellation end date when an active subscription has no endsAt value', () => {
     const update = createSubscriptionFirestoreUpdate(createSubscription());
 
@@ -152,11 +173,14 @@ describe('subscription Firestore updates', () => {
       status: 'active',
     });
 
-    documents.set(`users/${uid}/billing/subscription`, createSubscription({
-      subscriptionId: 'subscription-a',
-      status: 'expired',
-      providerUpdatedAt: 300,
-    }));
+    documents.set(
+      `users/${uid}/billing/subscription`,
+      createSubscription({
+        subscriptionId: 'subscription-a',
+        status: 'expired',
+        providerUpdatedAt: 300,
+      })
+    );
     await expect(reconcileUserSubscriptionEntitlement({ db, userId: uid })).resolves.toBe('subscription-b');
     expect(documents.get(`users/${uid}/billing/subscription`)).toMatchObject({
       subscriptionId: 'subscription-b',

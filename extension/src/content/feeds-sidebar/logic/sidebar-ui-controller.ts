@@ -3,6 +3,7 @@ import type {
   EmailPasswordSignUpInput,
   FeedInfo,
   FeedMemberInfo,
+  GuestClaimVerificationViewState,
   MemberEditorState,
   SidebarAuthMode,
   UserInfo,
@@ -26,11 +27,7 @@ import {
   restoreSidebarDomSnapshot,
 } from './sidebar-render';
 import { ensureInit, toggleSidebar } from './sidebar-session';
-import {
-  captureAuthFormStates,
-  createEmptyAuthFormStates,
-  restoreAuthFormState,
-} from './auth-form-state';
+import { captureAuthFormStates, createEmptyAuthFormStates, restoreAuthFormState } from './auth-form-state';
 import { canReuseAuthSurface, getAuthSurfaceRenderKey } from './auth-surface-render-state';
 import { onFeatureSettingsChange } from '../../feature-settings';
 import type { FeedActionDeps } from './feed-actions';
@@ -58,6 +55,8 @@ interface SidebarUiControllerDeps {
   setIsInitializing: (value: boolean) => void;
   getIsPremium: () => boolean;
   getAuthErrorMessage: () => string;
+  getGuestClaimVerification: () => GuestClaimVerificationViewState;
+  setGuestClaimVerificationRequired: (required: boolean) => void;
   setAuthErrorMessage: (message: string) => void;
   sendMsg: (message: Record<string, unknown>) => Promise<Record<string, unknown>>;
   loadFeeds: () => Promise<void>;
@@ -89,6 +88,8 @@ interface SidebarUiControllerDeps {
   handleMemberSave: () => Promise<void>;
   handleMemberDelete: (feedId: string, memberId: string) => Promise<void>;
   showToast: (message: string, type?: 'success' | 'error') => void;
+  resendVerificationEmail: () => Promise<void>;
+  checkEmailVerification: () => Promise<void>;
 }
 
 export function createSidebarUiController(deps: SidebarUiControllerDeps): {
@@ -171,6 +172,7 @@ export function createSidebarUiController(deps: SidebarUiControllerDeps): {
       isInitializing: deps.getIsInitializing(),
       isPremium: deps.getIsPremium(),
       authErrorMessage: deps.getAuthErrorMessage(),
+      guestClaimVerification: deps.getGuestClaimVerification(),
       authMode,
       getLogoUrl,
     });
@@ -227,6 +229,8 @@ export function createSidebarUiController(deps: SidebarUiControllerDeps): {
           renderSidebarContent();
         },
         handleSignOut: deps.handleSignOut,
+        resendVerificationEmail: deps.resendVerificationEmail,
+        checkEmailVerification: deps.checkEmailVerification,
         showCreateFeedForm: deps.showCreateFeedForm,
         selectFeedTab,
         openProfileSettings: () => {
@@ -340,6 +344,7 @@ export function createSidebarUiController(deps: SidebarUiControllerDeps): {
       sendMsg: deps.sendMsg,
       setCurrentUser: deps.setCurrentUser,
       setAuthErrorMessage: deps.setAuthErrorMessage,
+      setGuestClaimVerificationRequired: deps.setGuestClaimVerificationRequired,
     });
   }
 

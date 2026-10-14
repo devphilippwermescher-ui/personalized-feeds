@@ -19,6 +19,8 @@ interface SidebarDomBindingsDeps {
   showSignIn: () => void;
   showSignUp: () => void;
   handleSignOut: () => void;
+  resendVerificationEmail: () => Promise<void>;
+  checkEmailVerification: () => Promise<void>;
   showCreateFeedForm: () => void;
   selectFeedTab: (tab: 'owned' | 'shared') => void;
   openProfileSettings: () => void;
@@ -65,6 +67,12 @@ export function bindSidebarDom(container: HTMLElement, deps: SidebarDomBindingsD
     showSignUp: deps.showSignUp,
   });
   container.querySelector('#lfa-account-signout-btn')?.addEventListener('click', deps.handleSignOut);
+  container
+    .querySelector('#lfa-resend-verification-email-btn')
+    ?.addEventListener('click', () => void deps.resendVerificationEmail());
+  container
+    .querySelector('#lfa-check-email-verification-btn')
+    ?.addEventListener('click', () => void deps.checkEmailVerification());
   const managePlanButton = container.querySelector<HTMLButtonElement>('#lfa-manage-plan-btn');
   managePlanButton?.addEventListener('click', () => {
     container.querySelector('#lfa-account-menu')?.classList.remove('lfa-account-menu--open');

@@ -75,7 +75,7 @@ describe('authenticated feeds session', () => {
   beforeEach(() => {
     vi.stubGlobal('chrome', { storage: { local: { set: mocks.storageSet } } });
     mocks.signInWithEmailPassword.mockResolvedValue(user);
-    mocks.registerWithEmailPassword.mockResolvedValue(user);
+    mocks.registerWithEmailPassword.mockResolvedValue({ user, verificationEmailSent: true });
     mocks.ensureAuthenticatedUserProfile.mockResolvedValue(undefined);
     mocks.clearStoredFeedsAuthTokens.mockResolvedValue(undefined);
     mocks.getStoredUserProfilePreferences.mockResolvedValue(null);
@@ -128,5 +128,25 @@ describe('authenticated feeds session', () => {
     ).rejects.toThrow('Agree to the processing of personal data');
 
     expect(mocks.registerWithEmailPassword).not.toHaveBeenCalled();
+  });
+
+  it('preserves the verification email delivery result after account creation', async () => {
+    const result = await registerFeedsWithEmail({
+      firstName: ' Ada ',
+      lastName: ' Lovelace ',
+      email: ' ada@example.com ',
+      password: 'analytical-engine',
+      acceptedPersonalData: true,
+    });
+
+    expect(mocks.registerWithEmailPassword).toHaveBeenCalledWith({
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      email: 'ada@example.com',
+      password: 'analytical-engine',
+    });
+    expect(result).toEqual({ user, verificationEmailSent: true });
+    expect(mocks.ensureAuthenticatedUserProfile).toHaveBeenCalledWith(user);
+    expect(mocks.claimGuestBillingSubscription).toHaveBeenCalledOnce();
   });
 });

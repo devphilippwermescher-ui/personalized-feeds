@@ -33,6 +33,7 @@ import { createSidebarProfileViewersController } from './controllers/sidebar-pro
 import { registerPlanRuntimeController } from './controllers/plan-runtime-controller';
 import { createShareNotificationController } from './controllers/share-notification-controller';
 import { createBillingNoticeController } from './controllers/billing-notice-controller';
+import { createGuestClaimVerificationController } from './controllers/guest-claim-verification-controller';
 
 export function startFeedsSidebar(): void {
   const DASHBOARD_URL = getDashboardOrigin();
@@ -54,6 +55,7 @@ export function startFeedsSidebar(): void {
   let feedActionsController: ReturnType<typeof createSidebarFeedActionsController> | null = null;
   let profileViewersController: ReturnType<typeof createSidebarProfileViewersController> | null = null;
   let shareNotificationController: ReturnType<typeof createShareNotificationController> | null = null;
+  let guestClaimVerificationController: ReturnType<typeof createGuestClaimVerificationController> | null = null;
 
   async function syncSharedFeedRoleChanges(nextSharedFeeds: FeedInfo[]): Promise<void> {
     const changedFeed = await findChangedSharedFeedRole(currentUser?.userId, nextSharedFeeds);
@@ -84,6 +86,7 @@ export function startFeedsSidebar(): void {
     sharedFeedsList = [];
     profileViewersController?.reset();
     shareNotificationController?.reset();
+    guestClaimVerificationController?.reset();
     activeFeedTab = 'owned';
   }
 
@@ -117,6 +120,12 @@ export function startFeedsSidebar(): void {
       setAuthErrorMessage: (message) => {
         authErrorMessage = message;
       },
+      setGuestClaimVerificationRequired: (required) => {
+        guestClaimVerificationController?.setRequired(required);
+      },
+      setInitialVerificationEmailDeliveryResult: (sent) => {
+        guestClaimVerificationController?.setInitialEmailDeliveryResult(sent);
+      },
       setIsLoading: (value) => {
         isLoading = value;
       },
@@ -130,6 +139,12 @@ export function startFeedsSidebar(): void {
         currentPlan = value ? 'pro' : 'free';
       },
     });
+
+  guestClaimVerificationController = createGuestClaimVerificationController({
+    sendMsg,
+    renderSidebar: renderSidebarContent,
+    showToast,
+  });
 
   const { handlePendingSharedFeedLink, schedulePendingShareRetries } = createSharedFeedLinkController({
     getCurrentUser: () => currentUser,
@@ -336,6 +351,17 @@ export function startFeedsSidebar(): void {
     },
     getIsPremium: () => currentPlan === 'pro',
     getAuthErrorMessage: () => authErrorMessage,
+    getGuestClaimVerification: () =>
+      guestClaimVerificationController?.getState() || {
+        required: false,
+        action: 'idle',
+        feedback: '',
+        feedbackTone: 'neutral',
+        resendOnCooldown: false,
+      },
+    setGuestClaimVerificationRequired: (required) => {
+      guestClaimVerificationController?.setRequired(required);
+    },
     setAuthErrorMessage: (message) => {
       authErrorMessage = message;
     },
@@ -346,6 +372,8 @@ export function startFeedsSidebar(): void {
     handleEmailSignIn,
     handleEmailSignUp,
     handleSignOut,
+    resendVerificationEmail: () => guestClaimVerificationController?.resendEmail() || Promise.resolve(),
+    checkEmailVerification: () => guestClaimVerificationController?.checkVerification() || Promise.resolve(),
     checkAuth,
     loadPlan: loadCurrentPlan,
     schedulePendingShareRetries,
