@@ -15,8 +15,13 @@ import {
   persistUserProfilePreferencesToStorage,
   setStoredFeedsAuthTokens,
 } from './authenticated-user';
-import { registerWithEmailPassword, signInWithEmailPassword } from './email-password-auth-service';
+import {
+  registerWithEmailPassword,
+  signInWithEmailPassword,
+  type EmailPasswordRegistrationResult,
+} from './email-password-auth-service';
 import { ensureAuthenticatedUserProfile } from './user-profile-readiness';
+import { claimGuestBillingSubscription } from '../../billing/public';
 
 interface GoogleAuthTokens {
   idToken: string;
@@ -113,6 +118,9 @@ async function completeFeedsAuthentication(user: User, googleTokens?: GoogleAuth
       await resolveUserProfilePreferences(user.uid)
     ),
   });
+  await claimGuestBillingSubscription().catch((error) => {
+    console.warn('[billing] Guest subscription claim could not be completed:', error);
+  });
   return user;
 }
 
@@ -127,8 +135,11 @@ export async function authenticateFeedsWithEmail(message: Record<string, unknown
   return completeFeedsAuthentication(user);
 }
 
-export async function registerFeedsWithEmail(message: Record<string, unknown>): Promise<User> {
+export async function registerFeedsWithEmail(
+  message: Record<string, unknown>
+): Promise<EmailPasswordRegistrationResult> {
   const registration = validateEmailRegistration(message);
-  const user = await registerWithEmailPassword(registration);
-  return completeFeedsAuthentication(user);
+  const result = await registerWithEmailPassword(registration);
+  await completeFeedsAuthentication(result.user);
+  return result;
 }

@@ -99,6 +99,11 @@ window.addEventListener('message', (event: MessageEvent<AuthMessage>) => {
 });
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message.type === 'OFFSCREEN_AUTH_PING') {
+    sendResponse({ success: true, ready: true });
+    return false;
+  }
+
   if (message.type !== 'OFFSCREEN_AUTH_START') {
     return false;
   }

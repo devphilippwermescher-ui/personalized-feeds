@@ -1,6 +1,5 @@
 import type { FeedInfo } from '../../types';
 import { escapeHtml } from '../../../shared/escape-html';
-import { CONTENT_COPY } from '../../../shared/copy';
 
 interface RenderFeedRowOptions {
   feed: FeedInfo;
@@ -45,10 +44,10 @@ export function renderFeedRow({
   const activeMemberCount = feed.activeMemberCount ?? feed.memberCount ?? 0;
   const lockedMemberCount = feed.lockedMemberCount ?? Math.max(0, (feed.memberCount || 0) - activeMemberCount);
   const hasMemberOverflow = !isLockedByPlan && lockedMemberCount > 0;
-  const planLimitTooltip = `${activeMemberCount} active ${activeMemberCount === 1 ? 'profile' : 'profiles'} and ${lockedMemberCount} locked. ${isShared ? 'The feed owner needs Pro' : 'Pro is in development'}; these profiles remain locked.`;
+  const planLimitTooltip = `${activeMemberCount} active ${activeMemberCount === 1 ? 'profile' : 'profiles'} and ${lockedMemberCount} locked. ${isShared ? 'The feed owner needs Pro' : 'Upgrade to Pro'} to unlock all profiles.`;
   const feedLockTooltip = isShared
     ? 'This feed is locked by the owner’s plan. The feed owner needs Pro to unlock it.'
-    : CONTENT_COPY.sidebar.freeFeedLockedHint;
+    : 'Free includes up to 3 custom feeds. Upgrade to Pro to unlock this feed.';
   const hiddenViewerDetails = [
     privateViewerCount > 0
       ? `${privateViewerCount} private-mode ${privateViewerCount === 1 ? 'visitor' : 'visitors'}`

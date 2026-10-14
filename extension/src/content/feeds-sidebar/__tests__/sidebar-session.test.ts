@@ -22,6 +22,8 @@ function createAuthenticationDeps() {
       sendMsg,
       setIsLoading: (value: boolean) => events.push(`loading:${value}`),
       setAuthErrorMessage: vi.fn(),
+      setGuestClaimVerificationRequired: vi.fn(),
+      setInitialVerificationEmailDeliveryResult: vi.fn(),
       renderSidebarContent: () => events.push('render'),
       loadFeeds: async () => {
         events.push('load-feeds');

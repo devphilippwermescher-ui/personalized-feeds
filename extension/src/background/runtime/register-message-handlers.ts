@@ -1,4 +1,5 @@
 import { registerAuthSettingsMessageHandler } from '../features/auth/messaging/settings-message-handler';
+import { registerBillingMessageHandler } from '../features/billing/public';
 import { registerDashboardAnalyticsMessageHandler } from '../features/dashboard-analytics/dashboard-analytics-message-handler';
 import { registerExternalMessageHandlers } from '../features/dashboard-bridge/messaging/message-handler';
 import { registerFeedSharingMessageHandler } from '../features/feed-sharing/messaging/message-handler';
@@ -13,6 +14,7 @@ import { registerProfileAnalyticsPassiveCapture } from '../features/profile-anal
 export function registerBackgroundMessageHandlers(): void {
   registerExternalMessageHandlers();
   registerAuthSettingsMessageHandler();
+  registerBillingMessageHandler();
   registerPlanMessageHandler();
   registerLinkedInRelationshipStatusMessageHandler();
   registerProfileViewersMessageHandler();

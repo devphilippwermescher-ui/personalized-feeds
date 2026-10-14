@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { closeProfilePreferencesModal, openProfilePreferencesModal } from '../public';
 
-describe('Profile modal', () => {
+describe('Profile & billing modal', () => {
   const sendMessage = vi.fn();
 
   beforeEach(() => {
@@ -11,7 +11,9 @@ describe('Profile modal', () => {
     sendMessage.mockImplementation(async (message: { type?: string; preferences?: unknown }) => ({
       success: true,
       preferences:
-        message.type === 'PROFILE_PREFERENCES_UPDATE' ? message.preferences : { displayName: '', avatarDataUrl: '' },
+        message.type === 'PROFILE_PREFERENCES_UPDATE'
+          ? message.preferences
+          : { displayName: '', avatarDataUrl: '', billingCurrency: 'EUR' },
       user: {
         userId: 'user-1',
         displayName: 'Google Name',
@@ -19,6 +21,7 @@ describe('Profile modal', () => {
         email: 'user@example.com',
         photoURL: '',
         authPhotoURL: '',
+        billingCurrency: 'EUR',
       },
     }));
     vi.stubGlobal('chrome', { runtime: { sendMessage } });
@@ -29,19 +32,22 @@ describe('Profile modal', () => {
     vi.unstubAllGlobals();
   });
 
-  it('shows profile controls without billing preferences', async () => {
+  it('shows profile controls with the default billing currency', async () => {
     await openProfilePreferencesModal();
 
-    await vi.waitFor(() => expect(document.body.textContent).toContain('Profile'));
+    await vi.waitFor(() => expect(document.body.textContent).toContain('Profile & billing'));
     expect(document.querySelector<HTMLInputElement>('.lfs-input')?.value).toBe('Google Name');
     expect(document.body.textContent).toContain('user@example.com');
-    expect(document.body.textContent).not.toContain('Billing currency');
+    expect(document.body.textContent).toContain('Billing currency');
+    expect(document.querySelector<HTMLButtonElement>('.mfp-profile-preferences-currency-option.is-selected')?.textContent).toContain(
+      'EUR'
+    );
     expect(document.body.textContent).toContain('Reset to Google profile');
   });
 
-  it('saves profile-only changes', async () => {
+  it('saves profile and billing preferences', async () => {
     await openProfilePreferencesModal();
-    await vi.waitFor(() => expect(document.body.textContent).toContain('Profile'));
+    await vi.waitFor(() => expect(document.body.textContent).toContain('Profile & billing'));
 
     Array.from(document.querySelectorAll<HTMLButtonElement>('button'))
       .find((button) => button.textContent?.includes('Save changes'))
@@ -53,6 +59,7 @@ describe('Profile modal', () => {
         preferences: {
           displayName: '',
           avatarDataUrl: '',
+          billingCurrency: 'EUR',
         },
       });
     });
@@ -64,7 +71,7 @@ describe('Profile modal', () => {
       preferences:
         message.type === 'PROFILE_PREFERENCES_UPDATE'
           ? message.preferences
-          : { displayName: '', avatarDataUrl: 'data:image/webp;base64,custom-avatar' },
+          : { displayName: '', avatarDataUrl: 'data:image/webp;base64,custom-avatar', billingCurrency: 'EUR' },
       user: {
         userId: 'user-1',
         displayName: 'Google Name',
@@ -72,11 +79,12 @@ describe('Profile modal', () => {
         email: 'user@example.com',
         photoURL: 'data:image/webp;base64,custom-avatar',
         authPhotoURL: 'https://example.com/google-avatar.jpg',
+        billingCurrency: 'EUR',
       },
     }));
 
     await openProfilePreferencesModal();
-    await vi.waitFor(() => expect(document.body.textContent).toContain('Profile'));
+    await vi.waitFor(() => expect(document.body.textContent).toContain('Profile & billing'));
 
     document.querySelector<HTMLButtonElement>('[aria-label="Remove uploaded profile photo"]')?.click();
 
@@ -96,6 +104,7 @@ describe('Profile modal', () => {
         preferences: {
           displayName: '',
           avatarDataUrl: '',
+          billingCurrency: 'EUR',
         },
       });
     });

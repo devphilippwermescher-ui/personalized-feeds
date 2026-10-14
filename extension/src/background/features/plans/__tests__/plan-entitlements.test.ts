@@ -6,6 +6,7 @@ describe('plan entitlements', () => {
     expect(createFreePlanSnapshot()).toEqual({
       plan: 'free',
       entitlements: getPlanEntitlements('free'),
+      subscription: null,
     });
   });
 

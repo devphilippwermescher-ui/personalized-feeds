@@ -30,9 +30,9 @@ export const CONTENT_COPY = {
     signInButton: 'Sign in with Google',
     signInHint: 'This signs in the extension directly.',
     premiumTitle: 'Personalized Feeds',
-    premiumDescription: 'More Pro features are currently in development.',
-    premiumHint: 'See what is coming',
-    freeFeedLockedHint: 'Free includes up to 3 custom feeds. Pro is in development; this feed remains locked.',
+    premiumDescription: 'Unlock custom feeds with a paid subscription.',
+    premiumHint: 'View subscription plans',
+    freeFeedLockedHint: 'Free includes up to 3 custom feeds. Upgrade to Pro to unlock this feed.',
   },
   profile: {
     addToFeedTitle: 'Add to Feed',

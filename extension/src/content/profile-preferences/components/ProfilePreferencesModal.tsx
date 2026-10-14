@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from 'react';
-import type { UserProfilePreferences } from 'shared/types';
+import type { BillingCurrency, UserProfilePreferences } from 'shared/types';
 import { LfsButton, LfsInputField, LfsModal } from '../../../shared/ui';
 import type { UserInfo } from '../../feeds-sidebar/types';
 import { createAvatarDataUrl } from '../logic/avatar-image';
@@ -27,6 +27,7 @@ export function ProfilePreferencesModal({ initialPreferences, user, onClose, onS
   const authPhotoURL = user.authPhotoURL || '';
   const [displayName, setDisplayName] = useState(initialPreferences.displayName || authDisplayName);
   const [avatarDataUrl, setAvatarDataUrl] = useState(initialPreferences.avatarDataUrl);
+  const [billingCurrency, setBillingCurrency] = useState<BillingCurrency>(initialPreferences.billingCurrency);
   const [avatarError, setAvatarError] = useState(false);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -67,6 +68,7 @@ export function ProfilePreferencesModal({ initialPreferences, user, onClose, onS
       const result = await saveProfilePreferences({
         displayName: normalizedName === authDisplayName ? '' : normalizedName,
         avatarDataUrl,
+        billingCurrency,
       });
       onSaved(result.user, result.preferences);
       onClose();
@@ -79,7 +81,7 @@ export function ProfilePreferencesModal({ initialPreferences, user, onClose, onS
 
   return (
     <LfsModal
-      title="Profile"
+      title="Profile & billing"
       size="md"
       centeredTitle
       className="mfp-profile-preferences-modal"
@@ -171,6 +173,28 @@ export function ProfilePreferencesModal({ initialPreferences, user, onClose, onS
       <div className="mfp-profile-preferences-section">
         <p className="mfp-profile-preferences-label">Signed-in email</p>
         <div className="mfp-profile-preferences-email">{user.email}</div>
+      </div>
+
+      <div className="mfp-profile-preferences-section">
+        <p className="mfp-profile-preferences-label">Billing currency</p>
+        <div className="mfp-profile-preferences-currency" role="group" aria-label="Billing currency">
+          {(['EUR', 'USD'] as const).map((currency) => {
+            const selected = currency === billingCurrency;
+            return (
+              <button
+                key={currency}
+                type="button"
+                className={`mfp-profile-preferences-currency-option${selected ? ' is-selected' : ''}`}
+                aria-pressed={selected}
+                onClick={() => setBillingCurrency(currency)}
+              >
+                <strong>{currency === 'EUR' ? '€ Euro' : '$ US Dollar'}</strong>
+                <span>{currency}</span>
+              </button>
+            );
+          })}
+        </div>
+        <p className="mfp-profile-preferences-hint">Pro prices are shown in your selected currency.</p>
       </div>
 
       {error ? (

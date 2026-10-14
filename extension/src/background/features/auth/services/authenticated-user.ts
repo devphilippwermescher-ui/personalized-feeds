@@ -11,56 +11,13 @@ export {
   normalizeFeatureSettings,
 } from '../../../../shared/feature-settings';
 
-type OffscreenAuthResult =
-  | {
-      success: true;
-      idToken: string;
-      accessToken: string;
-    }
-  | {
-      success: false;
-      error: string;
-    };
-
 interface StoredFeedsAuthTokens {
   idToken: string;
   accessToken: string;
   updatedAt: number;
 }
 
-let pendingOffscreenAuth: {
-  resolve: (result: OffscreenAuthResult) => void;
-  reject: (error: Error) => void;
-  timeoutId: ReturnType<typeof setTimeout>;
-} | null = null;
-
 export const PROFILE_PREFERENCES_STORAGE_KEY = 'pf_profile_preferences';
-
-export async function hasOffscreenDocument(): Promise<boolean> {
-  const getContexts = chrome.runtime.getContexts?.bind(chrome.runtime);
-  if (!getContexts) {
-    return false;
-  }
-
-  const contexts = await getContexts({
-    contextTypes: [chrome.runtime.ContextType.OFFSCREEN_DOCUMENT],
-    documentUrls: [chrome.runtime.getURL('offscreen.html')],
-  });
-
-  return contexts.length > 0;
-}
-
-export async function ensureOffscreenDocument(): Promise<void> {
-  if (await hasOffscreenDocument()) {
-    return;
-  }
-
-  await chrome.offscreen.createDocument({
-    url: 'offscreen.html',
-    reasons: [chrome.offscreen.Reason.IFRAME_SCRIPTING],
-    justification: 'Authenticate the user with Firebase Google sign-in from an offscreen document.',
-  });
-}
 
 export async function persistFeatureSettingsToStorage(settings: UserFeatureSettings): Promise<void> {
   await chrome.storage.local.set({ [FEATURE_SETTINGS_STORAGE_KEY]: settings });
@@ -72,33 +29,6 @@ export async function getStoredFeatureSettings(): Promise<UserFeatureSettings | 
   ]);
   const stored = result[FEATURE_SETTINGS_STORAGE_KEY];
   return stored ? normalizeFeatureSettings(stored) : null;
-}
-
-export async function closeOffscreenDocument(): Promise<void> {
-  if (await hasOffscreenDocument()) {
-    await chrome.offscreen.closeDocument();
-  }
-}
-
-export async function startOffscreenAuth(): Promise<OffscreenAuthResult> {
-  await ensureOffscreenDocument();
-
-  return new Promise((resolve, reject) => {
-    const timeoutId = setTimeout(async () => {
-      pendingOffscreenAuth = null;
-      await closeOffscreenDocument();
-      reject(new Error('Authentication timed out'));
-    }, 90_000);
-
-    pendingOffscreenAuth = { resolve, reject, timeoutId };
-
-    chrome.runtime.sendMessage({ type: 'OFFSCREEN_AUTH_START' }).catch(async (error: Error) => {
-      clearTimeout(timeoutId);
-      pendingOffscreenAuth = null;
-      await closeOffscreenDocument();
-      reject(error);
-    });
-  });
 }
 
 export function formatUserInfo(
@@ -114,6 +44,7 @@ export function formatUserInfo(
     photoURL: normalized.avatarDataUrl || user.photoURL || '',
     authDisplayName: user.displayName || '',
     authPhotoURL: user.photoURL || '',
+    billingCurrency: normalized.billingCurrency,
   };
 }
 
@@ -244,14 +175,4 @@ export async function getAuthenticatedFeedsUser(): Promise<User | null> {
     await ensureAuthenticatedUserProfile(user);
   }
   return user;
-}
-
-export function resolvePendingOffscreenAuth(result: unknown): void {
-  const pending = pendingOffscreenAuth;
-  pendingOffscreenAuth = null;
-  if (!pending) {
-    return;
-  }
-  clearTimeout(pending.timeoutId);
-  pending.resolve(result as OffscreenAuthResult);
 }

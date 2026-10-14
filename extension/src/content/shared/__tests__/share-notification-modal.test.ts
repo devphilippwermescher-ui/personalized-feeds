@@ -78,7 +78,7 @@ describe('successful email share notification', () => {
     root.unmount();
   });
 
-  it('dismisses a pending invitation before showing the Pro development notice', async () => {
+  it('dismisses a pending invitation before opening pricing', async () => {
     const host = document.createElement('div');
     document.body.appendChild(host);
     const root = createRoot(host);

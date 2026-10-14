@@ -4,7 +4,7 @@ import { DEFAULT_USER_PROFILE_PREFERENCES, normalizeUserProfilePreferences } fro
 describe('profile preferences', () => {
   it('provides empty profile defaults for new users', () => {
     expect(normalizeUserProfilePreferences(null)).toEqual(DEFAULT_USER_PROFILE_PREFERENCES);
-    expect(normalizeUserProfilePreferences(null)).toEqual({ displayName: '', avatarDataUrl: '' });
+    expect(normalizeUserProfilePreferences(null)).toEqual({ displayName: '', avatarDataUrl: '', billingCurrency: 'EUR' });
   });
 
   it('normalizes the display name while preserving the avatar', () => {
@@ -16,6 +16,7 @@ describe('profile preferences', () => {
     ).toEqual({
       displayName: 'Custom Name',
       avatarDataUrl: 'data:image/webp;base64,abc',
+      billingCurrency: 'EUR',
     });
   });
 });

@@ -95,7 +95,7 @@ describe('renderFeedRow', () => {
     expect(html).toContain('>16</span>');
     expect(html).not.toContain('>10 / 6</span>');
     expect(html).not.toContain('lfa-profile-viewer-count-wrap');
-    expect(html).toContain('Free includes up to 3 custom feeds. Pro is in development; this feed remains locked.');
+    expect(html).toContain('Free includes up to 3 custom feeds. Upgrade to Pro to unlock this feed.');
     expect(html).toContain('lfa-feed-plan-lock');
   });
 
@@ -134,7 +134,7 @@ describe('renderFeedRow', () => {
     expect(html).toContain('10 active profiles and 6 locked');
     expect(html).toContain('lfa-profile-viewer-count-tooltip');
     expect(html).toContain('lfa-feed-group--plan-limited');
-    expect(html).toContain('Pro is in development; these profiles remain locked.');
+    expect(html).toContain('Upgrade to Pro to unlock all profiles.');
     expect(html).not.toContain('The feed owner needs Pro');
     expect(html).not.toContain('10 active · 6 locked');
   });
@@ -153,8 +153,8 @@ describe('renderFeedRow', () => {
       previewHtml: '',
     });
 
-    expect(html).toContain('The feed owner needs Pro; these profiles remain locked.');
-    expect(html).not.toContain('Pro is in development; these profiles remain locked.');
+    expect(html).toContain('The feed owner needs Pro to unlock all profiles.');
+    expect(html).not.toContain('Upgrade to Pro to unlock all profiles.');
   });
 
   it('shows collection progress only while Profile Visitors is actively syncing', () => {

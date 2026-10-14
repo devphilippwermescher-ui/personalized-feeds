@@ -37,21 +37,22 @@ describe('sidebar header menus', () => {
     expect(container.querySelector('#lfa-settings-menu')?.classList.contains('lfa-settings-menu--open')).toBe(true);
   });
 
-  it('opens the same development modal from both Pro entry points', () => {
+  it('opens billing for Manage plan and pricing for Get Pro', () => {
     document.body.innerHTML = `
       <div id="sidebar-test-root">
         <div id="lfa-account-menu" class="lfa-account-menu--open"></div>
-        <button id="lfa-manage-plan-btn" type="button">Manage plan</button>
+        <button id="lfa-manage-plan-btn" data-plan-action="portal" type="button">Manage plan</button>
         <button id="lfa-footer-get-pro-btn" type="button">Get Pro</button>
       </div>
     `;
     const container = document.querySelector<HTMLElement>('#sidebar-test-root');
     if (!container) throw new Error('Test container is missing');
 
-    const openManagePlan = vi.fn();
+    const openCustomerPortal = vi.fn();
+    const openPricingPage = vi.fn();
     const stub = vi.fn();
     const deps = new Proxy(
-      { memberActionDeps: {}, openManagePlan },
+      { memberActionDeps: {}, openCustomerPortal, openPricingPage },
       { get: (target, key) => Reflect.get(target, key) ?? stub }
     ) as unknown as Parameters<typeof bindSidebarDom>[1];
 
@@ -59,6 +60,33 @@ describe('sidebar header menus', () => {
     container.querySelector<HTMLButtonElement>('#lfa-manage-plan-btn')?.click();
     container.querySelector<HTMLButtonElement>('#lfa-footer-get-pro-btn')?.click();
 
-    expect(openManagePlan).toHaveBeenCalledTimes(2);
+    expect(openCustomerPortal).toHaveBeenCalledOnce();
+    expect(openPricingPage).toHaveBeenCalledOnce();
+    expect(container.querySelector('#lfa-account-menu')?.classList.contains('lfa-account-menu--open')).toBe(false);
+  });
+
+  it('opens pricing from Manage plan for a Free account', () => {
+    document.body.innerHTML = `
+      <div id="sidebar-test-root">
+        <div id="lfa-account-menu" class="lfa-account-menu--open"></div>
+        <button id="lfa-manage-plan-btn" data-plan-action="pricing" type="button">Manage plan</button>
+      </div>
+    `;
+    const container = document.querySelector<HTMLElement>('#sidebar-test-root');
+    if (!container) throw new Error('Test container is missing');
+
+    const openCustomerPortal = vi.fn();
+    const openPricingPage = vi.fn();
+    const stub = vi.fn();
+    const deps = new Proxy(
+      { memberActionDeps: {}, openCustomerPortal, openPricingPage },
+      { get: (target, key) => Reflect.get(target, key) ?? stub }
+    ) as unknown as Parameters<typeof bindSidebarDom>[1];
+
+    bindSidebarDom(container, deps);
+    container.querySelector<HTMLButtonElement>('#lfa-manage-plan-btn')?.click();
+
+    expect(openCustomerPortal).not.toHaveBeenCalled();
+    expect(openPricingPage).toHaveBeenCalledOnce();
   });
 });

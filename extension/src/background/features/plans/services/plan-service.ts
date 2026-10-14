@@ -1,10 +1,4 @@
-import { createFreePlanSnapshot, type UserPlanSnapshot } from 'shared/plans';
-
-export async function getUserPlanSnapshot(
-  _userId: string,
-  _options: { force?: boolean } = {}
-): Promise<UserPlanSnapshot> {
-  return createFreePlanSnapshot();
-}
-
-export function clearUserPlanCache(_userId?: string): void {}
+// Feed and profile-viewer features still own their Free-limit enforcement in
+// this feature. Billing owns the authenticated subscription lookup, so every
+// enforcement path resolves the same entitlement as the extension UI.
+export { clearUserPlanCache, getUserPlanSnapshot } from '../../billing/public';

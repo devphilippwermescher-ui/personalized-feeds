@@ -3,6 +3,7 @@ import type {
   EmailPasswordSignUpInput,
   FeedInfo,
   FeedMemberInfo,
+  GuestClaimVerificationViewState,
   MemberEditorState,
   SidebarAuthMode,
   UserInfo,
@@ -26,10 +27,12 @@ import {
   restoreSidebarDomSnapshot,
 } from './sidebar-render';
 import { ensureInit, toggleSidebar } from './sidebar-session';
+import { captureAuthFormStates, createEmptyAuthFormStates, restoreAuthFormState } from './auth-form-state';
+import { canReuseAuthSurface, getAuthSurfaceRenderKey } from './auth-surface-render-state';
 import { onFeatureSettingsChange } from '../../feature-settings';
 import type { FeedActionDeps } from './feed-actions';
 import type { MemberActionDeps } from './member-actions';
-import { openPlanModal } from '../../shared/plan-modal';
+import { openCustomerPortal, openPricingPage } from '../../subscription/public';
 import { openProfilePreferencesModal, PROFILE_PREFERENCES_UPDATED_EVENT } from '../../profile-preferences/public';
 
 interface SidebarUiControllerDeps {
@@ -52,6 +55,8 @@ interface SidebarUiControllerDeps {
   setIsInitializing: (value: boolean) => void;
   getIsPremium: () => boolean;
   getAuthErrorMessage: () => string;
+  getGuestClaimVerification: () => GuestClaimVerificationViewState;
+  setGuestClaimVerificationRequired: (required: boolean) => void;
   setAuthErrorMessage: (message: string) => void;
   sendMsg: (message: Record<string, unknown>) => Promise<Record<string, unknown>>;
   loadFeeds: () => Promise<void>;
@@ -83,6 +88,8 @@ interface SidebarUiControllerDeps {
   handleMemberSave: () => Promise<void>;
   handleMemberDelete: (feedId: string, memberId: string) => Promise<void>;
   showToast: (message: string, type?: 'success' | 'error') => void;
+  resendVerificationEmail: () => Promise<void>;
+  checkEmailVerification: () => Promise<void>;
 }
 
 export function createSidebarUiController(deps: SidebarUiControllerDeps): {
@@ -104,6 +111,8 @@ export function createSidebarUiController(deps: SidebarUiControllerDeps): {
   let settingsMenuOpen = false;
   let accountMenuOpen = false;
   let authMode: SidebarAuthMode = 'sign-in';
+  let authFormStates = createEmptyAuthFormStates();
+  let lastAuthSurfaceRenderKey: string | null = null;
   let sidebarBindingsFrameId: number | null = null;
 
   const filterFeeds = (query: string): void => {
@@ -116,7 +125,24 @@ export function createSidebarUiController(deps: SidebarUiControllerDeps): {
   };
 
   const renderSidebarInner = (container: HTMLElement): void => {
-    if (deps.getCurrentUser()) authMode = 'sign-in';
+    const currentUser = deps.getCurrentUser();
+    if (currentUser) {
+      authMode = 'sign-in';
+      authFormStates = createEmptyAuthFormStates();
+      lastAuthSurfaceRenderKey = null;
+    } else {
+      const nextAuthSurfaceRenderKey = getAuthSurfaceRenderKey({
+        mode: authMode,
+        errorMessage: deps.getAuthErrorMessage(),
+        isLoading: deps.getIsLoading(),
+        isInitializing: deps.getIsInitializing(),
+      });
+      if (canReuseAuthSurface(container, lastAuthSurfaceRenderKey, nextAuthSurfaceRenderKey)) {
+        return;
+      }
+      authFormStates = captureAuthFormStates(container, authFormStates);
+      lastAuthSurfaceRenderKey = nextAuthSurfaceRenderKey;
+    }
     const previousRenderedExpandedFeedId = lastRenderedExpandedFeedId;
     const nextRenderedExpandedFeedId = deps.getExpandedFeedId();
     const previousExpandedFeedHeight = getExpandedFeedGroupHeight(container, nextRenderedExpandedFeedId);
@@ -129,7 +155,7 @@ export function createSidebarUiController(deps: SidebarUiControllerDeps): {
 
     renderSidebarInnerMarkup({
       container,
-      currentUser: deps.getCurrentUser(),
+      currentUser,
       featureSettings: deps.getFeatureSettings(),
       feedsList: deps.getFeeds(),
       sharedFeedsList: deps.getSharedFeeds(),
@@ -146,9 +172,14 @@ export function createSidebarUiController(deps: SidebarUiControllerDeps): {
       isInitializing: deps.getIsInitializing(),
       isPremium: deps.getIsPremium(),
       authErrorMessage: deps.getAuthErrorMessage(),
+      guestClaimVerification: deps.getGuestClaimVerification(),
       authMode,
       getLogoUrl,
     });
+
+    if (!currentUser) {
+      restoreAuthFormState(container, authMode, authFormStates[authMode]);
+    }
 
     if (settingsMenuOpen) {
       container.querySelector('#lfa-settings-menu')?.classList.add('lfa-settings-menu--open');
@@ -198,6 +229,8 @@ export function createSidebarUiController(deps: SidebarUiControllerDeps): {
           renderSidebarContent();
         },
         handleSignOut: deps.handleSignOut,
+        resendVerificationEmail: deps.resendVerificationEmail,
+        checkEmailVerification: deps.checkEmailVerification,
         showCreateFeedForm: deps.showCreateFeedForm,
         selectFeedTab,
         openProfileSettings: () => {
@@ -208,7 +241,16 @@ export function createSidebarUiController(deps: SidebarUiControllerDeps): {
             );
           });
         },
-        openManagePlan: () => openPlanModal({ plan: 'free', context: 'feeds' }),
+        openCustomerPortal: () => {
+          void openCustomerPortal().catch((error) => {
+            deps.showToast(error instanceof Error ? error.message : 'Unable to open billing right now.', 'error');
+          });
+        },
+        openPricingPage: () => {
+          void openPricingPage().catch((error) => {
+            deps.showToast(error instanceof Error ? error.message : 'Unable to open pricing right now.', 'error');
+          });
+        },
         updateFeatureSetting: async (key, value) => {
           const response = await deps.sendMsg({
             type: 'SETTINGS_UPDATE',
@@ -302,6 +344,7 @@ export function createSidebarUiController(deps: SidebarUiControllerDeps): {
       sendMsg: deps.sendMsg,
       setCurrentUser: deps.setCurrentUser,
       setAuthErrorMessage: deps.setAuthErrorMessage,
+      setGuestClaimVerificationRequired: deps.setGuestClaimVerificationRequired,
     });
   }
 

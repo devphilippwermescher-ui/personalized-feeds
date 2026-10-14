@@ -2,7 +2,7 @@ import React, { useEffect, type CSSProperties, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 
 export type ModalCloseReason = 'button' | 'backdrop' | 'escape';
-export type ModalVariant = 'default' | 'form' | 'confirm' | 'search' | 'tabs' | 'success';
+export type ModalVariant = 'default' | 'form' | 'confirm' | 'search' | 'tabs' | 'success' | 'billing';
 export type ModalTone = 'neutral' | 'primary' | 'success' | 'warning' | 'danger';
 export type ModalSize = 'sm' | 'md' | 'lg' | 'xl';
 

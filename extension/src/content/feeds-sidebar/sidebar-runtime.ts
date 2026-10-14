@@ -30,7 +30,10 @@ import { findChangedSharedFeedRole } from './services/shared-feed-role-storage';
 import { createSidebarFeedsController } from './controllers/sidebar-feeds-controller';
 import { createSidebarFeedActionsController } from './controllers/sidebar-feed-actions-controller';
 import { createSidebarProfileViewersController } from './controllers/sidebar-profile-viewers-controller';
+import { registerPlanRuntimeController } from './controllers/plan-runtime-controller';
 import { createShareNotificationController } from './controllers/share-notification-controller';
+import { createBillingNoticeController } from './controllers/billing-notice-controller';
+import { createGuestClaimVerificationController } from './controllers/guest-claim-verification-controller';
 
 export function startFeedsSidebar(): void {
   const DASHBOARD_URL = getDashboardOrigin();
@@ -52,6 +55,7 @@ export function startFeedsSidebar(): void {
   let feedActionsController: ReturnType<typeof createSidebarFeedActionsController> | null = null;
   let profileViewersController: ReturnType<typeof createSidebarProfileViewersController> | null = null;
   let shareNotificationController: ReturnType<typeof createShareNotificationController> | null = null;
+  let guestClaimVerificationController: ReturnType<typeof createGuestClaimVerificationController> | null = null;
 
   async function syncSharedFeedRoleChanges(nextSharedFeeds: FeedInfo[]): Promise<void> {
     const changedFeed = await findChangedSharedFeedRole(currentUser?.userId, nextSharedFeeds);
@@ -82,6 +86,7 @@ export function startFeedsSidebar(): void {
     sharedFeedsList = [];
     profileViewersController?.reset();
     shareNotificationController?.reset();
+    guestClaimVerificationController?.reset();
     activeFeedTab = 'owned';
   }
 
@@ -90,9 +95,15 @@ export function startFeedsSidebar(): void {
     currentPlan = response?.success === true && response.plan === 'pro' ? 'pro' : 'free';
   }
 
+  async function refreshCurrentPlan(force = false): Promise<AppPlan> {
+    await loadCurrentPlan(force);
+    return currentPlan;
+  }
+
   const { sendMsg, checkAuth, handleSignIn, handleEmailSignIn, handleEmailSignUp, handleSignOut } =
     createSidebarAuthController({
       closeModal: () => feedActionsController?.closeModal(),
+      getCurrentUser: () => currentUser,
       setCurrentUser: (user) => {
         currentUser = user;
       },
@@ -109,6 +120,12 @@ export function startFeedsSidebar(): void {
       setAuthErrorMessage: (message) => {
         authErrorMessage = message;
       },
+      setGuestClaimVerificationRequired: (required) => {
+        guestClaimVerificationController?.setRequired(required);
+      },
+      setInitialVerificationEmailDeliveryResult: (sent) => {
+        guestClaimVerificationController?.setInitialEmailDeliveryResult(sent);
+      },
       setIsLoading: (value) => {
         isLoading = value;
       },
@@ -122,6 +139,12 @@ export function startFeedsSidebar(): void {
         currentPlan = value ? 'pro' : 'free';
       },
     });
+
+  guestClaimVerificationController = createGuestClaimVerificationController({
+    sendMsg,
+    renderSidebar: renderSidebarContent,
+    showToast,
+  });
 
   const { handlePendingSharedFeedLink, schedulePendingShareRetries } = createSharedFeedLinkController({
     getCurrentUser: () => currentUser,
@@ -328,6 +351,17 @@ export function startFeedsSidebar(): void {
     },
     getIsPremium: () => currentPlan === 'pro',
     getAuthErrorMessage: () => authErrorMessage,
+    getGuestClaimVerification: () =>
+      guestClaimVerificationController?.getState() || {
+        required: false,
+        action: 'idle',
+        feedback: '',
+        feedbackTone: 'neutral',
+        resendOnCooldown: false,
+      },
+    setGuestClaimVerificationRequired: (required) => {
+      guestClaimVerificationController?.setRequired(required);
+    },
     setAuthErrorMessage: (message) => {
       authErrorMessage = message;
     },
@@ -338,6 +372,8 @@ export function startFeedsSidebar(): void {
     handleEmailSignIn,
     handleEmailSignUp,
     handleSignOut,
+    resendVerificationEmail: () => guestClaimVerificationController?.resendEmail() || Promise.resolve(),
+    checkEmailVerification: () => guestClaimVerificationController?.checkVerification() || Promise.resolve(),
     checkAuth,
     loadPlan: loadCurrentPlan,
     schedulePendingShareRetries,
@@ -375,7 +411,48 @@ export function startFeedsSidebar(): void {
     showToast,
   });
 
+  const billingNoticeController = createBillingNoticeController({
+    sendMsg,
+    isSidebarOpen: () => sidebarUiController?.isOpen() === true,
+    showError: (message) => showToast(message, 'error'),
+  });
+
   feedActionsController.attachFeedSyncListeners();
+  registerPlanRuntimeController({
+    getPlan: () => currentPlan,
+    refreshPlan: () => refreshCurrentPlan(true),
+    setPlan: (plan) => {
+      currentPlan = plan;
+    },
+    renderSidebar: renderSidebarContent,
+    activateProFeatures: async () => {
+      const [feedsResult, syncResult] = await Promise.allSettled([
+        loadFeeds(),
+        sendMsg({ type: 'PROFILE_VIEWERS_SYNC_API_NOW', resetProfileViewers: true }),
+      ]);
+
+      if (feedsResult.status === 'rejected') {
+        console.warn('[plan] Failed to reload sidebar data after Pro activation', feedsResult.reason);
+      }
+      if (syncResult.status === 'rejected' || syncResult.value?.success !== true) {
+        console.warn(
+          '[plan] Failed to start the Pro Profile Visitors collection',
+          syncResult.status === 'rejected' ? syncResult.reason : syncResult.value?.error
+        );
+      }
+
+      renderSidebarContent();
+    },
+    deactivateProFeatures: async () => {
+      try {
+        await loadFeeds();
+      } catch (error) {
+        console.warn('[plan] Failed to reload sidebar data after Pro expiration', error);
+      }
+      renderSidebarContent();
+    },
+  });
   sidebarUiController.start();
+  billingNoticeController.start();
   shareNotificationController.start();
 }

@@ -43,7 +43,7 @@ export function getSharingLimitCopy(details: SharingLimitDetails, source: Sharin
         }
       : {
           title: 'Share more feeds with Pro',
-          body: 'Free lets you share up to 3 feeds. Remove access from a shared feed; Pro is in development.',
+          body: 'Free lets you share up to 3 feeds. Remove access from a shared feed or upgrade to Pro.',
         };
   }
 
@@ -54,7 +54,7 @@ export function getSharingLimitCopy(details: SharingLimitDetails, source: Sharin
       }
     : {
         title: 'You reached your shared-feed limit',
-        body: `Free lets you receive up to 3 shared feeds. Unfollow one feed; Pro is in development.`,
+      body: `Free lets you receive up to 3 shared feeds. Unfollow one feed or upgrade to accept a feed from ${name}.`,
       };
 }
 
@@ -71,7 +71,7 @@ export function SharingLimitModal({ details, source, onClose, onUpgrade }: Shari
       footer={
         <>
           <LfsButton label="Close" variant="secondary" onClick={onClose} />
-          {canUpgrade ? <LfsButton label="Get Pro" onClick={onUpgrade} /> : null}
+          {canUpgrade ? <LfsButton label="View Pro" onClick={onUpgrade} /> : null}
         </>
       }
     >

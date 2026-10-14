@@ -1,8 +1,9 @@
 import { createElement } from 'react';
 import { flushSync } from 'react-dom';
 import { createRoot, type Root } from 'react-dom/client';
-import type { AppPlan } from 'shared/plans';
+import type { AppPlan, BillingSubscription } from 'shared/plans';
 import { Modal } from 'shared/ui/modal';
+import { getPlanSnapshot, openCustomerPortal, openPricingPage } from '../subscription/public';
 import { renderPlanStarIcon } from './plan-star';
 import { closeProfilePreferencesModal } from '../profile-preferences/public';
 import { injectPlanModalStyles } from './plan-modal-styles';
@@ -44,12 +45,65 @@ export function closePlanModal(): void {
   document.getElementById(MODAL_HOST_ID)?.remove();
 }
 
+function formatBillingDate(value?: number): string | null {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return null;
+  return new Intl.DateTimeFormat('en', { year: 'numeric', month: 'short', day: 'numeric' }).format(new Date(value));
+}
+
+function renderSubscriptionSummary(subscription: BillingSubscription | null | undefined): string {
+  if (!subscription) {
+    return '<strong>Pro plan active</strong><span>Billing details are not available yet.</span>';
+  }
+
+  const interval = subscription.billingInterval === 'annual' ? 'Annual' : 'Monthly';
+  if (subscription.status === 'past_due') {
+    return `<strong>${interval} Pro plan — payment needs attention</strong><span>Your Pro access remains active while Lemon Squeezy retries the payment. Update your payment method to avoid interruption.</span>`;
+  }
+
+  const isEnding = subscription.status === 'cancelled';
+  const date = formatBillingDate(isEnding ? subscription.endsAt : subscription.renewsAt);
+  const timing = isEnding
+    ? date
+      ? `Pro access remains active until ${date}.`
+      : 'The subscription is scheduled to end.'
+    : date
+      ? `Next billing date: ${date}.`
+      : 'Your subscription is active.';
+
+  return `<strong>${interval} Pro plan</strong><span>${timing}</span>`;
+}
+
+async function hydrateSubscriptionSummary(overlay: HTMLElement): Promise<void> {
+  const summary = overlay.querySelector<HTMLElement>('.mfp-plan-current');
+  if (!summary) return;
+
+  try {
+    const snapshot = await getPlanSnapshot(true);
+    if (!overlay.isConnected) return;
+    summary.innerHTML = renderSubscriptionSummary(snapshot.subscription);
+    if (snapshot.subscription?.status === 'past_due') {
+      const cta = overlay.querySelector<HTMLButtonElement>('.mfp-plan-cta');
+      if (cta && !cta.disabled) cta.textContent = 'Update payment';
+    }
+  } catch {
+    if (overlay.isConnected) {
+      summary.innerHTML = '<strong>Pro plan active</strong><span>Billing details could not be loaded.</span>';
+    }
+  }
+}
+
 export function openPlanModal(options: { plan: AppPlan; context: PlanModalContext }): void {
   injectPlanModalStyles(MODAL_ID, 'mfp-plan-modal-styles');
   closePlanModal();
   closeProfilePreferencesModal();
 
-  const copy = getContextCopy(options.context);
+  const copy =
+    options.plan === 'pro'
+      ? {
+          title: 'Your myFeedPilot Pro plan',
+          description: 'Review your plan here, then open secure billing management when needed.',
+        }
+      : getContextCopy(options.context);
   const bodyHtml = `
         <div class="mfp-plan-hero">
           <div class="mfp-plan-star-wrap">
@@ -58,6 +112,7 @@ export function openPlanModal(options: { plan: AppPlan; context: PlanModalContex
           <h2 id="mfp-plan-title">${copy.title}</h2>
           <p class="mfp-plan-description">${copy.description}</p>
         </div>
+        ${options.plan === 'pro' ? '<div class="mfp-plan-current"><strong>Pro plan active</strong><span>Loading billing details…</span></div>' : ''}
         <div class="mfp-plan-benefits">
           <div class="mfp-plan-benefit"><div class="mfp-plan-benefit-icon">◎</div><div><strong>Complete Profile Visitors</strong><span>Collect all visible visitors, private-mode views, and recruiter insights available from LinkedIn.</span></div></div>
           <div class="mfp-plan-benefit"><div class="mfp-plan-benefit-icon">≡</div><div><strong>Unlimited custom feeds</strong><span>Create as many focused feeds as you need for prospects, partners, and industry leaders.</span></div></div>
@@ -69,7 +124,7 @@ export function openPlanModal(options: { plan: AppPlan; context: PlanModalContex
           <p><strong>myFeedPilot Pro</strong> removes those limits and adds complete visitor collection, including private-mode views and recruiter insights, so your network tracking can grow with you.</p>
         </div>
         <div class="mfp-plan-actions">
-          <button class="mfp-plan-cta" type="button">In development</button>
+          <button class="mfp-plan-cta" type="button">${options.plan === 'pro' ? 'Manage billing' : 'Upgrade to Pro'}</button>
           <div class="mfp-plan-note" aria-live="polite"></div>
         </div>
   `;
@@ -82,8 +137,8 @@ export function openPlanModal(options: { plan: AppPlan; context: PlanModalContex
     planModalRoot?.render(
       createElement(Modal, {
         title: copy.title,
-        variant: 'default',
-        tone: 'primary',
+        variant: 'billing',
+        tone: options.plan === 'pro' ? 'success' : 'primary',
         size: 'lg',
         titleId: 'mfp-plan-title',
         onClose: () => closePlanModal(),
@@ -141,8 +196,49 @@ export function openPlanModal(options: { plan: AppPlan; context: PlanModalContex
     const note = overlay.querySelector<HTMLElement>('.mfp-plan-note');
     if (!cta || cta.disabled) return;
 
-    if (note) note.textContent = 'The Pro plan is currently in development.';
+    if (options.plan === 'free') {
+      const originalLabel = cta.textContent || '';
+      cta.disabled = true;
+      cta.textContent = 'Opening pricing…';
+      void openPricingPage()
+        .then(() => {
+          if (overlay.isConnected && note) note.textContent = 'Pricing opened in a new tab.';
+        })
+        .catch((error) => {
+          if (overlay.isConnected && note) {
+            note.textContent = error instanceof Error ? error.message : 'Unable to open pricing right now.';
+          }
+        })
+        .finally(() => {
+          if (overlay.isConnected) {
+            cta.disabled = false;
+            cta.textContent = originalLabel;
+          }
+        });
+      return;
+    }
+
+    const originalLabel = cta.textContent || '';
+    cta.disabled = true;
+    cta.textContent = 'Opening billing…';
+
+    void openCustomerPortal()
+      .then(() => {
+        if (overlay.isConnected && note) note.textContent = 'Billing management opened in a new tab.';
+      })
+      .catch((error) => {
+        if (overlay.isConnected && note) {
+          note.textContent = error instanceof Error ? error.message : 'Unable to open billing right now.';
+        }
+      })
+      .finally(() => {
+        if (overlay.isConnected) {
+          cta.disabled = false;
+          cta.textContent = originalLabel;
+        }
+      });
   });
 
+  if (options.plan === 'pro') void hydrateSubscriptionSummary(overlay);
   overlay.querySelector<HTMLElement>('.mfp-plan-close')?.focus();
 }

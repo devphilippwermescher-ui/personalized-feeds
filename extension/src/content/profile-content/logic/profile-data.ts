@@ -225,6 +225,11 @@ export function findPrimaryProfileTopCardRoot(username = extractUsernameFromUrl(
     }
   }
 
+  const legacyFallbackRoot = document.querySelector<HTMLElement>('.pv-top-card');
+  if (legacyFallbackRoot) {
+    return legacyFallbackRoot;
+  }
+
   if (!username) {
     return null;
   }

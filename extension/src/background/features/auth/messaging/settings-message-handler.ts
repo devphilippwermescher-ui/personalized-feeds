@@ -5,10 +5,9 @@ import {
   updateUserProfilePreferences,
 } from 'shared/firestore-service';
 import type { UserFeatureSettings, UserProfilePreferences } from 'shared/types';
-import { normalizeUserProfilePreferences } from 'shared/user-profile-preferences';
+import { isBillingCurrency, normalizeUserProfilePreferences } from 'shared/user-profile-preferences';
 import {
   clearStoredFeedsAuthTokens,
-  closeOffscreenDocument,
   DEFAULT_FEATURE_SETTINGS,
   FEATURE_SETTINGS_STORAGE_KEY,
   formatUserInfo,
@@ -19,12 +18,12 @@ import {
   persistUserProfilePreferencesToStorage,
   PROFILE_PREFERENCES_STORAGE_KEY,
   removeStorageValue,
-  resolvePendingOffscreenAuth,
-  startOffscreenAuth,
 } from '../services/authenticated-user';
+import { resolvePendingOffscreenAuth, startOffscreenAuth } from '../services/offscreen-google-auth-service';
 import { resetAuthenticatedUserProfileReadiness } from '../services/user-profile-readiness';
 import { clearProfileViewersAlarm } from '../../profile-viewers/profile-viewers-coordinator-storage';
 import { normalizeFeedsError } from '../../feeds/errors/feeds-error';
+import { claimGuestBillingSubscription } from '../../billing/public';
 import {
   authenticateFeedsWithEmail,
   authenticateFeedsWithGoogle,
@@ -32,6 +31,10 @@ import {
   resolveUserProfilePreferences,
   schedulePostSignInWork,
 } from '../services/authenticated-session';
+import {
+  refreshCurrentUserEmailVerification,
+  resendCurrentUserVerificationEmail,
+} from '../services/email-password-auth-service';
 
 const MAX_PROFILE_AVATAR_DATA_URL_LENGTH = 300_000;
 
@@ -43,6 +46,9 @@ function validateProfilePreferences(value: unknown): UserProfilePreferences {
   const candidate = value as Partial<UserProfilePreferences>;
   if (typeof candidate.displayName !== 'string' || candidate.displayName.trim().length > 60) {
     throw new Error('Display name must be 60 characters or fewer.');
+  }
+  if (!isBillingCurrency(candidate.billingCurrency)) {
+    throw new Error('Choose EUR or USD.');
   }
   if (typeof candidate.avatarDataUrl !== 'string') {
     throw new Error('Avatar is invalid.');
@@ -62,7 +68,6 @@ export function registerAuthSettingsMessageHandler(): void {
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === 'OFFSCREEN_AUTH_RESULT') {
       resolvePendingOffscreenAuth(message);
-      void closeOffscreenDocument();
 
       sendResponse({ success: true });
       return true;
@@ -72,6 +77,10 @@ export function registerAuthSettingsMessageHandler(): void {
       void (async () => {
         const user = await getAuthenticatedFeedsUser();
         if (user) {
+          const guestClaim = await claimGuestBillingSubscription().catch((error) => {
+            console.warn('[billing] Guest subscription claim check failed:', error);
+            return null;
+          });
           const preferences = await resolveUserProfilePreferences(user.uid);
           const info = formatUserInfo(
             {
@@ -83,7 +92,10 @@ export function registerAuthSettingsMessageHandler(): void {
             preferences
           );
           chrome.storage.local.set({ feedsUserInfo: info });
-          sendResponse(info);
+          sendResponse({
+            ...info,
+            guestClaimVerificationRequired: guestClaim?.verificationRequired === true,
+          });
         } else {
           // Don't clear feedsUserInfo here — it's needed for session recovery on cold-starts.
           // It's only cleared on explicit sign-out (FEEDS_SIGN_OUT).
@@ -143,15 +155,56 @@ export function registerAuthSettingsMessageHandler(): void {
     if (message.type === 'FEEDS_EMAIL_SIGN_UP') {
       Promise.resolve()
         .then(async () => {
-          const user = await registerFeedsWithEmail(message as Record<string, unknown>);
+          const result = await registerFeedsWithEmail(message as Record<string, unknown>);
           if (message.deferPostAuthWork !== true) {
             schedulePostSignInWork();
           }
-          sendResponse({ success: true, userId: user.uid });
+          sendResponse({
+            success: true,
+            userId: result.user.uid,
+            verificationEmailSent: result.verificationEmailSent,
+          });
         })
         .catch((error) => {
           console.error('[feeds-auth] Email registration error:', error);
           sendResponse({ success: false, error: normalizeFeedsError(error, 'Account creation failed') });
+        });
+      return true;
+    }
+
+    if (message.type === 'FEEDS_RESEND_EMAIL_VERIFICATION') {
+      resendCurrentUserVerificationEmail()
+        .then((result) => {
+          sendResponse({ success: true, alreadyVerified: result.alreadyVerified });
+        })
+        .catch((error) => {
+          console.error('[feeds-auth] Verification email resend failed:', error);
+          sendResponse({
+            success: false,
+            error: normalizeFeedsError(error, 'Verification email could not be sent.'),
+          });
+        });
+      return true;
+    }
+
+    if (message.type === 'FEEDS_CHECK_EMAIL_VERIFICATION') {
+      Promise.resolve()
+        .then(async () => {
+          const verified = await refreshCurrentUserEmailVerification();
+          const guestClaim = await claimGuestBillingSubscription({ force: true });
+          sendResponse({
+            success: true,
+            verified,
+            claimedCount: guestClaim.claimedCount,
+            verificationRequired: guestClaim.verificationRequired,
+          });
+        })
+        .catch((error) => {
+          console.error('[feeds-auth] Email verification check failed:', error);
+          sendResponse({
+            success: false,
+            error: normalizeFeedsError(error, 'Email verification could not be checked.'),
+          });
         });
       return true;
     }

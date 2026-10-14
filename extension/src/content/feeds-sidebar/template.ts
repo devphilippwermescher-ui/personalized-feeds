@@ -1,10 +1,11 @@
-import type { SidebarAuthMode, UserInfo } from './types';
+import type { GuestClaimVerificationViewState, SidebarAuthMode, UserInfo } from './types';
 import { CONTENT_COPY, getSidebarEmptyCopy } from '../shared/copy';
 import { DASHBOARD_ENABLED } from 'shared/feature-flags';
 import type { UserFeatureSettings } from 'shared/types';
 import { renderPlanOutlineStarIcon } from '../shared/plan-star';
 import { escapeHtml } from '../shared/escape-html';
 import { renderSidebarAuthForm } from './components/AuthForm/AuthForm';
+import { renderGuestClaimVerificationNotice } from './components/GuestClaimVerificationNotice/GuestClaimVerificationNotice';
 
 function renderSupportFooter(isPremium: boolean): string {
   const supportLabel = isPremium ? 'Help us improve' : 'Support &amp; Feedback';
@@ -165,9 +166,14 @@ export function renderSidebarHeader(params: {
                 <path d="M4 21a8 8 0 0 1 16 0"></path>
               </svg>
             </span>
-            <span>Profile</span>
+            <span>Profile &amp; billing</span>
           </button>
-          <button class="lfa-account-menu-link lfa-account-menu-link--plan" id="lfa-manage-plan-btn" type="button">
+          <button
+            class="lfa-account-menu-link lfa-account-menu-link--plan"
+            id="lfa-manage-plan-btn"
+            type="button"
+            data-plan-action="${isPremium ? 'portal' : 'pricing'}"
+          >
             <span class="lfa-account-menu-link-icon lfa-account-menu-link-icon--plan">
               ${renderPlanOutlineStarIcon({ className: 'lfa-plan-star-glyph' })}
             </span>
@@ -196,6 +202,7 @@ interface SidebarBodyParams {
   isInitializing: boolean;
   isPremium: boolean;
   currentUser: UserInfo | null;
+  guestClaimVerification?: GuestClaimVerificationViewState;
   authErrorMessage: string;
   authMode?: SidebarAuthMode;
   sidebarSearchQuery: string;
@@ -211,6 +218,7 @@ export function renderSidebarBody(params: SidebarBodyParams): string {
     isInitializing,
     isPremium,
     currentUser,
+    guestClaimVerification,
     authErrorMessage,
     authMode = 'sign-in',
     sidebarSearchQuery,
@@ -258,6 +266,7 @@ export function renderSidebarBody(params: SidebarBodyParams): string {
 
   return `
     <div class="lfa-auth">
+      ${renderGuestClaimVerificationNotice(guestClaimVerification, currentUser.email)}
       <div class="lfa-tabs">
         <button class="lfa-tab${activeFeedTab === 'owned' ? ' active' : ''}" id="lfa-tab-owned" type="button">${CONTENT_COPY.sidebar.myFeeds}</button>
         <button class="lfa-tab${activeFeedTab === 'shared' ? ' active' : ''}" id="lfa-tab-shared" type="button">${CONTENT_COPY.sidebar.sharedWithMe}</button>

@@ -74,7 +74,7 @@ describe('settings menu', () => {
     expect(headerHtml).not.toContain('id="lfa-header-dashboard-btn"');
     expect(headerHtml).not.toContain('id="lfa-manage-account-btn"');
     expect(headerHtml).toContain('id="lfa-profile-settings-btn"');
-    expect(headerHtml).toContain('<span>Profile</span>');
+    expect(headerHtml).toContain('<span>Profile &amp; billing</span>');
     expect(headerHtml).not.toContain('id="lfa-subscription-btn"');
     expect(signedOutBodyHtml).not.toContain('id="lfa-open-dashboard-btn"');
     expect(freeUserBodyHtml).not.toContain('id="lfa-open-subscription-btn"');
@@ -107,6 +107,7 @@ describe('settings menu', () => {
     expect(signedInHeader).toContain('Current plan: Free');
     expect(signedInHeader).not.toContain('lfa-plan-toggle-btn');
     expect(signedInHeader).toContain('id="lfa-manage-plan-btn"');
+    expect(signedInHeader).toContain('data-plan-action="pricing"');
     expect(signedInHeader).toContain('<span>Manage plan</span>');
     expect(signedInHeader.indexOf('id="lfa-profile-settings-btn"')).toBeLessThan(
       signedInHeader.indexOf('id="lfa-manage-plan-btn"')
@@ -116,6 +117,23 @@ describe('settings menu', () => {
     expect(signedInHeader.indexOf('id="lfa-manage-plan-btn"')).toBeLessThan(
       signedInHeader.indexOf('id="lfa-account-signout-btn"')
     );
+  });
+
+  it('routes Manage plan to billing for a Pro account', () => {
+    const html = renderSidebarHeader({
+      logoUrl: 'chrome-extension://test/icon.png',
+      currentUser: {
+        userId: 'user-1',
+        displayName: 'Test User',
+        email: 'test@example.com',
+        photoURL: '',
+      },
+      isPremium: true,
+      featureSettings,
+    });
+
+    expect(html).toContain('id="lfa-manage-plan-btn"');
+    expect(html).toContain('data-plan-action="portal"');
   });
 
   it('does not flash a Free badge while the authenticated plan is loading', () => {

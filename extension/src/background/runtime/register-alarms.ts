@@ -13,10 +13,18 @@ import {
   PROFILE_VIEWERS_STATUS_ALARM_NAME,
   runProfileViewersStatusSync,
 } from '../features/profile-viewers/profile-viewers-status-sync';
+import {
+  BILLING_NOTICE_ALARM_NAME,
+  refreshBillingNoticeRuntime,
+} from '../features/billing/public';
 import { queueDashboardAnalyticsWhenEnabled } from './dashboard-analytics-runtime';
 
 export function registerBackgroundAlarmHandlers(): void {
   chrome.alarms?.onAlarm.addListener((alarm) => {
+    if (alarm.name === BILLING_NOTICE_ALARM_NAME) {
+      void refreshBillingNoticeRuntime();
+      return;
+    }
     if (alarm.name === DASHBOARD_ANALYTICS_ALARM_NAME) {
       if (!DASHBOARD_ANALYTICS_SYNC_ENABLED) {
         void clearDashboardAnalyticsAlarm();

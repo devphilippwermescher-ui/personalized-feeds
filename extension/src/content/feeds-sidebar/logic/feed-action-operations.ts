@@ -27,6 +27,13 @@ import type { ShareNotification, SharingLimitDetails } from 'shared/types';
 import { enrichProfileDataForFeed } from '../../shared/enrich-profile-data';
 import { searchLinkedInPeople, toLinkedInProfileData } from './linkedin-search';
 import type { FeedActionDeps } from './feed-action-types';
+import { openPricingPage } from '../../subscription/public';
+
+function openPricingForFeedAction(deps: FeedActionDeps): void {
+  void openPricingPage().catch((error) => {
+    deps.showToast(error instanceof Error ? error.message : 'Unable to open pricing right now.', 'error');
+  });
+}
 
 export async function createNewFeed(
   name: string,
@@ -126,7 +133,7 @@ export async function moveFeed(
   }
 
   if (Boolean(currentFeeds[fromIndex]?.isLockedByPlan) !== Boolean(currentFeeds[toIndex]?.isLockedByPlan)) {
-    showToast('Free includes up to 3 custom feeds. Pro is currently in development.', 'error');
+    showToast('Upgrade to Pro to move feeds across the Free plan limit.', 'error');
     return;
   }
 
@@ -424,7 +431,7 @@ export function showSharingLimitModal(
       onClose: () => closeFeedActionModal(deps),
       onUpgrade: () => {
         closeFeedActionModal(deps);
-        deps.showPlanModal('sharing');
+        openPricingForFeedAction(deps);
       },
     }),
     deps
@@ -452,7 +459,7 @@ export function showShareNotificationModal(notification: ShareNotification, deps
       },
       onUpgrade: () => {
         closeFeedActionModal(deps);
-        deps.showPlanModal('sharing');
+        openPricingForFeedAction(deps);
       },
     }),
     deps
